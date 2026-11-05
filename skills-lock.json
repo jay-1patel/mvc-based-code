@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "skills": {
+    "code-review": {
+      "source": "mattpocock/skills",
+      "sourceType": "github",
+      "skillPath": "skills/engineering/code-review/SKILL.md",
+      "computedHash": "57cfd4ceb011f05e58a1a4f4cad3b2e03419d371f8990f4bcb32ff0d435a039f"
+    },
+    "github-image-hosting": {
+      "source": "img402/skills",
+      "sourceType": "github",
+      "skillPath": "skills/github-image-hosting/SKILL.md",
+      "computedHash": "ecc3665d0df5ba4ce85a619650a823a35ec84c91aa003beb3ff85485f2ae1047"
+    },
+    "image-hosting": {
+      "source": "img402/skills",
+      "sourceType": "github",
+      "skillPath": "skills/image-hosting/SKILL.md",
+      "computedHash": "c874645337aba42cea52aceb308deeee1b71b8efae186544dda2dbb9d763329e"
+    }
+  }
+}

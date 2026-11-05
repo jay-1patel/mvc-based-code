@@ -1,0 +1,1244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Bot Admin Panel</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #0b0f19;
+      --bg2: #121826;
+      --bg3: #1a2234;
+      --border: #243049;
+      --text: #e8eefc;
+      --muted: #8b9bb8;
+      --accent: #6c8cff;
+      --accent2: #8b5cf6;
+      --ok: #22c55e;
+      --warn: #f59e0b;
+      --danger: #ef4444;
+      --card: #141b2d;
+      --shadow: 0 12px 40px rgba(0,0,0,.35);
+      --radius: 14px;
+      --sidebar: 260px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: "DM Sans", system-ui, sans-serif;
+      background: radial-gradient(1200px 600px at 10% -10%, #1a2450 0%, transparent 55%),
+                  radial-gradient(900px 500px at 100% 0%, #2a1450 0%, transparent 50%),
+                  var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+    button, input, select, textarea { font: inherit; color: inherit; }
+    a { color: var(--accent); text-decoration: none; }
+
+    /* Login */
+    #login-screen {
+      min-height: 100vh; display: grid; place-items: center; padding: 24px;
+    }
+    .login-card {
+      width: min(420px, 100%);
+      background: linear-gradient(180deg, #172036, #121826);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 36px 32px;
+      box-shadow: var(--shadow);
+    }
+    .login-card h1 { font-size: 1.6rem; margin-bottom: 6px; }
+    .login-card p { color: var(--muted); margin-bottom: 24px; font-size: .95rem; }
+    .brand {
+      display: flex; align-items: center; gap: 12px; margin-bottom: 22px;
+    }
+    .brand-badge {
+      width: 44px; height: 44px; border-radius: 12px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      display: grid; place-items: center; font-weight: 700; font-size: 1.1rem;
+    }
+
+    /* App shell */
+    #app { display: none; min-height: 100vh; }
+    .shell { display: grid; grid-template-columns: var(--sidebar) 1fr; min-height: 100vh; }
+    .sidebar {
+      background: rgba(10,14,24,.85);
+      border-right: 1px solid var(--border);
+      padding: 22px 14px;
+      position: sticky; top: 0; height: 100vh; overflow-y: auto;
+      backdrop-filter: blur(12px);
+    }
+    .sidebar .logo {
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 10px 22px; border-bottom: 1px solid var(--border); margin-bottom: 14px;
+    }
+    .sidebar .logo strong { display: block; font-size: .98rem; }
+    .sidebar .logo span { color: var(--muted); font-size: .78rem; }
+    .nav-btn {
+      width: 100%; text-align: left; background: transparent; border: 0;
+      color: var(--muted); padding: 11px 12px; border-radius: 10px;
+      cursor: pointer; display: flex; gap: 10px; align-items: center;
+      margin-bottom: 4px; transition: .15s ease;
+    }
+    .nav-btn:hover { background: var(--bg3); color: var(--text); }
+    .nav-btn.active {
+      background: linear-gradient(90deg, rgba(108,140,255,.18), transparent);
+      color: #fff; border: 1px solid rgba(108,140,255,.25);
+    }
+    .nav-btn .ico { width: 20px; text-align: center; opacity: .9; }
+    .main { padding: 28px 28px 60px; max-width: 1280px; }
+    .topbar {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 22px; gap: 12px; flex-wrap: wrap;
+    }
+    .topbar h2 { font-size: 1.45rem; letter-spacing: -.02em; }
+    .topbar .sub { color: var(--muted); font-size: .9rem; margin-top: 4px; }
+
+    .grid { display: grid; gap: 16px; }
+    .grid-4 { grid-template-columns: repeat(4, 1fr); }
+    .grid-2 { grid-template-columns: 1fr 1fr; }
+    .grid-3 { grid-template-columns: repeat(3, 1fr); }
+    @media (max-width: 1100px) {
+      .shell { grid-template-columns: 1fr; }
+      .sidebar { position: relative; height: auto; }
+      .grid-4, .grid-3 { grid-template-columns: 1fr 1fr; }
+    }
+    @media (max-width: 700px) {
+      .grid-4, .grid-3, .grid-2 { grid-template-columns: 1fr; }
+      .main { padding: 18px 14px 40px; }
+    }
+
+    .card {
+      background: linear-gradient(180deg, rgba(26,34,52,.9), rgba(18,24,38,.95));
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 18px;
+      box-shadow: var(--shadow);
+    }
+    .stat-card h3 { color: var(--muted); font-size: .82rem; font-weight: 500; margin-bottom: 8px; }
+    .stat-card .val { font-size: 1.7rem; font-weight: 700; letter-spacing: -.03em; }
+    .stat-card .hint { color: var(--muted); font-size: .8rem; margin-top: 6px; }
+
+    .btn {
+      border: 0; border-radius: 10px; padding: 10px 14px; cursor: pointer;
+      background: var(--bg3); color: var(--text); border: 1px solid var(--border);
+      transition: .15s ease; display: inline-flex; align-items: center; gap: 8px;
+      font-weight: 500;
+    }
+    .btn:hover { filter: brightness(1.08); }
+    .btn-primary {
+      background: linear-gradient(135deg, var(--accent), #5a6fff);
+      border-color: transparent; color: #fff;
+    }
+    .btn-danger { background: rgba(239,68,68,.15); border-color: rgba(239,68,68,.35); color: #ff8f8f; }
+    .btn-ok { background: rgba(34,197,94,.15); border-color: rgba(34,197,94,.35); color: #7dffa8; }
+    .btn-sm { padding: 7px 10px; font-size: .85rem; border-radius: 8px; }
+    .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+    .field { margin-bottom: 14px; }
+    .field label { display: block; font-size: .82rem; color: var(--muted); margin-bottom: 6px; }
+    .field input, .field select, .field textarea {
+      width: 100%; background: var(--bg); border: 1px solid var(--border);
+      border-radius: 10px; padding: 11px 12px; outline: none;
+    }
+    .field input:focus, .field select:focus, .field textarea:focus {
+      border-color: var(--accent); box-shadow: 0 0 0 3px rgba(108,140,255,.15);
+    }
+    .field textarea { min-height: 100px; resize: vertical; font-family: inherit; }
+    .row { display: flex; gap: 12px; flex-wrap: wrap; }
+    .row > * { flex: 1; min-width: 140px; }
+
+    table { width: 100%; border-collapse: collapse; font-size: .92rem; }
+    th, td { text-align: left; padding: 12px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+    th { color: var(--muted); font-weight: 500; font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; }
+    tr:hover td { background: rgba(255,255,255,.02); }
+    .badge {
+      display: inline-block; padding: 3px 8px; border-radius: 999px;
+      font-size: .75rem; background: var(--bg3); border: 1px solid var(--border); color: var(--muted);
+    }
+    .badge-ok { color: #7dffa8; border-color: rgba(34,197,94,.3); background: rgba(34,197,94,.1); }
+    .badge-warn { color: #ffd27a; border-color: rgba(245,158,11,.3); background: rgba(245,158,11,.1); }
+
+    .toolbar { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; align-items: center; }
+    .toolbar .spacer { flex: 1; }
+    .search {
+      background: var(--bg); border: 1px solid var(--border); border-radius: 10px;
+      padding: 10px 12px; min-width: 220px;
+    }
+    .empty { text-align: center; color: var(--muted); padding: 40px 16px; }
+    .mono { font-family: "JetBrains Mono", monospace; font-size: .82rem; }
+    .muted { color: var(--muted); }
+    .hidden { display: none !important; }
+
+    .toast-wrap {
+      position: fixed; right: 18px; bottom: 18px; z-index: 1000;
+      display: flex; flex-direction: column; gap: 8px;
+    }
+    .toast {
+      background: #18233a; border: 1px solid var(--border); color: var(--text);
+      padding: 12px 14px; border-radius: 12px; min-width: 240px; max-width: 360px;
+      box-shadow: var(--shadow); animation: slide .2s ease;
+    }
+    .toast.ok { border-color: rgba(34,197,94,.4); }
+    .toast.err { border-color: rgba(239,68,68,.45); }
+    @keyframes slide { from { transform: translateY(8px); opacity: 0; } }
+
+    .modal-bg {
+      position: fixed; inset: 0; background: rgba(5,8,16,.72);
+      display: grid; place-items: center; z-index: 900; padding: 18px;
+      backdrop-filter: blur(4px);
+    }
+    .modal {
+      width: min(640px, 100%); max-height: 90vh; overflow: auto;
+      background: var(--bg2); border: 1px solid var(--border);
+      border-radius: 16px; padding: 22px; box-shadow: var(--shadow);
+    }
+    .modal h3 { margin-bottom: 14px; }
+    .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 8px; }
+
+    .drop {
+      border: 1.5px dashed var(--border); border-radius: 12px; padding: 28px;
+      text-align: center; color: var(--muted); cursor: pointer; transition: .15s;
+    }
+    .drop:hover, .drop.drag { border-color: var(--accent); background: rgba(108,140,255,.06); color: var(--text); }
+    .thumb {
+      width: 48px; height: 48px; border-radius: 8px; object-fit: cover;
+      background: var(--bg3); border: 1px solid var(--border);
+    }
+    .pill-tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+    .pill {
+      padding: 8px 12px; border-radius: 999px; border: 1px solid var(--border);
+      background: transparent; color: var(--muted); cursor: pointer;
+    }
+    .pill.active { background: rgba(108,140,255,.15); color: #fff; border-color: rgba(108,140,255,.35); }
+    .cfg-json {
+      width: 100%; min-height: 420px; font-family: "JetBrains Mono", monospace;
+      font-size: .85rem; line-height: 1.45; background: #0a0e18; border: 1px solid var(--border);
+      border-radius: 12px; padding: 14px; color: #d7e3ff;
+    }
+    .split-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .log-line {
+      font-family: "JetBrains Mono", monospace; font-size: .78rem;
+      padding: 10px; border-bottom: 1px solid var(--border); color: #b8c7e6;
+      white-space: pre-wrap; word-break: break-word;
+    }
+  </style>
+</head>
+<body>
+  <div id="login-screen">
+    <div class="login-card">
+      <div class="brand">
+        <div class="brand-badge">AI</div>
+        <div>
+          <strong>WhatsApp Bot Admin</strong>
+          <div class="muted" style="font-size:.82rem">Manage products, KB, config & more</div>
+        </div>
+      </div>
+      <h1>Sign in</h1>
+      <p>Enter your admin API key from <span class="mono">.env</span> (<span class="mono">ADMIN_API_KEY</span>). Leave blank if no key is set.</p>
+      <div class="field">
+        <label>API Key</label>
+        <input id="api-key-input" type="password" placeholder="X-API-Key value" />
+      </div>
+      <button class="btn btn-primary" style="width:100%" onclick="doLogin()">Enter Dashboard</button>
+      <p id="login-error" class="muted" style="color:#ff8f8f;margin-top:12px;display:none"></p>
+    </div>
+  </div>
+
+  <div id="app">
+    <div class="shell">
+      <aside class="sidebar">
+        <div class="logo">
+          <div class="brand-badge">AI</div>
+          <div>
+            <strong id="biz-name">Bot Admin</strong>
+            <span>Control Center</span>
+          </div>
+        </div>
+        <button class="nav-btn active" data-page="dashboard" onclick="nav(this)"><span class="ico">◈</span> Dashboard</button>
+        <button class="nav-btn" data-page="products" onclick="nav(this)"><span class="ico">▣</span> Products</button>
+        <button class="nav-btn" data-page="faq" onclick="nav(this)"><span class="ico">?</span> FAQ</button>
+        <button class="nav-btn" data-page="kb" onclick="nav(this)"><span class="ico">📄</span> Knowledge Base</button>
+        <button class="nav-btn" data-page="catalogue" onclick="nav(this)"><span class="ico">📋</span> Catalogue</button>
+        <button class="nav-btn" data-page="media" onclick="nav(this)"><span class="ico">🖼</span> Media</button>
+        <button class="nav-btn" data-page="config" onclick="nav(this)"><span class="ico">⚙</span> Bot Config</button>
+        <button class="nav-btn" data-page="chats" onclick="nav(this)"><span class="ico">💬</span> Chat History</button>
+        <button class="nav-btn" data-page="logs" onclick="nav(this)"><span class="ico">☰</span> Logs</button>
+        <button class="nav-btn" data-page="system" onclick="nav(this)"><span class="ico">⚡</span> System</button>
+        <button class="nav-btn" data-page="test" onclick="nav(this)"><span class="ico">▶</span> Test Bot</button>
+        <div style="margin-top:24px;padding:0 8px">
+          <button class="btn btn-sm" style="width:100%" onclick="logout()">Log out</button>
+        </div>
+      </aside>
+
+      <main class="main">
+        <!-- DASHBOARD -->
+        <section id="page-dashboard" class="page">
+          <div class="topbar">
+            <div>
+              <h2>Dashboard</h2>
+              <div class="sub">Overview of your WhatsApp AI assistant</div>
+            </div>
+            <button class="btn" onclick="loadDashboard()">Refresh</button>
+          </div>
+          <div class="grid grid-4" id="stat-cards"></div>
+          <div class="grid grid-2" style="margin-top:16px">
+            <div class="card">
+              <h3 style="margin-bottom:12px">Quick actions</h3>
+              <div class="split-actions">
+                <button class="btn btn-primary" onclick="navTo('products')">+ Add product</button>
+                <button class="btn" onclick="navTo('faq')">+ Add FAQ</button>
+                <button class="btn" onclick="navTo('kb')">Upload KB doc</button>
+                <button class="btn btn-ok" onclick="rebuildIndexes()">Rebuild indexes</button>
+              </div>
+            </div>
+            <div class="card">
+              <h3 style="margin-bottom:12px">Health</h3>
+              <div id="health-box" class="mono muted">Loading…</div>
+            </div>
+          </div>
+        </section>
+
+        <!-- PRODUCTS -->
+        <section id="page-products" class="page hidden">
+          <div class="topbar">
+            <div>
+              <h2>Products</h2>
+              <div class="sub">Items shown in WhatsApp product menus</div>
+            </div>
+            <button class="btn btn-primary" onclick="openProductModal()">+ New product</button>
+          </div>
+          <div class="toolbar">
+            <input class="search" id="product-search" placeholder="Search products…" oninput="filterProducts()" />
+            <div class="spacer"></div>
+            <button class="btn" onclick="loadProducts()">Refresh</button>
+          </div>
+          <div class="card" style="overflow:auto">
+            <table>
+              <thead>
+                <tr><th>Product</th><th>Category</th><th>Price</th><th>Status</th><th></th></tr>
+              </thead>
+              <tbody id="products-tbody"><tr><td colspan="5" class="empty">Loading…</td></tr></tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- FAQ -->
+        <section id="page-faq" class="page hidden">
+          <div class="topbar">
+            <div>
+              <h2>FAQ</h2>
+              <div class="sub">Quick answers used by the AI assistant</div>
+            </div>
+            <button class="btn btn-primary" onclick="openFaqModal()">+ Add FAQ</button>
+          </div>
+          <div class="card" style="overflow:auto">
+            <table>
+              <thead><tr><th>Question</th><th>Category</th><th>Answer</th><th></th></tr></thead>
+              <tbody id="faq-tbody"><tr><td colspan="4" class="empty">Loading…</td></tr></tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- KB -->
+        <section id="page-kb" class="page hidden">
+          <div class="topbar">
+            <div>
+              <h2>Knowledge Base</h2>
+              <div class="sub">Upload PDFs / docs for RAG answers</div>
+            </div>
+            <button class="btn" onclick="rebuildIndexes()">Rebuild index</button>
+          </div>
+          <div class="card" style="margin-bottom:16px">
+            <div class="drop" id="kb-drop" onclick="document.getElementById('kb-file').click()">
+              <div style="font-size:1.4rem;margin-bottom:8px">⬆</div>
+              <div><strong>Drop file here</strong> or click to upload</div>
+              <div class="muted" style="font-size:.85rem;margin-top:6px">PDF, DOCX, TXT, CSV, XLSX · max 10MB</div>
+              <input type="file" id="kb-file" class="hidden" accept=".pdf,.docx,.txt,.csv,.xlsx,.xls" onchange="uploadKbFile(this.files[0])" />
+            </div>
+          </div>
+          <div class="card" style="overflow:auto">
+            <table>
+              <thead><tr><th>Title</th><th>Category</th><th>Source</th><th></th></tr></thead>
+              <tbody id="kb-tbody"><tr><td colspan="4" class="empty">Loading…</td></tr></tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- MEDIA -->
+        <section id="page-media" class="page hidden">
+          <div class="topbar">
+            <div>
+              <h2>Media library</h2>
+              <div class="sub">Images & files for products and replies</div>
+            </div>
+            <button class="btn btn-primary" onclick="document.getElementById('media-file').click()">+ Upload</button>
+            <input type="file" id="media-file" class="hidden" accept="image/*,video/*,.pdf" onchange="uploadMedia(this.files[0])" />
+          </div>
+          <div class="card" style="overflow:auto">
+            <table>
+              <thead><tr><th>Preview</th><th>File</th><th>Type</th><th>Category</th><th></th></tr></thead>
+              <tbody id="media-tbody"><tr><td colspan="5" class="empty">Loading…</td></tr></tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- CATALOGUE -->
+        <section id="page-catalogue" class="page hidden">
+          <div class="topbar">
+            <div>
+              <h2>Product Catalogue</h2>
+              <div class="sub">PDF catalog sent to WhatsApp users who ask for "catalogue"</div>
+            </div>
+            <button class="btn" onclick="loadCatalogue()">Refresh</button>
+          </div>
+          <div class="grid grid-2" style="margin-bottom:16px">
+            <div class="card">
+              <h3 style="margin-bottom:12px">Upload Catalogue PDF</h3>
+              <div class="drop" id="cat-drop" onclick="document.getElementById('cat-file').click()">
+                <div style="font-size:1.4rem;margin-bottom:8px">⬆</div>
+                <div><strong>Drop PDF here</strong> or click to upload</div>
+                <div class="muted" style="font-size:.85rem;margin-top:6px">
+                  PDF only · Text gets indexed for AI answers · Images extracted & uploaded to imghippo
+                </div>
+                <input type="file" id="cat-file" class="hidden" accept=".pdf" onchange="uploadCatalogue(this.files[0])" />
+              </div>
+              <div style="margin-top:12px">
+                <button class="btn btn-primary" onclick="document.getElementById('cat-file').click()">Choose PDF</button>
+                <span class="muted" style="margin-left:8px" id="cat-upload-status"></span>
+              </div>
+            </div>
+            <div class="card" id="cat-status-card">
+              <h3 style="margin-bottom:12px">Current Catalogue</h3>
+              <div id="cat-status"><span class="muted">Loading…</span></div>
+            </div>
+          </div>
+          <div class="card" style="overflow:auto">
+            <h3 style="margin-bottom:12px">Extracted Images</h3>
+            <div id="cat-images"><span class="muted">Loading…</span></div>
+          </div>
+        </section>
+
+        <!-- CONFIG -->
+        <section id="page-config" class="page hidden">
+          <div class="topbar">
+            <div>
+              <h2>Bot configuration</h2>
+              <div class="sub">Personality, thresholds, tools, messages</div>
+            </div>
+            <div class="split-actions">
+              <button class="btn" onclick="loadConfig()">Reload</button>
+              <button class="btn btn-primary" onclick="saveConfig()">Save changes</button>
+            </div>
+          </div>
+          <div class="grid grid-2">
+            <div class="card">
+              <div class="field"><label>Bot name</label><input id="cfg-name" /></div>
+              <div class="field"><label>Personality</label><textarea id="cfg-personality" style="min-height:140px"></textarea></div>
+              <div class="field"><label>Guardrails</label><textarea id="cfg-guardrails" style="min-height:100px"></textarea></div>
+              <div class="field"><label>Welcome message</label><input id="cfg-welcome" /></div>
+              <div class="field"><label>Fallback message</label><textarea id="cfg-fallback"></textarea></div>
+              <div class="row">
+                <div class="field"><label>Similarity threshold</label><input id="cfg-sim" type="number" step="0.01" min="0" max="1" /></div>
+                <div class="field"><label>Context window</label><input id="cfg-ctx" type="number" min="1" max="10" /></div>
+              </div>
+              <div class="row">
+                <div class="field"><label>Temperature</label><input id="cfg-temp" type="number" step="0.1" min="0" max="2" /></div>
+                <div class="field"><label>Memory TTL (min)</label><input id="cfg-ttl" type="number" min="1" /></div>
+              </div>
+            </div>
+            <div class="card">
+              <label class="muted" style="font-size:.82rem">Raw JSON (advanced)</label>
+              <textarea class="cfg-json" id="cfg-raw" style="margin-top:8px"></textarea>
+              <p class="muted" style="margin-top:8px;font-size:.8rem">Saving uses the form fields and merges into this JSON.</p>
+            </div>
+          </div>
+        </section>
+
+        <!-- CHATS -->
+        <section id="page-chats" class="page hidden">
+          <div class="topbar">
+            <div>
+              <h2>Chat history</h2>
+              <div class="sub">Recent conversations</div>
+            </div>
+            <button class="btn" onclick="loadChats()">Refresh</button>
+          </div>
+          <div class="card" style="overflow:auto">
+            <table>
+              <thead><tr><th>When</th><th>User</th><th>Message</th><th>Reply</th><th>Route</th></tr></thead>
+              <tbody id="chats-tbody"><tr><td colspan="5" class="empty">Loading…</td></tr></tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- LOGS -->
+        <section id="page-logs" class="page hidden">
+          <div class="topbar">
+            <div>
+              <h2>Webhook logs</h2>
+              <div class="sub">Inbound HTTP traffic</div>
+            </div>
+            <button class="btn" onclick="loadLogs()">Refresh</button>
+          </div>
+          <div class="card" id="logs-box"><div class="empty">Loading…</div></div>
+        </section>
+
+        <!-- SYSTEM -->
+        <section id="page-system" class="page hidden">
+          <div class="topbar">
+            <div>
+              <h2>System</h2>
+              <div class="sub">Indexes, queue, templates, health</div>
+            </div>
+          </div>
+          <div class="grid grid-2">
+            <div class="card">
+              <h3 style="margin-bottom:12px">Indexes</h3>
+              <div class="split-actions">
+                <button class="btn btn-primary" onclick="api('POST','/admin/kb/rebuild-index').then(()=>toast('FAISS rebuilt','ok'))">Rebuild FAISS</button>
+                <button class="btn" onclick="api('POST','/admin/chroma/rebuild').then(()=>toast('Chroma rebuilt','ok'))">Rebuild Chroma</button>
+              </div>
+              <div id="sys-stats" class="mono muted" style="margin-top:16px"></div>
+            </div>
+            <div class="card">
+              <h3 style="margin-bottom:12px">Templates</h3>
+              <div class="split-actions">
+                <button class="btn" onclick="loadTemplates()">List templates</button>
+                <button class="btn btn-ok" onclick="api('POST','/admin/templates/register').then(r=>toast('Registered '+r.success+'/'+r.total,'ok'))">Register all</button>
+              </div>
+              <pre id="tpl-box" class="mono muted" style="margin-top:14px;white-space:pre-wrap"></pre>
+            </div>
+          </div>
+        </section>
+
+        <!-- TEST -->
+        <section id="page-test" class="page hidden">
+          <div class="topbar">
+            <div>
+              <h2>Test bot</h2>
+              <div class="sub">Call /kb-answer without WhatsApp</div>
+            </div>
+          </div>
+          <div class="card" style="max-width:720px">
+            <div class="field">
+              <label>Message</label>
+              <input id="test-msg" placeholder='Try "Menu" or "View Products"' value="Menu" />
+            </div>
+            <div class="field">
+              <label>User ID (wa_id)</label>
+              <input id="test-wa" value="admin-test" />
+            </div>
+            <button class="btn btn-primary" onclick="runTest()">Send</button>
+            <pre id="test-out" class="mono" style="margin-top:16px;background:#0a0e18;padding:14px;border-radius:12px;border:1px solid var(--border);white-space:pre-wrap;max-height:420px;overflow:auto"></pre>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <div id="modal-root"></div>
+  <div class="toast-wrap" id="toasts"></div>
+
+  <script>
+    const S = {
+      key: localStorage.getItem('admin_api_key') || '',
+      products: [],
+      config: null,
+    };
+
+    function toast(msg, type='ok') {
+      const el = document.createElement('div');
+      el.className = 'toast ' + type;
+      el.textContent = msg;
+      document.getElementById('toasts').appendChild(el);
+      setTimeout(() => el.remove(), 3200);
+    }
+
+    async function api(method, path, { json, form, query } = {}) {
+      let url = path;
+      if (query) {
+        const qs = new URLSearchParams(query).toString();
+        url += (url.includes('?') ? '&' : '?') + qs;
+      }
+      const headers = {};
+      if (S.key) headers['X-API-Key'] = S.key;
+      let body;
+      if (json !== undefined) {
+        headers['Content-Type'] = 'application/json';
+        body = JSON.stringify(json);
+      } else if (form) {
+        body = form;
+      }
+      const res = await fetch(url, { method, headers, body });
+      let data = null;
+      const ct = res.headers.get('content-type') || '';
+      if (ct.includes('application/json')) data = await res.json();
+      else data = await res.text();
+      if (!res.ok) {
+        const detail = (data && data.detail) ? data.detail : (typeof data === 'string' ? data : res.statusText);
+        throw new Error(detail || ('HTTP ' + res.status));
+      }
+      return data;
+    }
+
+    async function doLogin() {
+      S.key = document.getElementById('api-key-input').value.trim();
+      const err = document.getElementById('login-error');
+      err.style.display = 'none';
+      try {
+        await api('GET', '/admin/kb/stats');
+        localStorage.setItem('admin_api_key', S.key);
+        document.getElementById('login-screen').style.display = 'none';
+        document.getElementById('app').style.display = 'block';
+        loadDashboard();
+      } catch (e) {
+        err.textContent = e.message || 'Login failed';
+        err.style.display = 'block';
+      }
+    }
+
+    function logout() {
+      localStorage.removeItem('admin_api_key');
+      S.key = '';
+      location.reload();
+    }
+
+    function nav(btn) {
+      document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      document.querySelectorAll('.page').forEach(p => p.classList.add('hidden'));
+      const page = btn.dataset.page;
+      document.getElementById('page-' + page).classList.remove('hidden');
+      const loaders = {
+        dashboard: loadDashboard,
+        products: loadProducts,
+        faq: loadFaqs,
+        kb: loadKb,
+        catalogue: loadCatalogue,
+        media: loadMedia,
+        config: loadConfig,
+        chats: loadChats,
+        logs: loadLogs,
+        system: loadSystem,
+      };
+      if (loaders[page]) loaders[page]();
+    }
+    function navTo(page) {
+      const btn = document.querySelector(`.nav-btn[data-page="${page}"]`);
+      if (btn) nav(btn);
+    }
+
+    async function loadDashboard() {
+      const cards = document.getElementById('stat-cards');
+      cards.innerHTML = '<div class="card muted">Loading…</div>';
+      try {
+        const [kb, products, chroma, health] = await Promise.all([
+          api('GET', '/admin/kb/stats').catch(() => ({})),
+          api('GET', '/products/list?limit=500').catch(() => ({ items: [] })),
+          api('GET', '/admin/chroma/stats').catch(() => ({})),
+          api('GET', '/admin/monitor/health').catch(() => null),
+        ]);
+        const pcount = (products.items || products.products || []).length || products.count || 0;
+        const stats = [
+          { t: 'Products', v: pcount, h: 'Active catalog items' },
+          { t: 'FAQs', v: kb.total_faqs ?? '—', h: 'Quick answers' },
+          { t: 'KB docs', v: kb.total_kb_docs ?? '—', h: 'Knowledge documents' },
+          { t: 'Vectors', v: kb.total_vectors ?? chroma.total_vectors ?? '—', h: 'Embedding index size' },
+        ];
+        cards.innerHTML = stats.map(s => `
+          <div class="card stat-card">
+            <h3>${s.t}</h3>
+            <div class="val">${s.v}</div>
+            <div class="hint">${s.h}</div>
+          </div>`).join('');
+        document.getElementById('health-box').textContent = health
+          ? JSON.stringify(health, null, 2)
+          : 'Health endpoint unavailable';
+        if (kb.is_built !== undefined) {
+          document.getElementById('biz-name').textContent = 'Bot Admin';
+        }
+      } catch (e) {
+        toast(e.message, 'err');
+      }
+    }
+
+    async function rebuildIndexes() {
+      try {
+        toast('Rebuilding indexes…');
+        await api('POST', '/admin/kb/rebuild-index');
+        await api('POST', '/admin/chroma/rebuild').catch(() => null);
+        toast('Indexes rebuilt', 'ok');
+        loadDashboard();
+      } catch (e) { toast(e.message, 'err'); }
+    }
+
+    // PRODUCTS
+    async function loadProducts() {
+      const tb = document.getElementById('products-tbody');
+      tb.innerHTML = '<tr><td colspan="5" class="empty">Loading…</td></tr>';
+      try {
+        const data = await api('GET', '/products/list?limit=500');
+        S.products = data.items || data.products || [];
+        renderProducts(S.products);
+      } catch (e) {
+        tb.innerHTML = `<tr><td colspan="5" class="empty">${e.message}</td></tr>`;
+      }
+    }
+    function filterProducts() {
+      const q = (document.getElementById('product-search').value || '').toLowerCase();
+      renderProducts(S.products.filter(p =>
+        (p.name||'').toLowerCase().includes(q) ||
+        (p.category||'').toLowerCase().includes(q) ||
+        (p.slug||'').toLowerCase().includes(q)
+      ));
+    }
+    function renderProducts(list) {
+      const tb = document.getElementById('products-tbody');
+      if (!list.length) {
+        tb.innerHTML = '<tr><td colspan="5" class="empty">No products yet. Add your first product.</td></tr>';
+        return;
+      }
+      tb.innerHTML = list.map(p => `
+        <tr>
+          <td>
+            <div style="display:flex;gap:10px;align-items:center">
+              ${p.media_url ? `<img class="thumb" src="${esc(p.media_url)}" onerror="this.style.display='none'" />` : '<div class="thumb"></div>'}
+              <div>
+                <strong>${esc(p.name||'')}</strong>
+                <div class="muted mono" style="font-size:.75rem">${esc(p.slug||'')}</div>
+              </div>
+            </div>
+          </td>
+          <td><span class="badge">${esc(p.category||'general')}</span></td>
+          <td>${esc(p.price||'—')}</td>
+          <td>${p.is_active === 0 || p.is_active === false ? '<span class="badge badge-warn">off</span>' : '<span class="badge badge-ok">active</span>'}</td>
+          <td>
+            <div class="split-actions">
+              <button class="btn btn-sm" data-pid="${p.id}" onclick="editProductById(${p.id})">Edit</button>
+              <button class="btn btn-sm btn-danger" onclick="deleteProduct(${p.id})">Delete</button>
+            </div>
+          </td>
+        </tr>`).join('');
+    }
+    function editProductById(id) {
+      const p = S.products.find(x => x.id === id);
+      if (p) openProductModal(p);
+    }
+
+    async function openProductModal(p = null) {
+      const isEdit = !!p;
+      showModal(`
+        <h3>${isEdit ? 'Edit product' : 'New product'}</h3>
+        <div class="row">
+          <div class="field"><label>Name *</label><input id="p-name" value="${escAttr(p?.name||'')}" /></div>
+          <div class="field"><label>Category</label><input id="p-cat" value="${escAttr(p?.category||'general')}" /></div>
+        </div>
+        <div class="row">
+          <div class="field"><label>Price</label><input id="p-price" value="${escAttr(p?.price||'')}" placeholder="₹999" /></div>
+          <div class="field"><label>MRP</label><input id="p-mrp" value="${escAttr(p?.mrp||'')}" /></div>
+        </div>
+        <div class="field"><label>Short description</label><input id="p-short" value="${escAttr(p?.short_description||'')}" /></div>
+        <div class="field"><label>Description</label><textarea id="p-desc">${esc(p?.description||'')}</textarea></div>
+        <div class="field"><label>Tags (comma)</label><input id="p-tags" value="${escAttr(Array.isArray(p?.tags)?p.tags.join(', '):(p?.tags||''))}" /></div>
+        <div class="field">
+          <label>Product image</label>
+          <div class="row" style="align-items:flex-end">
+            <div class="field" style="flex:2">
+              <label>Pick existing</label>
+              <select id="p-media" onchange="onProductMediaPick(this.value)">
+                <option value="">-- Select image --</option>
+              </select>
+            </div>
+            <div class="field" style="flex:1">
+              <label>Or upload new</label>
+              <input type="file" id="p-image" accept="image/*" onchange="uploadProductImage(this.files[0])" />
+            </div>
+          </div>
+          <input type="hidden" id="p-imgurl" value="${escAttr(p?.media_url||'')}" />
+          <div id="p-media-preview" style="margin-top:10px">
+            ${p?.media_url ? `<img src="${escAttr(p.media_url)}" style="max-width:160px;max-height:120px;border-radius:10px;border:1px solid var(--border)" />` : '<span class="muted">No image selected</span>'}
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button class="btn" onclick="closeModal()">Cancel</button>
+          <button class="btn btn-primary" onclick="${isEdit ? `saveProductEdit(${p.id})` : 'saveProductNew()'}">Save</button>
+        </div>
+      `);
+      await loadMediaForDropdown(p?.media_id);
+    }
+    function onProductMediaPick(id) {
+      const m = window._mediaItems.find(x => String(x.id) === String(id));
+      const url = m?.url || '';
+      document.getElementById('p-imgurl').value = url;
+      const prev = document.getElementById('p-media-preview');
+      prev.innerHTML = url
+        ? `<img src="${esc(url)}" style="max-width:160px;max-height:120px;border-radius:10px;border:1px solid var(--border)" />`
+        : '<span class="muted">No image selected</span>';
+    }
+    async function uploadProductImage(file) {
+      if (!file) return;
+      const prev = document.getElementById('p-media-preview');
+      prev.innerHTML = '<span class="muted">Uploading to imghippo…</span>';
+      const fd = new FormData();
+      fd.append('file', file);
+      try {
+        const data = await api('POST', '/media/upload?category=product', { form: fd });
+        const url = data.url || data.imgbb_url;
+        if (!url || url.startsWith('/')) throw new Error('imghippo upload failed — check IMGHIPPO_API_KEY / server logs');
+        document.getElementById('p-imgurl').value = url;
+        await loadMediaForDropdown(data.id);
+        prev.innerHTML = `<img src="${esc(url)}" style="max-width:160px;max-height:120px;border-radius:10px;border:1px solid var(--border)" /><div class="muted mono" style="font-size:.72rem;margin-top:6px">${esc(url)}</div>`;
+        toast('Image uploaded to imghippo', 'ok');
+      } catch (e) {
+        prev.innerHTML = '<span class="muted" style="color:#ff8f8f">Upload failed</span>';
+        toast(e.message, 'err');
+      }
+      const inp = document.getElementById('p-image');
+      if (inp) inp.value = '';
+    }
+    function editProduct(p) { openProductModal(p); }
+
+    async function saveProductNew() {
+      try {
+        const fd = new FormData();
+        fd.append('name', val('p-name'));
+        fd.append('category', val('p-cat') || 'general');
+        fd.append('price', val('p-price'));
+        fd.append('mrp', val('p-mrp'));
+        fd.append('short_description', val('p-short'));
+        fd.append('description', val('p-desc'));
+        fd.append('tags', val('p-tags'));
+        if (val('p-imgurl')) fd.append('media_url', val('p-imgurl'));
+        await api('POST', '/products/add', { form: fd });
+        closeModal();
+        toast('Product created', 'ok');
+        loadProducts();
+      } catch (e) { toast(e.message, 'err'); }
+    }
+
+    async function saveProductEdit(id) {
+      try {
+        const fd = new FormData();
+        fd.append('name', val('p-name'));
+        fd.append('category', val('p-cat') || 'general');
+        fd.append('price', val('p-price'));
+        fd.append('mrp', val('p-mrp'));
+        fd.append('short_description', val('p-short'));
+        fd.append('description', val('p-desc'));
+        fd.append('tags', val('p-tags'));
+        if (val('p-imgurl')) fd.append('media_url', val('p-imgurl'));
+        await api('PUT', `/products/update/${id}`, { form: fd });
+        closeModal();
+        toast('Product updated', 'ok');
+        loadProducts();
+      } catch (e) { toast(e.message, 'err'); }
+    }
+
+    async function deleteProduct(id) {
+      if (!confirm('Delete this product?')) return;
+      try {
+        await api('DELETE', `/products/delete/${id}`);
+        toast('Deleted', 'ok');
+        loadProducts();
+      } catch (e) { toast(e.message, 'err'); }
+    }
+
+    // FAQ
+    async function loadFaqs() {
+      const tb = document.getElementById('faq-tbody');
+      try {
+        const data = await api('GET', '/admin/faq/list?limit=200');
+        const faqs = data.faqs || [];
+        if (!faqs.length) {
+          tb.innerHTML = '<tr><td colspan="4" class="empty">No FAQs yet</td></tr>';
+          return;
+        }
+        tb.innerHTML = faqs.map(f => `
+          <tr>
+            <td><strong>${esc(f.question||'')}</strong></td>
+            <td><span class="badge">${esc(f.category||'')}</span></td>
+            <td class="muted">${esc((f.answer||'').slice(0,120))}${(f.answer||'').length>120?'…':''}</td>
+            <td><button class="btn btn-sm btn-danger" onclick="deleteFaq(${f.id})">Delete</button></td>
+          </tr>`).join('');
+      } catch (e) {
+        tb.innerHTML = `<tr><td colspan="4" class="empty">${e.message}</td></tr>`;
+      }
+    }
+    function openFaqModal() {
+      showModal(`
+        <h3>Add FAQ</h3>
+        <div class="field"><label>Question *</label><input id="f-q" /></div>
+        <div class="field"><label>Answer *</label><textarea id="f-a"></textarea></div>
+        <div class="field"><label>Category</label><input id="f-c" value="general" /></div>
+        <div class="modal-actions">
+          <button class="btn" onclick="closeModal()">Cancel</button>
+          <button class="btn btn-primary" onclick="saveFaq()">Save</button>
+        </div>
+      `);
+    }
+    async function saveFaq() {
+      try {
+        await api('POST', '/admin/faq/add', {
+          query: { question: val('f-q'), answer: val('f-a'), category: val('f-c') || 'general' }
+        });
+        closeModal();
+        toast('FAQ added', 'ok');
+        loadFaqs();
+      } catch (e) { toast(e.message, 'err'); }
+    }
+    async function deleteFaq(id) {
+      if (!confirm('Delete FAQ?')) return;
+      try {
+        await api('DELETE', `/admin/faq/${id}`);
+        toast('Deleted', 'ok');
+        loadFaqs();
+      } catch (e) { toast(e.message, 'err'); }
+    }
+
+    // KB
+    async function loadKb() {
+      const tb = document.getElementById('kb-tbody');
+      try {
+        const data = await api('GET', '/admin/kb');
+        const docs = data.docs || [];
+        if (!docs.length) {
+          tb.innerHTML = '<tr><td colspan="4" class="empty">No documents yet</td></tr>';
+          return;
+        }
+        tb.innerHTML = docs.map(d => `
+          <tr>
+            <td><strong>${esc(d.title||'')}</strong></td>
+            <td><span class="badge">${esc(d.category||'')}</span></td>
+            <td class="muted">${esc(d.source||'')}</td>
+            <td><button class="btn btn-sm btn-danger" onclick="deleteKb(${d.id})">Delete</button></td>
+          </tr>`).join('');
+      } catch (e) {
+        tb.innerHTML = `<tr><td colspan="4" class="empty">${e.message}</td></tr>`;
+      }
+    }
+    async function uploadKbFile(file) {
+      if (!file) return;
+      const fd = new FormData();
+      fd.append('file', file);
+      try {
+        toast('Uploading & indexing…');
+        await api('POST', '/upload', { form: fd });
+        toast('Document added to KB', 'ok');
+        loadKb();
+      } catch (e) { toast(e.message, 'err'); }
+      document.getElementById('kb-file').value = '';
+    }
+    async function deleteKb(id) {
+      if (!confirm('Delete document and rebuild index?')) return;
+      try {
+        await api('DELETE', `/admin/kb/${id}`);
+        toast('Deleted', 'ok');
+        loadKb();
+      } catch (e) { toast(e.message, 'err'); }
+    }
+    (() => {
+      const drop = document.getElementById('kb-drop');
+      if (!drop) return;
+      ['dragenter','dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('drag'); }));
+      ['dragleave','drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('drag'); }));
+      drop.addEventListener('drop', e => {
+        const f = e.dataTransfer.files?.[0];
+        if (f) uploadKbFile(f);
+      });
+    })();
+
+    // CATALOGUE
+    (() => {
+      const drop = document.getElementById('cat-drop');
+      if (!drop) return;
+      ['dragenter','dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('drag'); }));
+      ['dragleave','drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('drag'); }));
+      drop.addEventListener('drop', e => {
+        const f = e.dataTransfer.files?.[0];
+        if (f) uploadCatalogue(f);
+      });
+    })();
+    async function loadCatalogue() {
+      const statusEl = document.getElementById('cat-status');
+      const imgEl = document.getElementById('cat-images');
+      statusEl.innerHTML = '<span class="muted">Loading…</span>';
+      try {
+        const data = await api('GET', '/admin/catalogue');
+        if (!data.exists) {
+          statusEl.innerHTML = '<span class="muted">No catalogue PDF uploaded yet. Drop a PDF above to create one.</span>';
+          imgEl.innerHTML = '<span class="muted">No images extracted yet.</span>';
+          return;
+        }
+        const pdf = data.pdf;
+        const url = (pdf.url && pdf.url.startsWith('http')) ? pdf.url : (pdf.file_path || 'local');
+        const extCount = data.extracted_images ? data.extracted_images.length : 0;
+        statusEl.innerHTML = `
+          <div style="margin-bottom:10px">
+            <div class="badge badge-ok" style="margin-bottom:6px">Active</div>
+            <div><strong>${esc(pdf.filename || 'Catalogue PDF')}</strong></div>
+            <div class="muted mono" style="font-size:.78rem;margin-top:4px;word-break:break-all">${esc(url)}</div>
+          </div>
+          <div class="row" style="margin-top:10px">
+            <button class="btn btn-sm btn-danger" onclick="deleteCatalogue()">Deactivate</button>
+          </div>
+        `;
+        if (extCount > 0) {
+          imgEl.innerHTML = `<div class="muted" style="margin-bottom:8px">${extCount} image(s) extracted from PDF</div>
+            <div style="display:flex;flex-wrap:wrap;gap:10px">
+              ${data.extracted_images.map(img => `
+                <div style="text-align:center">
+                  <img src="${esc(img.url || '')}" style="width:100px;height:100px;object-fit:cover;border-radius:8px;border:1px solid var(--border)" onerror="this.style.display='none'" />
+                  <div class="muted mono" style="font-size:.7rem;margin-top:4px">${esc(img.filename || '').slice(0,30)}</div>
+                </div>`).join('')}
+            </div>`;
+        } else {
+          imgEl.innerHTML = '<span class="muted">No images extracted (PDF may not contain extractable images).</span>';
+        }
+      } catch (e) {
+        statusEl.innerHTML = `<span class="muted" style="color:#ff8f8f">${esc(e.message)}</span>`;
+        imgEl.innerHTML = '';
+      }
+    }
+    async function uploadCatalogue(file) {
+      if (!file) return;
+      if (file.type !== 'application/pdf' && !file.name.endsWith('.pdf')) {
+        toast('Only PDF files are accepted for catalogue', 'err');
+        return;
+      }
+      const status = document.getElementById('cat-upload-status');
+      status.textContent = 'Uploading & indexing…';
+      const fd = new FormData();
+      fd.append('file', file);
+      try {
+        const res = await api('POST', '/upload', { form: fd });
+        toast('Catalogue PDF uploaded & indexed', 'ok');
+        loadCatalogue();
+        status.textContent = `Done — ${res.images_extracted || 0} images extracted`;
+      } catch (e) {
+        toast(e.message, 'err');
+        status.textContent = 'Upload failed';
+      }
+      document.getElementById('cat-file').value = '';
+    }
+    async function deleteCatalogue() {
+      if (!confirm('Deactivate the current catalogue PDF and its extracted images?')) return;
+      try {
+        await api('DELETE', '/admin/catalogue');
+        toast('Catalogue deactivated', 'ok');
+        loadCatalogue();
+      } catch (e) { toast(e.message, 'err'); }
+    }
+
+    // MEDIA
+    window._mediaItems = [];
+    async function loadMediaForDropdown(selectedId) {
+      try {
+        const data = await api('GET', '/media/list?limit=200');
+        window._mediaItems = (data.items || []).filter(m => m.media_type === 'image');
+        const sel = document.getElementById('p-media');
+        if (sel) {
+          const cur = selectedId != null ? String(selectedId) : (sel.value || '');
+          sel.innerHTML = '<option value="">-- Select image --</option>' +
+            window._mediaItems.map(m => {
+              const label = `${m.id}: ${m.filename || m.stored_name || 'image'}`;
+              const selAttr = String(m.id) === String(cur) ? ' selected' : '';
+              return `<option value="${m.id}"${selAttr}>${esc(label)}</option>`;
+            }).join('');
+          if (cur) onProductMediaPick(cur);
+        }
+      } catch (e) {
+        console.warn('loadMediaForDropdown failed', e);
+        toast('Could not load images: ' + e.message, 'err');
+      }
+    }
+    async function loadMedia() {
+      const tb = document.getElementById('media-tbody');
+      try {
+        const data = await api('GET', '/media/list?limit=100');
+        const items = data.items || [];
+        if (!items.length) {
+          tb.innerHTML = '<tr><td colspan="5" class="empty">No media yet</td></tr>';
+          return;
+        }
+        tb.innerHTML = items.map(m => `
+          <tr>
+            <td>${(m.media_type==='image' && m.url) ? `<img class="thumb" src="${esc(m.url)}" />` : '—'}</td>
+            <td>
+              <strong>${esc(m.filename||m.stored_name||'')}</strong>
+              <div class="mono muted" style="font-size:.72rem">${esc(m.url||'')}</div>
+            </td>
+            <td><span class="badge">${esc(m.media_type||'')}</span></td>
+            <td>${esc(m.category||'')}</td>
+            <td><button class="btn btn-sm btn-danger" onclick="deleteMedia(${m.id})">Delete</button></td>
+          </tr>`).join('');
+      } catch (e) {
+        tb.innerHTML = `<tr><td colspan="5" class="empty">${e.message}</td></tr>`;
+      }
+    }
+    async function uploadMedia(file) {
+      if (!file) return;
+      const fd = new FormData();
+      fd.append('file', file);
+      try {
+        await api('POST', '/media/upload', { form: fd });
+        toast('Media uploaded', 'ok');
+        loadMedia();
+      } catch (e) { toast(e.message, 'err'); }
+      document.getElementById('media-file').value = '';
+    }
+    async function deleteMedia(id) {
+      if (!confirm('Delete media?')) return;
+      try {
+        await api('DELETE', `/media/delete/${id}`);
+        toast('Deleted', 'ok');
+        loadMedia();
+      } catch (e) { toast(e.message, 'err'); }
+    }
+
+    // CONFIG
+    async function loadConfig() {
+      try {
+        const cfg = await api('GET', '/admin/config');
+        S.config = cfg;
+        document.getElementById('cfg-name').value = cfg.name || '';
+        document.getElementById('cfg-personality').value = cfg.personality || '';
+        document.getElementById('cfg-guardrails').value = cfg.guardrails || '';
+        document.getElementById('cfg-welcome').value = cfg.welcome_message || '';
+        document.getElementById('cfg-fallback').value = cfg.fallback_message || '';
+        const rs = cfg.response_settings || {};
+        document.getElementById('cfg-sim').value = rs.similarity_threshold ?? 0.4;
+        document.getElementById('cfg-ctx').value = rs.context_window ?? 3;
+        document.getElementById('cfg-temp').value = rs.temperature ?? 0.7;
+        document.getElementById('cfg-ttl').value = rs.memory_ttl_minutes ?? 30;
+        document.getElementById('cfg-raw').value = JSON.stringify(cfg, null, 2);
+      } catch (e) { toast(e.message, 'err'); }
+    }
+    async function saveConfig() {
+      try {
+        let base = S.config || {};
+        try {
+          const raw = document.getElementById('cfg-raw').value;
+          if (raw.trim()) base = JSON.parse(raw);
+        } catch {
+          toast('Invalid JSON in advanced editor', 'err');
+          return;
+        }
+        base.name = val('cfg-name');
+        base.personality = val('cfg-personality');
+        base.guardrails = val('cfg-guardrails');
+        base.welcome_message = val('cfg-welcome');
+        base.fallback_message = val('cfg-fallback');
+        base.response_settings = base.response_settings || {};
+        base.response_settings.similarity_threshold = parseFloat(val('cfg-sim'));
+        base.response_settings.context_window = parseInt(val('cfg-ctx'), 10);
+        base.response_settings.temperature = parseFloat(val('cfg-temp'));
+        base.response_settings.memory_ttl_minutes = parseInt(val('cfg-ttl'), 10);
+        await api('PUT', '/admin/config', { json: base });
+        toast('Config saved', 'ok');
+        loadConfig();
+      } catch (e) { toast(e.message, 'err'); }
+    }
+
+    // CHATS
+    async function loadChats() {
+      const tb = document.getElementById('chats-tbody');
+      try {
+        const data = await api('GET', '/chat-history?limit=100').catch(() =>
+          api('GET', '/chat-history')
+        );
+        const rows = data.history || data.chats || data.items || data || [];
+        const list = Array.isArray(rows) ? rows : [];
+        if (!list.length) {
+          tb.innerHTML = '<tr><td colspan="5" class="empty">No chats yet</td></tr>';
+          return;
+        }
+        tb.innerHTML = list.map(c => `
+          <tr>
+            <td class="muted mono" style="white-space:nowrap">${esc(c.created_at||c.timestamp||'')}</td>
+            <td class="mono">${esc(c.wa_id||c.sender_name||'')}</td>
+            <td>${esc((c.message||'').slice(0,100))}</td>
+            <td class="muted">${esc((c.response||'').slice(0,100))}</td>
+            <td><span class="badge">${esc(c.route||'')}</span></td>
+          </tr>`).join('');
+      } catch (e) {
+        tb.innerHTML = `<tr><td colspan="5" class="empty">${e.message}</td></tr>`;
+      }
+    }
+
+    // LOGS
+    async function loadLogs() {
+      const box = document.getElementById('logs-box');
+      try {
+        const data = await api('GET', '/admin/logs?limit=40');
+        const logs = data.logs || [];
+        if (!logs.length) { box.innerHTML = '<div class="empty">No logs</div>'; return; }
+        box.innerHTML = logs.map(l => `
+          <div class="log-line">
+<span class="badge">${esc(String(l.status_code||''))}</span> ${esc(l.endpoint||'')} · ${esc(l.created_at||'')}
+${esc(l.notes||'')}
+${esc((l.payload||'').slice(0,300))}
+          </div>`).join('');
+      } catch (e) { box.innerHTML = `<div class="empty">${e.message}</div>`; }
+    }
+
+    // SYSTEM
+    async function loadSystem() {
+      try {
+        const [kb, chroma, queue] = await Promise.all([
+          api('GET', '/admin/kb/stats').catch(e => ({ error: e.message })),
+          api('GET', '/admin/chroma/stats').catch(e => ({ error: e.message })),
+          api('GET', '/admin/queue/stats').catch(e => ({ error: e.message })),
+        ]);
+        document.getElementById('sys-stats').textContent =
+          'KB:\n' + JSON.stringify(kb, null, 2) +
+          '\n\nChroma:\n' + JSON.stringify(chroma, null, 2) +
+          '\n\nQueue:\n' + JSON.stringify(queue, null, 2);
+      } catch (e) { toast(e.message, 'err'); }
+    }
+    async function loadTemplates() {
+      try {
+        const data = await api('GET', '/admin/templates');
+        document.getElementById('tpl-box').textContent = JSON.stringify(data, null, 2);
+      } catch (e) { toast(e.message, 'err'); }
+    }
+
+    // TEST
+    async function runTest() {
+      const out = document.getElementById('test-out');
+      out.textContent = 'Sending…';
+      try {
+        const data = await api('POST', '/kb-answer', {
+          json: {
+            message: val('test-msg'),
+            wa_id: val('test-wa'),
+            sender_name: 'Admin',
+          }
+        });
+        out.textContent = JSON.stringify(data, null, 2);
+      } catch (e) {
+        out.textContent = e.message;
+      }
+    }
+
+    // MODAL HELPERS
+    function showModal(html) {
+      document.getElementById('modal-root').innerHTML = `<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal">${html}</div></div>`;
+    }
+    function closeModal() { document.getElementById('modal-root').innerHTML = ''; }
+    function val(id) { return (document.getElementById(id)?.value || '').trim(); }
+    function esc(s) {
+      return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+    function escAttr(s) { return esc(s).replace(/\n/g, ' '); }
+
+    // Boot
+    if (S.key || true) {
+      document.getElementById('api-key-input').value = S.key;
+      // auto-try if key saved or open (no key required in dev)
+      doLogin().catch(() => {});
+    }
+  </script>
+</body>
+</html>
