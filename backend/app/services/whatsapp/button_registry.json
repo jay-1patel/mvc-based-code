@@ -1,0 +1,391 @@
+{
+  "metadata": {
+    "description": "Generic Button Registry for Multi-Domain Support Chatbot",
+    "version": "1.0",
+    "company_type": "generic",
+    "domain": "support",
+    "industry": "technology",
+    "last_updated": "2026-10-01"
+  },
+  
+  "buttons": {
+    
+    "main_menu": {
+      "id": "main_menu",
+      "title": "Main Menu",
+      "action": "show_main_menu",
+      "category": "navigation",
+      "description": "Return to main menu",
+      "applicable": ["it", "food", "ecommerce", "manufacturing", "healthcare", "retail", "generic"]
+    },
+    
+    "contact_support": {
+      "id": "contact_support",
+      "title": "Contact Support",
+      "action": "contact_support",
+      "category": "support",
+      "description": "Get help from support team",
+      "applicable": ["it", "food", "ecommerce", "manufacturing", "healthcare", "retail", "generic"]
+    },
+    
+    "faq": {
+      "id": "faq",
+      "title": "FAQ",
+      "action": "show_faq",
+      "category": "information",
+      "description": "View frequently asked questions",
+      "applicable": ["it", "food", "ecommerce", "manufacturing", "healthcare", "retail", "generic"]
+    },
+    
+    "about_us": {
+      "id": "about_us",
+      "title": "About Us",
+      "action": "show_about",
+      "category": "information",
+      "description": "Learn about our company",
+      "applicable": ["it", "food", "ecommerce", "manufacturing", "healthcare", "retail", "generic"]
+    },
+    
+    "it_services": {
+      "id": "it_services",
+      "title": "IT Services",
+      "action": "show_it_services",
+      "category": "services",
+      "description": "View our IT service offerings",
+      "applicable": ["it", "technology", "software"]
+    },
+    
+    "technical_support": {
+      "id": "technical_support",
+      "title": "Technical Support",
+      "action": "technical_support",
+      "category": "support",
+      "description": "Get technical assistance",
+      "applicable": ["it", "technology", "software", "ecommerce"]
+    },
+    
+    "software_development": {
+      "id": "software_development",
+      "title": "Software Dev",
+      "action": "show_software_services",
+      "category": "services",
+      "description": "View software development services",
+      "applicable": ["it", "technology", "software"]
+    },
+    
+    "cloud_services": {
+      "id": "cloud_services",
+      "title": "Cloud Services",
+      "action": "show_cloud_services",
+      "category": "services",
+      "description": "View cloud computing services",
+      "applicable": ["it", "technology"]
+    },
+    
+    "cybersecurity": {
+      "id": "cybersecurity",
+      "title": "Cybersecurity",
+      "action": "show_cybersecurity",
+      "category": "services",
+      "description": "View cybersecurity solutions",
+      "applicable": ["it", "technology"]
+    },
+
+    "projects": {
+      "id": "projects",
+      "title": "Projects",
+      "action": "show_projects",
+      "category": "information",
+      "description": "View our past work and projects",
+      "applicable": ["it", "technology", "software", "generic"]
+    },
+
+    "technologies": {
+      "id": "technologies",
+      "title": "Technologies",
+      "action": "show_technologies",
+      "category": "information",
+      "description": "View the technologies we work with",
+      "applicable": ["it", "technology", "software"]
+    },
+
+    "careers": {
+      "id": "careers",
+      "title": "Careers",
+      "action": "show_careers",
+      "category": "information",
+      "description": "View job openings and apply",
+      "applicable": ["it", "food", "ecommerce", "manufacturing", "healthcare", "retail", "generic"]
+    },
+
+    "benefits": {
+      "id": "benefits",
+      "title": "Benefits",
+      "action": "show_benefits",
+      "category": "information",
+      "description": "View benefits and perks",
+      "applicable": ["it", "technology", "software", "healthcare", "retail", "generic"]
+    },
+    
+    "view_menu": {
+      "id": "view_menu",
+      "title": "View Menu",
+      "action": "show_menu",
+      "category": "products",
+      "description": "Browse our menu",
+      "applicable": ["food", "restaurant", "cafe"]
+    },
+    
+    "place_order": {
+      "id": "place_order",
+      "title": "Place Order",
+      "action": "place_order",
+      "category": "sales",
+      "description": "Place a new order",
+      "applicable": ["food", "restaurant", "ecommerce"]
+    },
+    
+    "today_special": {
+      "id": "today_special",
+      "title": "Today Special",
+      "action": "show_today_special",
+      "category": "products",
+      "description": "View today special offers",
+      "applicable": ["food", "restaurant"]
+    },
+    
+    "delivery_info": {
+      "id": "delivery_info",
+      "title": "Delivery Info",
+      "action": "show_delivery_info",
+      "category": "information",
+      "description": "View delivery options and timings",
+      "applicable": ["food", "restaurant", "ecommerce"]
+    },
+    
+    "catering": {
+      "id": "catering",
+      "title": "Catering",
+      "action": "show_catering",
+      "category": "services",
+      "description": "View catering options",
+      "applicable": ["food", "restaurant"]
+    },
+    
+    "products": {
+      "id": "products",
+      "title": "Our Products",
+      "action": "show_products",
+      "category": "products",
+      "description": "Browse our product catalog",
+      "applicable": ["ecommerce", "retail", "manufacturing", "food"]
+    },
+    
+    "product_categories": {
+      "id": "product_categories",
+      "title": "Categories",
+      "action": "show_categories",
+      "category": "products",
+      "description": "View product categories",
+      "applicable": ["ecommerce", "retail", "manufacturing"]
+    },
+    
+    "product_catalog": {
+      "id": "product_catalog",
+      "title": "Product Brochure",
+      "action": "show_catalog",
+      "category": "products",
+      "description": "View the complete brochure",
+      "applicable": ["ecommerce", "retail", "manufacturing"]
+    },
+    
+    "pricing": {
+      "id": "pricing",
+      "title": "Pricing",
+      "action": "show_pricing",
+      "category": "sales",
+      "description": "View pricing information",
+      "applicable": ["ecommerce", "it", "manufacturing", "retail"]
+    },
+    
+    "discounts": {
+      "id": "discounts",
+      "title": "Discounts",
+      "action": "show_discounts",
+      "category": "sales",
+      "description": "View current discounts and offers",
+      "applicable": ["ecommerce", "retail", "food"]
+    },
+    
+    "orders": {
+      "id": "orders",
+      "title": "My Orders",
+      "action": "show_orders",
+      "category": "sales",
+      "description": "View your orders and their status",
+      "applicable": ["food", "restaurant", "ecommerce", "retail", "manufacturing"]
+    },
+
+    "customers": {
+      "id": "customers",
+      "title": "Customers",
+      "action": "show_customers",
+      "category": "crm",
+      "description": "View customer details",
+      "applicable": ["it", "food", "ecommerce", "manufacturing", "healthcare", "retail", "generic"]
+    },
+
+    "campaigns": {
+      "id": "campaigns",
+      "title": "Campaigns",
+      "action": "show_campaigns",
+      "category": "sales",
+      "description": "View current campaigns and offers",
+      "applicable": ["ecommerce", "retail", "food", "generic"]
+    },
+
+    "track_order": {
+      "id": "track_order",
+      "title": "Track Order",
+      "action": "track_order",
+      "category": "support",
+      "description": "Track your order status",
+      "applicable": ["ecommerce", "retail", "food"]
+    },
+    
+    "return_policy": {
+      "id": "return_policy",
+      "title": "Return Policy",
+      "action": "show_return_policy",
+      "category": "information",
+      "description": "View return and refund policy",
+      "applicable": ["ecommerce", "retail"]
+    },
+    
+    "appointments": {
+      "id": "appointments",
+      "title": "Book Appointment",
+      "action": "book_appointment",
+      "category": "services",
+      "description": "Schedule an appointment",
+      "applicable": ["healthcare", "medical", "clinic", "hospital"]
+    },
+    
+    "doctors": {
+      "id": "doctors",
+      "title": "Our Doctors",
+      "action": "show_doctors",
+      "category": "information",
+      "description": "View our medical team",
+      "applicable": ["healthcare", "medical", "clinic"]
+    },
+    
+    "medical_services": {
+      "id": "medical_services",
+      "title": "Services",
+      "action": "show_medical_services",
+      "category": "services",
+      "description": "View our medical services",
+      "applicable": ["healthcare", "medical", "clinic", "hospital"]
+    },
+    
+    "emergency": {
+      "id": "emergency",
+      "title": "Emergency",
+      "action": "emergency_contact",
+      "category": "support",
+      "description": "Emergency contact information",
+      "applicable": ["healthcare", "medical", "clinic", "hospital"]
+    },
+    
+    "health_tips": {
+      "id": "health_tips",
+      "title": "Health Tips",
+      "action": "show_health_tips",
+      "category": "information",
+      "description": "View health tips and advice",
+      "applicable": ["healthcare", "medical", "clinic"]
+    },
+    
+    "product_lines": {
+      "id": "product_lines",
+      "title": "Product Lines",
+      "action": "show_product_lines",
+      "category": "products",
+      "description": "View our product lines",
+      "applicable": ["manufacturing", "industrial"]
+    },
+    
+    "technical_specs": {
+      "id": "technical_specs",
+      "title": "Tech Specs",
+      "action": "show_technical_specs",
+      "category": "information",
+      "description": "View technical specifications",
+      "applicable": ["manufacturing", "it", "technology"]
+    },
+    
+    "distributors": {
+      "id": "distributors",
+      "title": "Distributors",
+      "action": "show_distributors",
+      "category": "sales",
+      "description": "Find authorized distributors",
+      "applicable": ["manufacturing", "industrial", "retail", "ecommerce", "food", "generic"]
+    },
+    
+    "warranty": {
+      "id": "warranty",
+      "title": "Warranty",
+      "action": "show_warranty",
+      "category": "information",
+      "description": "View warranty information",
+      "applicable": ["manufacturing", "retail", "ecommerce", "it"]
+    },
+    
+    "raise_ticket": {
+      "id": "raise_ticket",
+      "title": "Raise Ticket",
+      "action": "raise_ticket",
+      "category": "support",
+      "description": "Create a support ticket",
+      "applicable": ["it", "food", "ecommerce", "manufacturing", "healthcare", "retail", "generic"]
+    },
+    
+    "check_ticket_status": {
+      "id": "check_ticket_status",
+      "title": "Check Status",
+      "action": "check_ticket_status",
+      "category": "support",
+      "description": "Check status of your support ticket",
+      "applicable": ["it", "food", "ecommerce", "manufacturing", "healthcare", "retail", "generic"]
+    },
+    
+    "live_chat": {
+      "id": "live_chat",
+      "title": "Live Chat",
+      "action": "start_live_chat",
+      "category": "support",
+      "description": "Start a live chat session",
+      "applicable": ["it", "ecommerce", "retail", "generic"]
+    },
+    
+    "call_support": {
+      "id": "call_support",
+      "title": "Call Us",
+      "action": "call_support",
+      "category": "support",
+      "description": "Call our support team",
+      "applicable": ["it", "food", "ecommerce", "manufacturing", "healthcare", "retail", "generic"]
+    },
+    
+    "email_support": {
+      "id": "email_support",
+      "title": "Email Us",
+      "action": "email_support",
+      "category": "support",
+      "description": "Send email to support",
+      "applicable": ["it", "food", "ecommerce", "manufacturing", "healthcare", "retail", "generic"]
+    }
+  }
+}
