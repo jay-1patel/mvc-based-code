@@ -1,0 +1,1 @@
+# Booking Checklist: Confirm destination, dates, passport spelling, and meal plan. Pay deposit to lock rates. Carry valid passport (6+ months validity) & photo ID.

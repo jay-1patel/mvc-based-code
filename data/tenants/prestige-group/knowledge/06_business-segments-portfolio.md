@@ -1,0 +1,3 @@
+# Business Segments & Portfolio
+
+What Prestige Builds • Residential: apartments, townships, gated villa plots and villas • Commercial: Grade-A offices and tech parks (for example Prestige Tech Platina on ORR) • Retail: shopping malls • Hospitality: hotels and serviced accommodation • Property management services Projects featured in this kit: Southern Star, Marigold, Gardenia Estates, Thanisandra and Tech Platina. Share only the details listed in the Catalog section.

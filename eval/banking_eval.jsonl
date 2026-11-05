@@ -1,0 +1,41 @@
+{"utterance": "hi", "expected": "greeting"}
+{"utterance": "hello", "expected": "greeting"}
+{"utterance": "good morning", "expected": "greeting"}
+{"utterance": "what are the fees on a savings account", "expected": "product_details"}
+{"utterance": "tell me about your current account options", "expected": "product_details"}
+{"utterance": "how does the digital savings account work", "expected": "product_details"}
+{"utterance": "what home loan products do you offer", "expected": "product_details"}
+{"utterance": "what is the minimum balance for savings", "expected": "product_details"}
+{"utterance": "how do I activate my card", "expected": "service_request", "expect_flow": "raise_ticket"}
+{"utterance": "how do I block my card", "expected": "service_request", "expect_flow": "raise_ticket"}
+{"utterance": "I need to unblock my debit card", "expected": "service_request", "expect_flow": "raise_ticket"}
+{"utterance": "how do I set my card pin", "expected": "service_request", "expect_flow": "raise_ticket"}
+{"utterance": "I want to file a complaint", "expected": "grievance", "expect_flow": "raise_ticket"}
+{"utterance": "my complaint is not resolved", "expected": "grievance", "expect_flow": "raise_ticket"}
+{"utterance": "I want to escalate an issue with my account", "expected": "grievance", "expect_flow": "raise_ticket"}
+{"utterance": "am I eligible for a loan", "expected": "eligibility_check", "expect_flow": "enquire"}
+{"utterance": "can I apply for a personal loan", "expected": "eligibility_check", "expect_flow": "enquire"}
+{"utterance": "do I qualify for a pre-approved offer", "expected": "eligibility_check", "expect_flow": "enquire"}
+{"utterance": "eligibility for a vehicle loan", "expected": "eligibility_check", "expect_flow": "enquire"}
+{"utterance": "call me back", "expected": "callback_request", "expect_flow": "book_callback"}
+{"utterance": "arrange a call with phone banking", "expected": "callback_request", "expect_flow": "book_callback"}
+{"utterance": "can I get a phone call from the branch", "expected": "callback_request", "expect_flow": "book_callback"}
+{"utterance": "find my nearest branch", "expected": "branch_locator"}
+{"utterance": "where is the closest atm", "expected": "branch_locator"}
+{"utterance": "what are your branch timings", "expected": "branch_locator"}
+{"utterance": "is there a branch near Andheri", "expected": "branch_locator"}
+{"utterance": "someone used my card without permission", "expected": "fraud_report", "expect_flow": "raise_ticket"}
+{"utterance": "my card was stolen", "expected": "fraud_report", "expect_flow": "raise_ticket"}
+{"utterance": "there is a fraud transaction on my account", "expected": "fraud_report", "expect_flow": "raise_ticket"}
+{"utterance": "I see an unauthorised charge", "expected": "fraud_report", "expect_flow": "raise_ticket"}
+{"utterance": "what is the interest rate on home loans", "expected": "pricing_enquiry"}
+{"utterance": "how much is the processing fee", "expected": "pricing_enquiry"}
+{"utterance": "what are your loan charges", "expected": "pricing_enquiry"}
+{"utterance": "I need help with net banking", "expected": "service_request", "expect_flow": "raise_ticket"}
+{"utterance": "something is not working in the app", "expected": "service_request", "expect_flow": "raise_ticket"}
+{"utterance": "talk to a human", "expected": "contact_human", "expect_flow": "book_callback"}
+{"utterance": "connect me to an agent", "expected": "contact_human", "expect_flow": "book_callback"}
+{"utterance": "I want to place an order", "expect_not": ["place_order", "track_order"], "expected": "any"}
+{"utterance": "add to cart", "expect_not": ["place_order", "track_order", "cart"], "expected": "any"}
+{"utterance": "track my order", "expect_not": ["place_order", "track_order"], "expected": "any"}
+{"utterance": "buy now", "expect_not": ["place_order", "buy_now"], "expected": "any"}

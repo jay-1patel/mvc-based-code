@@ -1,0 +1,36 @@
+{"utterance": "hi", "expected": "greeting"}
+{"utterance": "hello", "expected": "greeting"}
+{"utterance": "good afternoon", "expected": "greeting"}
+{"utterance": "what do you do", "expected": "service_enquiry"}
+{"utterance": "what services do you offer", "expected": "service_enquiry"}
+{"utterance": "do you provide advisory for individuals", "expected": "service_enquiry"}
+{"utterance": "tell me about your tax planning package", "expected": "package_details"}
+{"utterance": "what is the scope of your compliance service", "expected": "package_details"}
+{"utterance": "what details are in the bookkeeping retainer", "expected": "package_details"}
+{"utterance": "how much does it cost", "expected": "pricing_enquiry"}
+{"utterance": "what are your charges for itr filing", "expected": "pricing_enquiry"}
+{"utterance": "what returns do you typically see", "expected": "roi_query"}
+{"utterance": "what roi should I expect from mutual funds", "expected": "roi_query"}
+{"utterance": "will my portfolio beat the market", "expected": "roi_query"}
+{"utterance": "I need a proposal", "expected": "quote_request", "expect_flow": "get_quote"}
+{"utterance": "can you give me a quotation for compliance work", "expected": "quote_request", "expect_flow": "get_quote"}
+{"utterance": "send me an estimate for annual filing", "expected": "quote_request", "expect_flow": "get_quote"}
+{"utterance": "call me back", "expected": "callback_request", "expect_flow": "book_callback"}
+{"utterance": "book a consultation with an advisor", "expected": "callback_request", "expect_flow": "book_callback"}
+{"utterance": "I want a phone call about my taxes", "expected": "callback_request", "expect_flow": "book_callback"}
+{"utterance": "what are the GST deadlines", "expected": "compliance_query"}
+{"utterance": "when is the TDS payment due", "expected": "compliance_query"}
+{"utterance": "what is the advance tax schedule", "expected": "compliance_query"}
+{"utterance": "help me with my gst notice response", "expected": "compliance_query"}
+{"utterance": "I have a complaint", "expected": "complaint", "expect_flow": "raise_ticket"}
+{"utterance": "this is unacceptable service", "expected": "complaint", "expect_flow": "raise_ticket"}
+{"utterance": "I need help with my filing", "expected": "compliance_query"}
+{"utterance": "something is broken in my compliance calendar", "expected": "compliance_query"}
+{"utterance": "talk to a human", "expected": "contact_human", "expect_flow": "book_callback"}
+{"utterance": "connect me to an agent", "expected": "contact_human", "expect_flow": "book_callback"}
+{"utterance": "do you handle income tax filing", "expected": "compliance_query"}
+{"utterance": "what is included in the audit support package", "expected": "package_details"}
+{"utterance": "I want to place an order", "expect_not": ["place_order", "track_order"], "expected": "any"}
+{"utterance": "add to cart", "expect_not": ["place_order", "track_order", "cart"], "expected": "any"}
+{"utterance": "track my order", "expect_not": ["place_order", "track_order"], "expected": "any"}
+{"utterance": "buy now", "expect_not": ["place_order", "buy_now"], "expected": "any"}

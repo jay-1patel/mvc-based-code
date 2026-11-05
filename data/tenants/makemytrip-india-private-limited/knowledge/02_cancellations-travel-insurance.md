@@ -1,0 +1,1 @@
+# Cancellations: Charges depend on package supplier terms. Insurance covers unforeseen medical emergencies and baggage loss. Premiums are non-refundable.

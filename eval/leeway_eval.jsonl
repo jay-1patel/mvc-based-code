@@ -1,0 +1,45 @@
+{"utterance": "hi", "expected": "greeting"}
+{"utterance": "hello there", "expected": "greeting"}
+{"utterance": "good morning", "expected": "greeting"}
+{"utterance": "what services do you offer", "expected": "service_enquiry"}
+{"utterance": "do you build mobile apps", "expected": "service_enquiry"}
+{"utterance": "do you do website development", "expected": "package_details"}
+{"utterance": "what kind of software work do you do", "expected": "service_enquiry"}
+{"utterance": "what is in the mobile app package", "expected": "package_details"}
+{"utterance": "what technologies do you use", "expected": "package_details"}
+{"utterance": "tell me about your tech stack", "expected": "package_details"}
+{"utterance": "how much does it cost", "expected": "pricing_enquiry"}
+{"utterance": "what is the price for a website", "expected": "pricing_enquiry"}
+{"utterance": "what are your rates", "expected": "pricing_enquiry"}
+{"utterance": "how much do you charge for maintenance", "expected": "pricing_enquiry"}
+{"utterance": "can I see a demo", "expected": "demo_request", "expect_flow": "get_quote"}
+{"utterance": "book a demo call", "expected": "demo_request", "expect_flow": "get_quote"}
+{"utterance": "can you show me a live demo of your platform", "expected": "demo_request", "expect_flow": "get_quote"}
+{"utterance": "show me your portfolio", "expected": "projects"}
+{"utterance": "who have you built for", "expected": "projects"}
+{"utterance": "do you have case studies", "expected": "projects"}
+{"utterance": "how do you work with clients", "expected": "engagement_model"}
+{"utterance": "what are your engagement models", "expected": "engagement_model"}
+{"utterance": "what is your development process", "expected": "engagement_model"}
+{"utterance": "I need a quote", "expected": "quote_request", "expect_flow": "get_quote"}
+{"utterance": "can you give me an estimate for an app", "expected": "quote_request", "expect_flow": "get_quote"}
+{"utterance": "please send a proposal for our project", "expected": "quote_request", "expect_flow": "get_quote"}
+{"utterance": "call me back", "expected": "callback_request", "expect_flow": "book_callback"}
+{"utterance": "arrange a call with your team", "expected": "callback_request", "expect_flow": "book_callback"}
+{"utterance": "can I get a phone call from sales", "expected": "callback_request", "expect_flow": "book_callback"}
+{"utterance": "send me your brochure", "expected": "brochure_request"}
+{"utterance": "company profile pdf", "expected": "brochure_request"}
+{"utterance": "do you have a capability statement", "expected": "brochure_request"}
+{"utterance": "are you hiring", "expected": "careers"}
+{"utterance": "job openings at your company", "expected": "careers"}
+{"utterance": "do you have career opportunities for developers", "expected": "careers"}
+{"utterance": "I have a complaint", "expected": "complaint", "expect_flow": "raise_ticket"}
+{"utterance": "this is unacceptable service", "expected": "complaint", "expect_flow": "raise_ticket"}
+{"utterance": "I need help with my app", "expected": "support_request"}
+{"utterance": "something is not working in my portal", "expected": "support_request"}
+{"utterance": "talk to a human", "expected": "contact_human", "expect_flow": "book_callback"}
+{"utterance": "connect me to an agent", "expected": "contact_human", "expect_flow": "book_callback"}
+{"utterance": "I want to place an order", "expect_not": ["place_order", "track_order"], "expected": "any"}
+{"utterance": "add to cart", "expect_not": ["place_order", "track_order", "cart"], "expected": "any"}
+{"utterance": "track my order", "expect_not": ["place_order", "track_order"], "expected": "any"}
+{"utterance": "buy now", "expect_not": ["place_order", "buy_now"], "expected": "any"}

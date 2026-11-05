@@ -1,0 +1,3 @@
+# Home Buying Journey & Booking Process
+
+Home Buying Journey 1. Discover · Browse catalog properties and shortlist by location, configuration and budget. 2. Site visit · Schedule a visit; collect the cost sheet and brochure. 3. Booking · Pay the booking amount, complete KYC and lock the unit. 4. Agreement · Sign the builder-buyer agreement; registration as per state rules. 5. Milestones · Follow the payment plan; keep receipts. 6. Possession · Snagging, OC verification, handover and society onboarding. Always rely on RERA IDs and sanctioned plans over marketing creatives.

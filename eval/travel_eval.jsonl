@@ -1,0 +1,48 @@
+{"utterance": "hi", "expected": "greeting"}
+{"utterance": "hello", "expected": "greeting"}
+{"utterance": "good evening", "expected": "greeting"}
+{"utterance": "tell me about Bali", "expected": "destination_details"}
+{"utterance": "which places do you cover", "expected": "destination_details"}
+{"utterance": "where all can you take us", "expected": "destination_details"}
+{"utterance": "do you have Europe tours", "expected": "package_details"}
+{"utterance": "what attractions are in Rajasthan", "expected": "destination_details"}
+{"utterance": "what is included in the Bali package", "expected": "package_details"}
+{"utterance": "5 day itinerary for Kerala", "expected": "package_details"}
+{"utterance": "what is excluded in the Dubai tour", "expected": "package_details"}
+{"utterance": "does the package include the hotel", "expected": "package_details"}
+{"utterance": "how much does it cost", "expected": "pricing_enquiry"}
+{"utterance": "what is the price for the Europe tour", "expected": "pricing_enquiry"}
+{"utterance": "what are your rates for group travel", "expected": "pricing_enquiry"}
+{"utterance": "I want to book a trip", "expected": "booking_inquiry", "expect_flow": "enquire"}
+{"utterance": "availability for December in Goa", "expected": "booking_inquiry", "expect_flow": "enquire"}
+{"utterance": "we are planning a family tour to Himachal", "expected": "booking_inquiry", "expect_flow": "enquire"}
+{"utterance": "honeymoon packages available?", "expected": "booking_inquiry", "expect_flow": "enquire"}
+{"utterance": "can you reserve seats for ten people", "expected": "booking_inquiry", "expect_flow": "enquire"}
+{"utterance": "do you help with visa", "expected": "visa_documents"}
+{"utterance": "what documents are needed for Dubai", "expected": "visa_documents"}
+{"utterance": "is travel insurance covered in the package", "expected": "visa_documents"}
+{"utterance": "do I need a passport for Andaman", "expected": "visa_documents"}
+{"utterance": "cancellation policy", "expected": "booking_policy"}
+{"utterance": "how far in advance should I book", "expected": "booking_policy"}
+{"utterance": "what is your refund policy", "expected": "booking_policy"}
+{"utterance": "can I reschedule my trip", "expected": "booking_policy"}
+{"utterance": "what are the payment terms", "expected": "booking_policy"}
+{"utterance": "I need a quote for a trip", "expected": "quote_request", "expect_flow": "get_quote"}
+{"utterance": "can you give me an estimate for two", "expected": "quote_request", "expect_flow": "get_quote"}
+{"utterance": "please send a proposal for our corporate offsite", "expected": "quote_request", "expect_flow": "get_quote"}
+{"utterance": "call me back", "expected": "callback_request", "expect_flow": "book_callback"}
+{"utterance": "arrange a call with a trip planner", "expected": "callback_request", "expect_flow": "book_callback"}
+{"utterance": "can I get a phone call from your team", "expected": "callback_request", "expect_flow": "book_callback"}
+{"utterance": "send me the travel brochure", "expected": "brochure_request"}
+{"utterance": "share the itinerary pdf for Europe", "expected": "brochure_request"}
+{"utterance": "do you have a brochure with all packages", "expected": "package_details"}
+{"utterance": "I have a complaint about my booking", "expected": "complaint", "expect_flow": "raise_ticket"}
+{"utterance": "this is unacceptable", "expected": "complaint", "expect_flow": "raise_ticket"}
+{"utterance": "I need help with my booking", "expected": "support_request"}
+{"utterance": "something is wrong with my hotel booking", "expected": "support_request"}
+{"utterance": "talk to a human", "expected": "contact_human", "expect_flow": "book_callback"}
+{"utterance": "connect me to an agent", "expected": "contact_human", "expect_flow": "book_callback"}
+{"utterance": "I want to place an order", "expect_not": ["place_order", "track_order"], "expected": "any"}
+{"utterance": "add to cart", "expect_not": ["place_order", "track_order", "cart"], "expected": "any"}
+{"utterance": "track my order", "expect_not": ["place_order", "track_order"], "expected": "any"}
+{"utterance": "buy now", "expect_not": ["place_order", "buy_now"], "expected": "any"}

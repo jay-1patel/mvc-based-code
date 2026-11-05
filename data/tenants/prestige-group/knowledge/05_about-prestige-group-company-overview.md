@@ -1,0 +1,3 @@
+# About Prestige Group (Company Overview)
+
+Company Overview Prestige Estates Projects Limited, marketed as Prestige Group, is a Bengaluru-headquartered real estate developer listed on the NSE and BSE. The business began on 1 April 1986 as the partnership firm Prestige Estates and Properties, became a private limited company on 4 June 1997 and a public limited company in November 2009. It is promoted by the Razack family; Irfan Razack is Chairman & Managing Director, with Rezwan Razack as Joint Managing Director and Noaman Razack as a whole-time director. [Confirm leadership details with client]

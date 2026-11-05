@@ -1,0 +1,1127 @@
+import { useMemo, useRef, useState } from 'react'
+import {
+  ArrowLeft,
+  ArrowRight,
+  BadgeCheck,
+  Building2,
+  CalendarClock,
+  Check,
+  ImageIcon,
+  MessageSquareText,
+  Rocket,
+  ShieldAlert,
+  Sparkles,
+  Webhook,
+} from 'lucide-react'
+import {
+  applyVertical,
+  draftFromProfile,
+  draftToSnapshot,
+  EMAIL_RE,
+  emptyDraft,
+  isValidPhone,
+  isValidPhoneInput,
+  slugify,
+  timezoneOptions,
+  URL_RE,
+  type WizardDraft,
+} from '@/lib/profile'
+import { useAction } from '@/lib/hooks'
+import { useAuth } from '@/lib/auth'
+import { tenantsApi, useTenants } from '@/lib/tenants'
+import { tenantApprovalsApi } from '@/lib/tenant-approvals'
+import { onboardingKitsApi, uploadImage, type StagedOnboardingDraft } from '@/lib/uploads'
+import { OnboardingKitWidget } from './onboarding-kit-widget'
+import { navigate } from '@/lib/router'
+import { VERTICAL_CATALOG, getVertical } from '@/lib/verticals'
+import type { FeatureFlag, ResolvedProfile, Tenant } from '@/lib/types'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Card, CardBody, CardHeader, SectionTitle } from '@/components/ui/card'
+import { Input, Textarea } from '@/components/ui/input'
+import { Select } from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
+import { TagInput } from '@/components/ui/tags'
+import { Alert } from '@/components/ui/feedback'
+import { VerticalGlyph } from '@/components/vertical-icon'
+import { PageHeader } from '@/components/layout/page-header'
+import { useToast } from '@/components/ui/toast'
+
+const DAYS = [
+  { value: 1, label: 'Mon' },
+  { value: 2, label: 'Tue' },
+  { value: 3, label: 'Wed' },
+  { value: 4, label: 'Thu' },
+  { value: 5, label: 'Fri' },
+  { value: 6, label: 'Sat' },
+  { value: 0, label: 'Sun' },
+]
+
+/** Dropdown for the working-hours timezone — free text invited typos. */
+
+// The super admin only registers the company basics; an admin completes the
+// tenant from WhatsApp onwards, and that completion goes for approval.
+const SUPER_STEPS = [{ id: 'company', label: 'Company' }] as const
+
+const ADMIN_STEPS = [
+  { id: 'tenant', label: 'Tenant' },
+  { id: 'whatsapp', label: 'WhatsApp' },
+  { id: 'brand', label: 'Brand & voice' },
+  { id: 'domain', label: 'Your business' },
+  { id: 'notifications', label: 'Notifications' },
+  { id: 'guardrails', label: 'Guardrails' },
+  { id: 'review', label: 'Review' },
+] as const
+
+type StepId = (typeof SUPER_STEPS | typeof ADMIN_STEPS)[number]['id']
+
+export function RegisterWizard({ onSubmitted }: { onSubmitted?: () => void } = {}) {
+  const [step, setStep] = useState(0)
+  const [draft, setDraft] = useState<WizardDraft>(emptyDraft)
+  const { reload, tenants } = useTenants()
+  const { identity } = useAuth()
+  const action = useAction()
+  const toast = useToast()
+
+  const isSuperAdmin = identity?.role === 'super_admin'
+  const steps = isSuperAdmin ? SUPER_STEPS : ADMIN_STEPS
+  const stepId = steps[step].id as StepId
+
+  const patch = (values: Partial<WizardDraft>) => setDraft((d) => ({ ...d, ...values }))
+
+  // Match registry id/slug only (same rules as backend find_registry_conflict).
+  // Do not treat another tenant's display name as "this id is taken".
+  const tenantIdTaken = (() => {
+    const id = draft.tenantId.trim()
+    if (!id) return false
+    const norm = (v: string) => v.toLowerCase().replace(/[-_\s]/g, '')
+    const n = norm(id)
+    return tenants.some((t) => {
+      const tid = String(t.id || '')
+      const slug = String(t.slug || '')
+      return (
+        tid === id ||
+        slug === id ||
+        tid.toLowerCase() === id.toLowerCase() ||
+        slug.toLowerCase() === id.toLowerCase() ||
+        norm(tid) === n ||
+        norm(slug) === n
+      )
+    })
+  })()
+  const error = useMemo(
+    () => validationError(stepId, draft, tenantIdTaken, Boolean(draft.tenantId.trim())),
+    [stepId, draft, tenantIdTaken],
+  )
+
+  /** Load the selected tenant's resolved profile into the wizard draft. */
+  const pickTenant = async (tenantId: string) => {
+    const tenant = tenants.find((t) => t.id === tenantId)
+    if (!tenant) return
+    // Prefer the pending draft: it carries every unpublished change (from
+    // the profile editor or an earlier wizard pass), so both panels always
+    // edit the same working copy.
+    const detail = await action.run(() => tenantsApi.detail(tenantId))
+    const profile = detail?.pending ?? detail?.effective
+    if (profile) {
+      setDraft(draftFromProfile(profile as unknown as ResolvedProfile, tenant))
+    } else {
+      // A tenant the resolver cannot build yet still keeps its basics.
+      setDraft({ ...emptyDraft(), companyName: tenant.display_name || tenant.id, tenantId: tenant.id, displayName: tenant.display_name, vertical: tenant.vertical })
+    }
+  }
+
+  const submit = async () => {
+    if (isSuperAdmin) {
+      // The super admin registers the company only. No publish: an admin
+      // completes the tenant, and that completion needs approval.
+      const created = await action.run(() =>
+        tenantsApi.create({
+          tenant_id: draft.tenantId.trim(),
+          slug: draft.tenantId.trim(),
+          vertical: draft.vertical,
+          display_name: draft.displayName || draft.companyName,
+          status: 'active',
+        }),
+      )
+      if (!created) return
+
+      const id = created.tenant.id
+      const saved = await action.run(() => tenantsApi.saveDraft(id, draftToSnapshot(draft)))
+      if (!saved) return
+
+      if (draft.stagedUpload) {
+        try {
+          const published = await onboardingKitsApi.publishTenant(id, {
+            ...draft.stagedUpload!,
+            tenant_id: id,
+            vertical: draft.vertical || draft.stagedUpload!.vertical,
+          })
+          toast.push(
+            `Registered + applied upload (${published.summary?.offerings_created ?? 0} offerings, intents updated).`,
+          )
+        } catch (err) {
+          toast.push(
+            `${(err as Error).message || 'Document import failed'}. Tenant was registered — re-upload from Uploads.`,
+            'error',
+          )
+        }
+      }
+
+      toast.push(`${draft.companyName} registered. An admin can now complete it from WhatsApp onwards.`)
+      reload()
+      navigate(`/tenants/${encodeURIComponent(id)}/overview`)
+      return
+    }
+
+    // Admin: bind the WhatsApp number, save the completed data as the
+    // tenant's draft, then queue the publish for super admin approval.
+    const id = draft.tenantId.trim()
+    if (draft.wabaPhoneId.trim()) {
+      const bound = await action.run(() => tenantsApi.bindPhone(id, draft.wabaPhoneId.trim()))
+      if (!bound) return
+    }
+    const saved = await action.run(() => tenantsApi.saveDraft(id, draftToSnapshot(draft)))
+    if (!saved) return
+    if ((saved.validation ?? []).length) {
+      toast.push('Draft has validation warnings — review them before submitting.', 'error')
+      return
+    }
+    if (draft.stagedUpload) {
+      try {
+        const published = await onboardingKitsApi.publishTenant(id, {
+          ...draft.stagedUpload!,
+          tenant_id: id,
+          vertical: draft.vertical || draft.stagedUpload!.vertical,
+        })
+        toast.push(
+          `Applied upload (${published.summary?.offerings_created ?? 0} offerings, intents updated).`,
+        )
+      } catch (err) {
+        toast.push(
+          `${(err as Error).message || 'Document import failed'}. Fix the upload before submitting for approval.`,
+          'error',
+        )
+        return
+      }
+    }
+    const submitted = await action.run(() => tenantApprovalsApi.submitPublish(id))
+    if (!submitted) return
+    toast.push(`${draft.companyName} submitted — a super admin must approve it before it goes live.`)
+    reload()
+    if (onSubmitted) onSubmitted()
+    else navigate('/tenant-requests')
+  }
+
+  const onStagedFromDoc = (staged: StagedOnboardingDraft) => {
+    const neverLines = staged.guardrails?.never_state
+    setDraft((prev) => ({
+      ...prev,
+      companyName: staged.brand?.name || prev.companyName,
+      tenantId:
+        staged.tenant_id && staged.tenant_id !== 'draft_tenant'
+          ? staged.tenant_id
+          : slugify(staged.brand?.name || prev.tenantId),
+      displayName: staged.brand?.name || prev.displayName,
+      vertical: staged.vertical || prev.vertical,
+      botName: staged.brand?.bot_name || prev.botName,
+      tagline: staged.brand?.tagline || prev.tagline,
+      supportEmail: staged.brand?.support_email || prev.supportEmail,
+      supportPhone: staged.brand?.support_phone || prev.supportPhone,
+      website: staged.brand?.website || prev.website,
+      openTime: staged.business_hours?.open || prev.openTime,
+      closeTime: staged.business_hours?.close || prev.closeTime,
+      tone: staged.guardrails?.tone || prev.tone,
+      neverState: Array.isArray(neverLines) ? neverLines.join('\n') : prev.neverState,
+      // Carry full bifurcation so offerings / intents / menu / FAQ publish with the tenant
+      stagedUpload: { ...staged, tenant_id: staged.tenant_id || prev.tenantId || 'draft_tenant' },
+    }))
+    toast.push(
+      `Imported ${staged.brand?.name || 'company'} — brand, menu, ${staged.offerings?.length || 0} offerings, ${staged.intents?.length || 0} intents ready to apply on register.`,
+    )
+  }
+
+  return (
+    <div className="mx-auto max-w-3xl">
+      <PageHeader
+        title="Register a tenant"
+        description={
+          isSuperAdmin
+            ? 'Register the company basics — name, id and business field. An admin then completes the tenant from WhatsApp onwards, and their submission goes for your approval before anything goes live.'
+            : 'Pick a tenant the super admin registered, then complete it from WhatsApp onwards. Your submission goes to a super admin for approval before anything goes live.'
+        }
+      />
+
+      <div className="mb-6">
+        <OnboardingKitWidget onStagedDraft={onStagedFromDoc} />
+      </div>
+
+      <ol className="mb-7 flex flex-wrap gap-1.5">
+        {steps.map((s, index) => {
+          const state = index === step ? 'current' : index < step ? 'done' : 'todo'
+          return (
+            <li key={s.id} className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => index < step && setStep(index)}
+                disabled={index > step}
+                className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition ${
+                  state === 'current'
+                    ? 'bg-accent-100 text-accent-800 ring-1 ring-inset ring-accent-300'
+                    : state === 'done'
+                      ? 'text-emerald-700 hover:text-emerald-700'
+                      : 'text-slate-600'
+                }`}
+              >
+                {state === 'done' ? <Check className="h-3 w-3" /> : <span>{index + 1}</span>}
+                {s.label}
+              </button>
+              {index < steps.length - 1 && <span className="text-slate-600">/</span>}
+            </li>
+          )
+        })}
+      </ol>
+
+      <Card>
+        {stepId === 'tenant' && <TenantStep draft={draft} tenants={tenants} onPick={pickTenant} />}
+        {stepId === 'company' && <CompanyStep draft={draft} patch={patch} />}
+        {stepId === 'whatsapp' && <WhatsAppStep draft={draft} patch={patch} />}
+        {stepId === 'brand' && <BrandStep draft={draft} patch={patch} />}
+        {stepId === 'domain' && <DomainStep draft={draft} patch={patch} />}
+        {stepId === 'notifications' && <NotificationsStep draft={draft} patch={patch} />}
+        {stepId === 'guardrails' && <GuardrailsStep draft={draft} patch={patch} />}
+        {stepId === 'review' && (
+          <ReviewStep
+            draft={draft}
+            onEdit={setStep}
+            approvalMode={!isSuperAdmin}
+            companyEditable={isSuperAdmin}
+          />
+        )}
+
+        {action.error && (
+          <div className="px-5 pb-4">
+            <Alert tone="danger" title="Registration failed">
+              {action.error}
+            </Alert>
+          </div>
+        )}
+
+        <div className="flex items-center justify-between border-t border-surface-line px-5 py-4">
+          <Button
+            variant="ghost"
+            disabled={step === 0}
+            onClick={() => setStep((s) => Math.max(0, s - 1))}
+            icon={<ArrowLeft className="h-4 w-4" />}
+          >
+            Back
+          </Button>
+
+          {step < steps.length - 1 ? (
+            <Button
+              variant="primary"
+              disabled={Boolean(error)}
+              onClick={() => setStep((s) => s + 1)}
+            >
+              Continue
+              <ArrowRight className="h-4 w-4" />
+            </Button>
+          ) : (
+            <Button
+              variant="primary"
+              loading={action.busy}
+              onClick={submit}
+              icon={<Rocket className="h-4 w-4" />}
+            >
+              {isSuperAdmin ? 'Create tenant' : 'Submit for approval'}
+            </Button>
+          )}
+        </div>
+      </Card>
+
+      {error && step < steps.length - 1 && (
+        <p className="mt-3 text-xs text-amber-700/80">{error}</p>
+      )}
+      {isSuperAdmin && tenantIdTaken && stepId === 'company' && (
+        <Alert tone="warning" className="mt-4">
+          A tenant with this id already exists. Pick another id, or cancel and edit the existing tenant instead.
+        </Alert>
+      )}
+    </div>
+  )
+}
+
+// ── steps ──────────────────────────────────────────────────────────────────
+
+/**
+ * Admin-only first step: pick one of the tenants the super admin registered.
+ * The company basics were entered by the super admin and are read-only here.
+ */
+function TenantStep({
+  draft,
+  tenants,
+  onPick,
+}: {
+  draft: WizardDraft
+  tenants: Tenant[]
+  onPick: (tenantId: string) => void
+}) {
+  return (
+    <StepShell
+      title="Which tenant are you completing?"
+      description="The super admin registered the company basics. Pick the tenant, then complete it from WhatsApp onwards — your data goes to a super admin for approval."
+      icon={<Building2 className="h-4 w-4" />}
+    >
+      <div className="space-y-2.5">
+        {tenants.length === 0 && (
+          <p className="text-sm text-slate-400">
+            No tenants yet. A super admin registers the company first from this same panel.
+          </p>
+        )}
+        {tenants.map((tenant) => {
+          const vertical = getVertical(tenant.vertical)
+          const active = draft.tenantId === tenant.id
+          return (
+            <button
+              key={tenant.id}
+              type="button"
+              onClick={() => onPick(tenant.id)}
+              className={`flex w-full items-center gap-3 rounded-lg p-3.5 text-left ring-1 ring-inset transition ${
+                active ? 'bg-accent-100 ring-accent-400' : 'bg-surface-panel ring-surface-line hover:bg-accent-50'
+              }`}
+            >
+              <VerticalGlyph
+                name={vertical.icon}
+                className={`h-5 w-5 shrink-0 ${active ? 'text-accent-700' : 'text-slate-500'}`}
+              />
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-medium text-slate-100">
+                  {tenant.display_name || tenant.id}
+                </span>
+                <span className="mt-0.5 block font-mono text-xs text-slate-500">
+                  {tenant.id} · {vertical.short}
+                </span>
+              </span>
+              <Badge tone={tenant.current_version ? 'success' : 'warning'}>
+                {tenant.current_version ? `live v${tenant.current_version}` : 'awaiting completion'}
+              </Badge>
+            </button>
+          )
+        })}
+      </div>
+    </StepShell>
+  )
+}
+
+function StepShell({
+  title,
+  description,
+  icon,
+  children,
+}: {
+  title: string
+  description: string
+  icon: React.ReactNode
+  children: React.ReactNode
+}) {
+  return (
+    <>
+      <CardHeader title={title} description={description} icon={icon} />
+      <CardBody className="space-y-5">{children}</CardBody>
+    </>
+  )
+}
+
+/**
+ * Company logo uploader for the registration wizard. The image is stored by the
+ * backend and its URL is written to the profile's `brand.logo_url`, which the
+ * console header then shows instead of the generic product mark. PNG only.
+ */
+function LogoField({ logoUrl, onChange }: { logoUrl: string; onChange: (url: string) => void }) {
+  const action = useAction()
+  const toast = useToast()
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  const pick = async (file: File | undefined) => {
+    if (!file) return
+    if (file.type !== 'image/png') {
+      toast.push('Choose a PNG image.', 'error')
+      return
+    }
+    const url = await action.run(() => uploadImage(file))
+    if (url) {
+      onChange(url)
+      toast.push('Logo uploaded.')
+    }
+  }
+
+  return (
+    <div>
+      <p className="field-label">Company logo</p>
+      <div className="mt-1.5 flex items-center gap-4">
+        <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-surface-panel ring-1 ring-inset ring-surface-line">
+          {logoUrl ? (
+            <img src={logoUrl} alt="Company logo" className="h-full w-full object-contain" />
+          ) : (
+            <ImageIcon className="h-6 w-6 text-slate-500" />
+          )}
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            ref={inputRef}
+            type="file"
+            accept="image/png,.png"
+            className="hidden"
+            onChange={(event) => {
+              void pick(event.target.files?.[0])
+              event.target.value = ''
+            }}
+          />
+          <Button
+            size="sm"
+            variant="secondary"
+            loading={action.busy}
+            onClick={() => inputRef.current?.click()}
+          >
+            {logoUrl ? 'Replace logo' : 'Upload logo'}
+          </Button>
+          {logoUrl && (
+            <Button size="sm" variant="ghost" onClick={() => onChange('')}>
+              Remove
+            </Button>
+          )}
+        </div>
+      </div>
+      <p className="hint mt-1.5">PNG only, up to 5 MB. Shown in your console header once approved.</p>
+      {action.error && <p className="hint mt-1.5 text-rose-400">{action.error}</p>}
+    </div>
+  )
+}
+
+function CompanyStep({ draft, patch }: StepProps) {
+  return (
+    <StepShell
+      title="Who is this tenant?"
+      description="The company and the business field decide everything that follows: which questions you are asked, which features are offered, and the words the bot uses."
+      icon={<Building2 className="h-4 w-4" />}
+    >
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Input
+          label="Company name"
+          value={draft.companyName}
+          onChange={(e) => patch({ companyName: e.target.value, tenantId: draft.tenantId || slugify(e.target.value) })}
+          placeholder="Leeway Softech"
+          required
+        />
+        <Input
+          label="Tenant id"
+          value={draft.tenantId}
+          onChange={(e) => patch({ tenantId: slugify(e.target.value) })}
+          hint="Lowercase, no spaces. This is the id used in the API and the database."
+          required
+        />
+        <Input
+          label="Display name"
+          value={draft.displayName}
+          onChange={(e) => patch({ displayName: e.target.value })}
+          placeholder={draft.companyName || 'Shown in menus'}
+        />
+        <Input
+          label="Website"
+          value={draft.website}
+          onChange={(e) => patch({ website: e.target.value })}
+          placeholder="https://example.com"
+        />
+      </div>
+
+      <div>
+        <SectionTitle hint="This is the single most important answer: it selects the profile defaults, the vocabulary, the menu and the intents.">
+          Business field
+        </SectionTitle>
+        <div className="grid gap-2.5 sm:grid-cols-2">
+          {VERTICAL_CATALOG.map((v) => {
+            const active = draft.vertical === v.id
+            return (
+              <button
+                key={v.id}
+                type="button"
+                onClick={() => patch(applyVertical(draft, v.id))}
+                className={`flex gap-3 rounded-lg p-3.5 text-left ring-1 ring-inset transition ${
+                  active
+                    ? 'bg-accent-100 ring-accent-400'
+                    : 'bg-surface-panel ring-surface-line hover:bg-accent-50'
+                }`}
+              >
+                <VerticalGlyph
+                  name={v.icon}
+                  className={`mt-0.5 h-5 w-5 shrink-0 ${active ? 'text-accent-700' : 'text-slate-500'}`}
+                />
+                <span className="min-w-0">
+                  <span className="block text-sm font-medium text-slate-100">{v.label}</span>
+                  <span className="mt-1 block text-xs leading-relaxed text-slate-400">{v.blurb}</span>
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      </div>
+    </StepShell>
+  )
+}
+
+function WhatsAppStep({ draft, patch }: StepProps) {
+  const toggleDay = (day: number) =>
+    patch({
+      openDays: draft.openDays.includes(day)
+        ? draft.openDays.filter((d) => d !== day)
+        : [...draft.openDays, day].sort(),
+    })
+
+  return (
+    <StepShell
+      title="WhatsApp and working hours"
+      description="The phone number routes inbound messages to this tenant. Working hours decide when the bot offers a callback instead of a live handoff."
+      icon={<CalendarClock className="h-4 w-4" />}
+    >
+      <Input
+        label="WhatsApp phone number *"
+        value={draft.wabaPhoneId}
+        onChange={(e) => patch({ wabaPhoneId: e.target.value })}
+        placeholder="+91 8000305305"
+        inputMode="tel"
+        hint="The WhatsApp number itself (+91 8000305305) or its 15-digit id from the Meta Business account (WABA). Each number belongs to exactly one tenant."
+      />
+
+      <div className="grid gap-4 sm:grid-cols-3">
+        <Select
+          label="Timezone *"
+          value={draft.timezone}
+          onChange={(e) => patch({ timezone: e.target.value })}
+          hint="Used by out-of-hours and callback logic."
+        >
+          <option value="">Select…</option>
+          {timezoneOptions(draft.timezone).map((tz) => (
+            <option key={tz} value={tz}>
+              {tz}
+            </option>
+          ))}
+        </Select>
+        <Input
+          label="Opens"
+          type="time"
+          value={draft.openTime}
+          onChange={(e) => patch({ openTime: e.target.value })}
+          disabled={draft.alwaysOpen}
+        />
+        <Input
+          label="Closes"
+          type="time"
+          value={draft.closeTime}
+          onChange={(e) => patch({ closeTime: e.target.value })}
+          disabled={draft.alwaysOpen}
+        />
+      </div>
+
+      <Switch
+        checked={draft.alwaysOpen}
+        onChange={(alwaysOpen) => patch({ alwaysOpen })}
+        label="Always open"
+        description="When off, out-of-hours conversations get a callback flow instead of a handoff."
+      />
+
+      {!draft.alwaysOpen && (
+        <div className="space-y-3">
+          <div>
+            <p className="field-label">Open on</p>
+            <div className="flex flex-wrap gap-1.5">
+              {DAYS.map((day) => {
+                const on = draft.openDays.includes(day.value)
+                return (
+                  <button
+                    key={day.value}
+                    type="button"
+                    onClick={() => toggleDay(day.value)}
+                    className={`h-9 w-12 rounded-lg text-xs font-medium ring-1 ring-inset transition ${
+                      on
+                        ? 'bg-accent-600 text-white ring-accent-500'
+                        : 'bg-surface-raised text-slate-400 ring-surface-line hover:text-slate-100'
+                    }`}
+                  >
+                    {day.label}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+          <Textarea
+            label="Out-of-hours message"
+            value={draft.outOfHoursMessage}
+            onChange={(e) => patch({ outOfHoursMessage: e.target.value })}
+          />
+        </div>
+      )}
+    </StepShell>
+  )
+}
+
+function BrandStep({ draft, patch }: StepProps) {
+  const v = getVertical(draft.vertical)
+  return (
+    <StepShell
+      title="Brand and voice"
+      description="How the bot introduces itself and how it talks. These strings are used verbatim in menus and prompts."
+      icon={<MessageSquareText className="h-4 w-4" />}
+    >
+      <LogoField logoUrl={draft.logoUrl} onChange={(logoUrl) => patch({ logoUrl })} />
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Input
+        label="Bot name *"
+          value={draft.botName}
+          onChange={(e) => patch({ botName: e.target.value })}
+          placeholder="Asha"
+        />
+        <Select
+          label="Tone"
+          value={draft.tone}
+          onChange={(e) => patch({ tone: e.target.value })}
+          hint={`${v.short} default: ${v.tone}`}
+        >
+          <option value="friendly and helpful">Friendly and helpful</option>
+          <option value="professional and confident">Professional and confident</option>
+          <option value="formal and compliant">Formal and compliant</option>
+          <option value="warm and helpful">Warm and helpful</option>
+          <option value="calm and empathetic">Calm and empathetic</option>
+          <option value="concise and direct">Concise and direct</option>
+        </Select>
+        <Input
+          label="Tagline"
+          value={draft.tagline}
+          onChange={(e) => patch({ tagline: e.target.value })}
+          placeholder="Software that ships"
+        />
+        <Input
+          label="Closing signature"
+          value={draft.signature}
+          onChange={(e) => patch({ signature: e.target.value })}
+          placeholder="— Team Leeway"
+        />
+        <Input
+          label="Support email *"
+          type="email"
+          value={draft.supportEmail}
+          onChange={(e) => patch({ supportEmail: e.target.value })}
+          placeholder="support@example.com"
+        />
+        <Input
+          label="Support phone *"
+          value={draft.supportPhone}
+          onChange={(e) => patch({ supportPhone: e.target.value })}
+          placeholder="+91 98765 43210"
+          inputMode="tel"
+          error={
+            draft.supportPhone.trim() && !isValidPhone(draft.supportPhone)
+              ? 'Phone must be a 10-digit number (or country code followed by 10 digits, e.g. +91 98765 43210)'
+              : undefined
+          }
+          hint="Country code followed by a 10-digit number, e.g. +91 98765 43210."
+        />
+      </div>
+
+      <Textarea
+        label="Menu greeting"
+        value={draft.greeting}
+        onChange={(e) => patch({ greeting: e.target.value })}
+        placeholder={`Hi! I'm ${draft.botName || 'the assistant'} from ${draft.companyName || 'our team'}. How can I help?`}
+        hint="Shown as the WhatsApp menu body. Leave blank to use the field default."
+      />
+
+      <Alert tone="info" title={`Vocabulary for ${v.short}`}>
+        The bot will call your offerings <strong>{v.nouns.item}</strong> and your enquiries{' '}
+        <strong>{v.nouns.lead}</strong>. You can override every one of these later in the profile editor.
+      </Alert>
+    </StepShell>
+  )
+}
+
+function DomainStep({ draft, patch }: StepProps) {
+  const v = getVertical(draft.vertical)
+  const missingRequired = v.questions.filter((q) => q.required && !answerValue(draft, q.key))
+
+  return (
+    <StepShell
+      title={`About your ${v.short.toLowerCase()} business`}
+      description="These answers become the words the bot recognises. The more specific you are, the fewer questions it gets wrong."
+      icon={<Sparkles className="h-4 w-4" />}
+    >
+      <div className="space-y-5">
+        {v.questions.map((q) => {
+          const value = draft.answers[q.key]
+          return (
+            <div key={q.key}>
+              <p className="field-label">
+                {q.label}
+                {q.required && <span className="ml-1 text-rose-400">*</span>}
+              </p>
+              {q.kind === 'chips' && (
+                <TagInput
+                  value={Array.isArray(value) ? value : []}
+                  onChange={(next) => patch({ answers: { ...draft.answers, [q.key]: next } })}
+                  suggestions={q.suggestions ?? []}
+                />
+              )}
+              {q.kind === 'text' && (
+                <Input
+                  value={typeof value === 'string' ? value : ''}
+                  onChange={(e) => patch({ answers: { ...draft.answers, [q.key]: e.target.value } })}
+                  placeholder={q.placeholder}
+                />
+              )}
+              {q.kind === 'textarea' && (
+                <Textarea
+                  value={typeof value === 'string' ? value : ''}
+                  onChange={(e) => patch({ answers: { ...draft.answers, [q.key]: e.target.value } })}
+                  placeholder={q.placeholder}
+                />
+              )}
+              {q.kind === 'select' && (
+                <Select
+                  value={typeof value === 'string' ? value : ''}
+                  onChange={(e) => patch({ answers: { ...draft.answers, [q.key]: e.target.value } })}
+                >
+                  <option value="">Select…</option>
+                  {(q.options ?? []).map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </Select>
+              )}
+              {q.help && <p className="hint">{q.help}</p>}
+            </div>
+          )
+        })}
+      </div>
+
+      <Card>
+        <CardHeader
+          title="Optional modules"
+          description="Switch on only what this company will use — anything off stays hidden from their console."
+        />
+        <CardBody className="space-y-4">
+          {([
+            { flag: 'payments', label: 'Online Payments', desc: 'Generate Razorpay or Stripe checkout links for WhatsApp orders.' },
+            { flag: 'orders', label: 'Orders Management', desc: 'Accept and process customer orders through WhatsApp.' },
+            { flag: 'cart', label: 'Cart', desc: 'Allow customers to add multiple items to a cart before checkout.' },
+            { flag: 'track_order', label: 'Order Tracking', desc: 'Allow customers to look up order status and shipment AWB on WhatsApp.' },
+            { flag: 'quote', label: 'Request a Quote', desc: 'Collect custom requirements and generate quote requests.' },
+            { flag: 'callback', label: 'Request a Callback', desc: 'Allow users to request a phone callback from sales or support.' },
+            { flag: 'book_appointment', label: 'Book Appointments', desc: 'Allow booking appointments and scheduled meetings.' },
+            { flag: 'brochure_pdf', label: 'Brochure PDF', desc: 'Offer downloadable brochure or catalog PDFs in chat.' },
+            { flag: 'complaints', label: 'Complaints & Support', desc: 'Register customer grievances and track complaint tickets.' },
+            { flag: 'campaigns', label: 'Campaigns', desc: 'Broadcast messages to customer segments from the console.' },
+            { flag: 'distributors', label: 'Distributors', desc: 'Manage reseller/distributor network and wholesale pricing tiers.' },
+            { flag: 'services', label: 'Services Menu', desc: 'Show the Services menu entry and answer questions about what you deliver.' },
+            { flag: 'products', label: 'Products Menu', desc: 'Show the Products menu entry and answer questions about what you sell.' },
+          ] as const).map(({ flag, label, desc }) => (
+            <Switch
+              key={flag}
+              checked={draft.features.includes(flag as FeatureFlag)}
+              onChange={(on) =>
+                patch({
+                  features: on
+                    ? [...draft.features.filter((f) => f !== flag), flag as FeatureFlag]
+                    : draft.features.filter((f) => f !== flag),
+                })
+              }
+              label={label}
+              description={desc}
+            />
+          ))}
+        </CardBody>
+      </Card>
+
+      {missingRequired.length > 0 && (
+        <Alert tone="warning">
+          Answer {missingRequired.map((q) => q.label).join(', ')} before continuing.
+        </Alert>
+      )}
+    </StepShell>
+  )
+}
+
+function NotificationsStep({ draft, patch }: StepProps) {
+  return (
+    <StepShell
+      title="Where do enquiries go?"
+      description="Leads, quotes and handoffs are pushed to these destinations. A tenant with no destination configured will collect leads that nobody reads."
+      icon={<Webhook className="h-4 w-4" />}
+    >
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Input
+          label="Sales / enquiries email *"
+          type="email"
+          value={draft.salesEmail}
+          onChange={(e) => patch({ salesEmail: e.target.value })}
+          placeholder="sales@example.com"
+        />
+        <Input
+          label="Support email"
+          type="email"
+          value={draft.notificationsSupportEmail}
+          onChange={(e) => patch({ notificationsSupportEmail: e.target.value })}
+          placeholder="support@example.com"
+        />
+      </div>
+
+
+    </StepShell>
+  )
+}
+
+function GuardrailsStep({ draft, patch }: StepProps) {
+  return (
+    <StepShell
+      title="What must the bot never do?"
+      description="Guardrails bind the language model. Statements listed here are refused, and the escalation keywords hand the conversation to a person."
+      icon={<ShieldAlert className="h-4 w-4" />}
+    >
+      <Textarea
+        label="Never state (one per line)"
+        value={draft.neverState}
+        onChange={(e) => patch({ neverState: e.target.value })}
+        placeholder={'We guarantee delivery in 24 hours\nOur stock is always in sync\nNo hidden charges, ever'}
+        hint="The bot must not claim these. Empty means the vertical default applies."
+      />
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div>
+          <p className="field-label">Forbidden terms</p>
+          <TagInput
+            value={draft.forbiddenTerms}
+            onChange={(forbiddenTerms) => patch({ forbiddenTerms })}
+            placeholder="Terms to refuse"
+          />
+        </div>
+        <div>
+          <p className="field-label">Handoff keywords</p>
+          <TagInput
+            value={draft.handoffKeywords}
+            onChange={(handoffKeywords) => patch({ handoffKeywords })}
+            placeholder="human, agent…"
+          />
+        </div>
+      </div>
+      <div>
+        <p className="field-label">Escalate immediately on</p>
+        <TagInput
+          value={draft.escalateKeywords}
+          onChange={(escalateKeywords) => patch({ escalateKeywords })}
+          placeholder="complaint, fraud, urgent…"
+        />
+      </div>
+      <Textarea
+        label="Escalation message"
+        value={draft.escalationMessage}
+        onChange={(e) => patch({ escalationMessage: e.target.value })}
+        rows={2}
+      />
+      <Alert tone="warning" title="Write these carefully">
+        The linter flags a profile when a forbidden term leaks back into its own copy. Keep the two lists
+        disjoint.
+      </Alert>
+    </StepShell>
+  )
+}
+
+function ReviewStep({
+  draft,
+  onEdit,
+  approvalMode,
+  companyEditable,
+}: {
+  draft: WizardDraft
+  onEdit: (step: number) => void
+  approvalMode: boolean
+  companyEditable: boolean
+}) {
+  const v = getVertical(draft.vertical)
+  const answers = Object.entries(draft.answers).filter(([, value]) =>
+    Array.isArray(value) ? value.length : Boolean(value),
+  )
+
+  const rows: { label: string; value: React.ReactNode; step: number }[] = [
+    { label: 'Company', value: draft.companyName || '—', step: 0 },
+    { label: 'Tenant id', value: draft.tenantId || '—', step: 0 },
+    { label: 'Field', value: v.label, step: 0 },
+    { label: 'Website', value: draft.website || '—', step: 0 },
+    {
+      label: 'Logo',
+      value: draft.logoUrl ? (
+        <img src={draft.logoUrl} alt="Logo" className="h-10 w-10 rounded object-contain" />
+      ) : (
+        'not uploaded'
+      ),
+      step: companyEditable ? 0 : 2,
+    },
+    { label: 'Phone number id', value: draft.wabaPhoneId || 'not bound', step: 1 },
+    {
+      label: 'Working hours',
+      value: draft.alwaysOpen
+        ? 'Always open'
+        : `${draft.openTime}–${draft.closeTime} · ${draft.timezone} · ${draft.openDays.length} day(s)`,
+      step: 1,
+    },
+    { label: 'Bot name', value: draft.botName || v.label, step: 2 },
+    { label: 'Tone', value: draft.tone, step: 2 },
+    { label: 'Support', value: [draft.supportEmail, draft.supportPhone].filter(Boolean).join(' · ') || '—', step: 2 },
+    { label: 'Calls it', value: v.nouns.item, step: 2 },
+    {
+      label: 'Business answers',
+      value: answers.length ? (
+        <ul className="space-y-1">
+          {answers.map(([key, value]) => (
+            <li key={key} className="text-xs text-slate-300">
+              <span className="text-slate-500">{key.replace(/_/g, ' ')}:</span>{' '}
+              {Array.isArray(value) ? value.join(', ') : value}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        '—'
+      ),
+      step: 3,
+    },
+    {
+      label: 'Notifications',
+      value:
+        [draft.salesEmail, draft.notificationsSupportEmail].filter(Boolean).join(' · ') ||
+        'none configured',
+      step: 4,
+    },
+    {
+      label: 'Never state',
+      value: draft.neverState ? draft.neverState.split('\n').filter(Boolean).length + ' rule(s)' : '—',
+      step: 5,
+    },
+  ]
+
+  return (
+    <StepShell
+      title={approvalMode ? 'Review and submit' : 'Review and publish'}
+      description={
+        approvalMode
+          ? 'Submitting sends everything you added to a super admin for approval. The company basics were set by the super admin and stay read-only. Nothing goes live until they accept it.'
+          : 'Creating the tenant registers it, saves this as the draft, then publishes version 1. If validation fails, nothing is published and you can fix it in the profile editor.'
+      }
+      icon={<BadgeCheck className="h-4 w-4" />}
+    >
+      <div className="divide-y divide-surface-line rounded-lg ring-1 ring-inset ring-surface-line">
+        {rows.map((row) => (
+          <div key={row.label} className="flex items-start gap-4 px-4 py-3">
+            <span className="w-40 shrink-0 text-xs text-slate-500">{row.label}</span>
+            <span className="min-w-0 flex-1 text-xs text-slate-200">
+              {typeof row.value === 'string' ? row.value : row.value}
+            </span>
+            {(companyEditable || row.step > 0) && (
+              <button
+                type="button"
+                onClick={() => onEdit(row.step)}
+                className="shrink-0 text-xs text-accent-700 hover:text-accent-700"
+              >
+                Edit
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+
+      <Alert tone="info" title="What approval does">
+        On approval the snapshot is merged over the {v.short} defaults, validated, stored as an immutable
+        version, and the runtime cache is purged — so the next message is answered by the profile above.
+      </Alert>
+    </StepShell>
+  )
+}
+
+// ── helpers ────────────────────────────────────────────────────────────────
+
+interface StepProps {
+  draft: WizardDraft
+  patch: (values: Partial<WizardDraft>) => void
+}
+
+function answerValue(draft: WizardDraft, key: string): string {
+  const value = draft.answers[key]
+  if (Array.isArray(value)) return value.join(', ')
+  return typeof value === 'string' ? value : ''
+}
+
+function validationError(
+  stepId: StepId,
+  draft: WizardDraft,
+  idTaken: boolean,
+  tenantSelected: boolean,
+): string | null {
+  switch (stepId) {
+    case 'company':
+      if (!draft.companyName.trim()) return 'A company name is required.'
+      if (!draft.tenantId.trim()) return 'A tenant id is required.'
+      if (idTaken) return 'That tenant id is already registered.'
+      if (draft.website.trim() && !URL_RE.test(draft.website.trim()))
+        return 'The website does not look like a valid URL (e.g. https://example.com).'
+      return null
+    case 'tenant':
+      if (!tenantSelected) return 'Pick the tenant you are completing.'
+      return null
+    case 'whatsapp': {
+      if (!draft.wabaPhoneId.trim()) return 'A WhatsApp phone number (or its id) is required.'
+      const phoneDigits = draft.wabaPhoneId.replace(/\D/g, '')
+      const isMetaId = /^\d{15,16}$/.test(phoneDigits)
+      const isPhoneNumber = isValidPhone(draft.wabaPhoneId) || isValidPhoneInput(draft.wabaPhoneId)
+      if (!isMetaId && !isPhoneNumber)
+        return 'Enter a valid 10-digit WhatsApp phone number (e.g. +91 98765 43210) or its 15-digit ID from Meta.'
+      if (!draft.timezone.trim()) return 'Select a timezone.'
+      if (!draft.alwaysOpen && draft.openDays.length === 0) return 'Pick at least one working day.'
+      return null
+    }
+    case 'brand': {
+      if (!draft.botName.trim()) return 'Give the bot a name.'
+      if (!draft.supportEmail.trim()) return 'A support email is required.'
+      if (!EMAIL_RE.test(draft.supportEmail.trim()))
+        return 'The support email does not look valid.'
+      if (!draft.supportPhone.trim()) return 'A support phone number is required.'
+      if (!isValidPhone(draft.supportPhone))
+        return 'The support phone must be a country code followed by a 10-digit number, e.g. +91 98765 43210.'
+      return null
+    }
+    case 'domain': {
+      const v = getVertical(draft.vertical)
+      const missing = v.questions.filter((q) => q.required && !answerValue(draft, q.key))
+      if (missing.length) return `Still needed: ${missing.map((q) => q.label).join(', ')}.`
+      return null
+    }
+    case 'notifications': {
+      if (!draft.salesEmail.trim()) return 'A sales / enquiries email is required — leads need a destination.'
+      if (!EMAIL_RE.test(draft.salesEmail.trim()))
+        return 'The sales / enquiries email does not look valid.'
+      if (draft.notificationsSupportEmail.trim() && !EMAIL_RE.test(draft.notificationsSupportEmail.trim()))
+        return 'The notifications support email does not look valid.'
+      if (draft.brochureUrl.trim() && !URL_RE.test(draft.brochureUrl.trim()))
+        return 'The brochure URL does not look like a valid URL.'
+      for (const channel of draft.channels) {
+        if (!channel.to.trim()) continue
+        if (channel.type === 'email' && !EMAIL_RE.test(channel.to.trim()))
+          return 'A notification channel email destination does not look valid.'
+        if (channel.type === 'webhook' && !URL_RE.test(channel.to.trim()))
+          return 'A notification channel webhook destination does not look like a valid URL.'
+      }
+      return null
+    }
+    case 'guardrails':
+      if (draft.forbiddenTerms.some((t) => draft.neverState.toLowerCase().includes(t.toLowerCase())))
+        return 'A forbidden term also appears in your "never state" list.'
+      return null
+    default:
+      return null
+  }
+}

@@ -1,0 +1,3 @@
+# Home Loan & NRI Purchase Guide
+
+Home Loans & NRI Buying Partner banks typically finance a portion of the agreement value, subject to eligibility. Salaried buyers should keep salary slips, Form 16 and bank statements ready. Self-employed buyers need ITR, business proofs and financials. NRIs can remit via NRE/NRO accounts. Power of attorney may be used for registration with documentation desk guidance. Tax implications vary; consult your CA for TDS on property.

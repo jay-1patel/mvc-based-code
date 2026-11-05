@@ -1,0 +1,1 @@
+# Everyday Banking Help: Insurance claims follow the checklist under Insurance & Claims (SBI Life / SBI General). The branch and ATM locator helps with IFSC and timings (weekdays + alternate Saturdays). Service requests (statements, nomination, mobile update) may require authenticated banking channels or a branch visit for regulatory compliance.

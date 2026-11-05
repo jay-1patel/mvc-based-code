@@ -1,0 +1,3 @@
+# Project Status Flags (Quick Reference)
+
+Handle with care • Southern Star: unit availability and floor price not confirmed • Marigold: only 4,000 sq ft plots may remain; confirm inventory • Gardenia Estates: availability not confirmed; a third-party listing (updated 28 Oct 2026) shows it as sold out with different sizes and prices (see Open Item 10) • Thanisandra: RERA awaited; never quote a RERA ID • Tech Platina: pre-RERA; lease rate is indicative Offer a site visit or a human advisor for anything unconfirmed.

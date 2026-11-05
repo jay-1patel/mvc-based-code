@@ -1,0 +1,1 @@
+# How We Engage We deliver via fixed-price, time & materials, or dedicated squads. Every engagement starts with a written SOW covering scope, milestones, acceptance criteria, and commercial terms. Change requests are estimated and approved in writing before implementation so budgets stay predictable.

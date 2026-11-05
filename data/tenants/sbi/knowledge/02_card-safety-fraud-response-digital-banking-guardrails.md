@@ -1,0 +1,1 @@
+# Stay Safe: Block lost cards immediately via the menu. Never share OTP, PIN, CVV, or passwords in chat. SBI never asks for these over phone, SMS or WhatsApp. This assistant does not move money. Use the official YONO SBI app or net banking for payments. Report unauthorized transactions at once with amount, time, and merchant details.

@@ -1,0 +1,3 @@
+# Track Record & Key Numbers
+
+Company Facts • Headquartered in Bangalore; over 190 completed projects across India; presence in 13 cities [Confirm latest count] • FY 2023-24: about 25.55 million sq ft delivered and record sales of ₹21,040 Crore • A third-party listing (Homz N Space, Oct 2026) shows about 35 ongoing, 3 upcoming and 191 completed projects [Confirm before quoting] Do not quote newer figures unless the client supplies them.

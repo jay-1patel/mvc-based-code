@@ -1,0 +1,1 @@
+Digital banking channels: Mobile app & net banking (never share OTP/PIN in chat) · Instant card block and service requests · Secure KYC / video-KYC journeys · Ask how to activate a product · we guide steps, not passwords.

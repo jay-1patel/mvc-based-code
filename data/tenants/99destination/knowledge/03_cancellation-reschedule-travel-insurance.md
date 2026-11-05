@@ -1,0 +1,1 @@
+# Cancellations & Insurance Land-package refunds generally: 90% if cancelled 21+ days prior; reduced thereafter; limited inside 7 days. Airline tickets follow airline fare rules. Travel insurance is strongly recommended for medical emergencies, baggage loss, and trip interruption.

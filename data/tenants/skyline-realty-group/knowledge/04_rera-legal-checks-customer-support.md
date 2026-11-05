@@ -1,0 +1,1 @@
+# Legal & Support Every listed project carries a RERA ID in the catalog. Buyers should verify registration on the state RERA portal and review sanctioned layout plans. Post-sales support handles payment receipts, demand letters, and possession coordination. Share your booking ID when raising tickets for faster resolution.

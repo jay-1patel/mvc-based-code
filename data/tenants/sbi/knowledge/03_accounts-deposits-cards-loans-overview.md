@@ -1,0 +1,1 @@
+# Product Guide: SBI savings accounts need no minimum balance for regular accounts. Term deposits offer flexible tenures and senior-citizen rate upsides. Credit cards are issued by SBI Card; home loans carry published eligibility and rates linked to EBLR. Ask for the latest rate sheet and document checklist before applying.
