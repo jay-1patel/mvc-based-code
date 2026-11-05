@@ -1,0 +1,1307 @@
+"""Tenant registry + profile administration API.
+
+Publishing is the only way a profile change reaches the bot, and it is always
+versioned and rollbackable:
+
+    GET  /api/admin/tenants
+    POST /api/admin/tenants
+    GET  /api/admin/tenants/{tenant_id}/detail     -> layers + effective profile
+    PUT  /api/admin/tenants/{tenant_id}/profile     -> save draft (merged over the pending draft)
+    PUT  /api/admin/tenants/{tenant_id}/intents/{name} -> save one info-page intent into the draft
+    POST /api/admin/tenants/{tenant_id}/publish     -> validate + version + go live
+    POST /api/admin/tenants/{tenant_id}/rollback    -> re-point at a prior version
+    GET  /api/admin/tenants/{tenant_id}/versions
+    POST /api/admin/tenants/{tenant_id}/tokens      -> mint a tenant-scoped token
+    GET  /api/admin/tenants/{tenant_id}/resolved    -> what the bot actually reads
+
+``/resolved`` is the smoke-test endpoint: it returns the merged, validated
+profile the bot will use right now, so the UI can diff it against the draft.
+
+Every tenant-scoped route goes through ``require_tenant_access()``, which
+enforces token.tenant_id == target (Phase 0.5).
+"""
+
+import logging
+import re
+import secrets
+import sqlite3
+from typing import Any, Dict, List, Optional
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+from fastapi.security import HTTPAuthorizationCredentials
+from pydantic import BaseModel, Field, field_validator
+
+from database import get_db_context, record_admin_audit_event
+from database import (
+    delete_crawl_schedule,
+    get_crawl_schedule,
+    mark_crawl_finished,
+    mark_crawl_started,
+    upsert_crawl_schedule,
+)
+from routes.auth import (
+    get_current_admin,
+    has_permission,
+    hash_tenant_token,
+    require_permission,
+    require_tenant_access,
+    security,
+)
+from shared.tenancy import cache as tenancy_cache
+from shared.tenancy import loader as tenancy_loader
+from shared.tenancy import store as tenancy_store
+from shared.tenancy.merge import deep_merge, merge_drafts
+
+logger = logging.getLogger("tenants")
+router = APIRouter(prefix="/api/admin/tenants", tags=["tenants"])
+
+
+def _backfill_domain(conn, tenant_id: str, website: str, only_if_empty: bool = False) -> None:
+    """Record the tenant's website on the registry row.
+
+    A convenience column only — the bot reads the website from the profile
+    snapshot, never from this — so it must never reject the save. Deployments
+    that started before the `domain` migration ran have no such column, and an
+    uncaught sqlite3.OperationalError there 500s the whole PUT. The error is
+    raised at execute time and leaves the surrounding transaction usable.
+    """
+    website = (website or "").strip()
+    if not website:
+        return
+    sql = "UPDATE tenants SET domain = ? WHERE (id = ? OR slug = ?)"
+    if only_if_empty:
+        sql += " AND (domain IS NULL OR domain = '')"
+    try:
+        conn.execute(sql, (website, tenant_id, tenant_id))
+    except sqlite3.OperationalError as exc:
+        logger.warning("domain backfill skipped for %s: %s", tenant_id, exc)
+
+
+# ── request models ────────────────────────────────────────────────────────
+
+class TenantCreate(BaseModel):
+    tenant_id: str
+    slug: str = ""
+    vertical: str = "generic"
+    display_name: str = ""
+    mobile_number: str = ""
+    waba_phone_id: str = ""
+    status: str = "active"
+    website: str = ""
+    auto_scrape: bool = True
+
+    @field_validator("mobile_number")
+    @classmethod
+    def _check_mobile_number(cls, value: str) -> str:
+        v = (value or "").strip()
+        if not v:
+            raise ValueError(
+                "mobile_number is required (tenant WhatsApp / business mobile with country code)"
+            )
+        try:
+            return tenancy_store.normalize_mobile_number(v)
+        except ValueError as exc:
+            raise ValueError(str(exc))
+
+    @field_validator("waba_phone_id")
+    @classmethod
+    def _check_waba_phone_id(cls, value: str) -> str:
+        v = (value or "").strip()
+        if not v:
+            return ""
+        try:
+            return tenancy_store.normalize_waba_phone_id(v)
+        except ValueError:
+            raise ValueError(
+                "waba_phone_id must be the WhatsApp phone number id or the number itself"
+            )
+
+
+class PhoneBind(BaseModel):
+    waba_phone_id: str
+
+
+class MobileBind(BaseModel):
+    mobile_number: str
+
+
+class ProfileDraft(BaseModel):
+    snapshot: dict = Field(default_factory=dict)
+
+
+class IntentOverride(BaseModel):
+    """One intent's editable fields. Omitted keys are not touched."""
+    answer: Optional[str] = None
+    keywords: Optional[List[str]] = None
+    examples: Optional[List[str]] = None
+    enabled: Optional[bool] = None
+    flow: Optional[str] = None
+    requires_feature: Optional[str] = None
+    remove: Optional[bool] = Field(default=None, alias="__remove__")
+    __remove__: Optional[bool] = None
+
+    class Config:
+        extra = "allow"
+        populate_by_name = True
+
+
+class RollbackRequest(BaseModel):
+    version: int
+
+
+class TokenCreate(BaseModel):
+    label: str = ""
+
+
+class WebhookSecretSet(BaseModel):
+    secret: str = Field(min_length=16, max_length=256)
+
+
+class ActiveTestTenantRequest(BaseModel):
+    tenant_id: Optional[str] = None
+
+
+class UrlAutoOnboardRequest(BaseModel):
+    url: str
+    tenant_id: Optional[str] = None
+    vertical: Optional[str] = None
+    auto_publish: bool = True
+
+
+class CrawlScheduleIn(BaseModel):
+    url: str
+    interval_hours: int = Field(default=24, ge=1, le=24 * 30)
+    max_pages: int = Field(default=8, ge=1, le=25)
+    auto_publish: bool = True
+    is_enabled: bool = True
+
+
+def _admin_only(principal: dict) -> str:
+    """Only admins may mint tokens, rebind phone ids, or set secrets."""
+    if principal.get("type") != "admin":
+        raise HTTPException(status_code=403, detail="Admin credentials required")
+    # Allow admin role too
+    return principal.get("username", "")
+
+
+def _public_tenant(record: dict) -> dict:
+    out = dict(record or {})
+    out.pop("webhook_secret", None)
+    return out
+
+
+def _latest_test_wa_id() -> Optional[str]:
+    """Most recent real WhatsApp number from chat history (skip simulator ids)."""
+    try:
+        with get_db_context() as conn:
+            row = conn.execute(
+                """
+                SELECT wa_id FROM chat_history
+                WHERE wa_id GLOB '[0-9]*' AND length(wa_id) >= 10
+                ORDER BY id DESC LIMIT 1
+                """
+            ).fetchone()
+        if not row:
+            return None
+        wa_id = str(row["wa_id"] if hasattr(row, "keys") else row[0] or "").strip()
+        return wa_id or None
+    except Exception as exc:
+        logger.debug("latest test wa_id lookup failed: %s", exc)
+        return None
+
+
+def _push_active_test_menu(tenant_id: str) -> Optional[str]:
+    """Send the newly activated tenant menu to the last WhatsApp tester."""
+    wa_id = _latest_test_wa_id()
+    if not wa_id:
+        return None
+
+    from bots.customer_b2c.menus import get_main_menu
+    from routing.whatsapp import send_whatsapp_list_menu, send_whatsapp_message
+    from routing.whatsapp import send_whatsapp_interactive, normalize_reply_buttons
+    from shared.tenancy.loader import get_tenant_profile
+
+    profile = get_tenant_profile(tenant_id)
+    brand = (
+        (profile.brand.name if profile and profile.brand else None)
+        or getattr(profile, "display_name", None)
+        or tenant_id
+    )
+    send_whatsapp_message(
+        wa_id,
+        f"✅ Now testing *{brand}*. Previous brand menus no longer apply — use this one:",
+        tenant_id=tenant_id,
+    )
+    menu = get_main_menu(wa_id, tenant_id=tenant_id)
+    if menu.get("type") == "buttons":
+        send_whatsapp_interactive(
+            wa_id,
+            menu.get("text", "Options"),
+            normalize_reply_buttons(menu.get("buttons", [])),
+            tenant_id=tenant_id,
+        )
+    else:
+        send_whatsapp_list_menu(
+            to=wa_id,
+            header_text=menu.get("header", brand),
+            body_text=menu.get("body", "What would you like to explore today?"),
+            button_text=menu.get("button_text", "Show Options"),
+            sections=menu.get("sections", []),
+            tenant_id=tenant_id,
+        )
+    try:
+        from services.send_log import log_whatsapp_send, REASON_ACTIVE_TEST_MENU
+        log_whatsapp_send(
+            wa_id=wa_id,
+            tenant_id=tenant_id,
+            reason=REASON_ACTIVE_TEST_MENU,
+            snippet=f"active_test_menu:{brand}",
+        )
+    except Exception:
+        logger.exception("SEND_LOG_RECORD_FAILED | wa=%s tenant=%s reason=active_test_menu", wa_id, tenant_id)
+    logger.info(
+        "ACTIVE_TEST_TENANT_MENU_PUSHED | tenant=%s | wa_id=%s",
+        tenant_id, wa_id,
+    )
+    return wa_id
+
+
+# ── registry ──────────────────────────────────────────────────────────────
+
+@router.get("")
+def list_tenants(
+    status: Optional[str] = None,
+    current_admin: dict = Depends(require_permission("manage_operations")),
+):
+    from database import get_active_test_tenant
+    rows = [_public_tenant(r) for r in tenancy_store.list_tenants(status=status)]
+    for row in rows:
+        row["current_version"] = tenancy_store.current_version(row["id"])
+    return {
+        "tenants": rows,
+        "active_test_tenant": get_active_test_tenant(),
+    }
+
+
+@router.get("/active-test-tenant")
+def get_current_active_test_tenant(
+    current_admin: dict = Depends(require_permission("manage_operations")),
+):
+    from database import get_active_test_tenant
+    return {"active_test_tenant": get_active_test_tenant()}
+
+
+@router.post("/active-test-tenant")
+def set_current_active_test_tenant(
+    body: ActiveTestTenantRequest,
+    current_admin: dict = Depends(require_permission("manage_operations")),
+):
+    from database import set_active_test_tenant, get_active_test_tenant
+    tid = (body.tenant_id or "").strip() or None
+    try:
+        set_active_test_tenant(tid)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    stored = get_active_test_tenant()
+    logger.info(
+        "ACTIVE_TEST_TENANT_CHANGED | tenant=%s | by=%s",
+        stored, current_admin.get("username"),
+    )
+    # Push the new brand menu to the last WhatsApp tester so old list rows from
+    # the previous tenant are not the latest message on screen.
+    pushed_to = None
+    if stored:
+        try:
+            pushed_to = _push_active_test_menu(stored)
+        except Exception as exc:
+            logger.warning("ACTIVE_TEST_TENANT menu push failed: %s", exc)
+    return {"ok": True, "active_test_tenant": stored, "menu_pushed_to": pushed_to}
+
+
+@router.post("/auto-onboard-preview")
+def auto_onboard_preview(
+    body: UrlAutoOnboardRequest,
+    current_admin: dict = Depends(get_current_admin),
+):
+    url = (body.url or "").strip()
+    if not url:
+        raise HTTPException(status_code=400, detail="Website URL is required")
+    try:
+        from services.url_scraper import WebScraperCrawler, UrlAutoOnboarder, slugify
+        crawler = WebScraperCrawler(base_url=url, max_pages=8)
+        crawl_res = crawler.crawl()
+        if crawl_res.get("blocked_by_robots"):
+            raise HTTPException(status_code=403, detail="This website's robots.txt disallows automated crawling.")
+        if not crawl_res.get("pages"):
+            raise HTTPException(status_code=400, detail="Could not reach or crawl website. Please check the URL.")
+        onboarder = UrlAutoOnboarder(tenant_id=body.tenant_id, actor=current_admin)
+        extracted = onboarder.extract_bifurcation(crawl_res)
+        brand = extracted.get("brand", {})
+        domain = crawl_res.get("domain", "")
+        suggested_id = body.tenant_id or slugify(brand.get("name") or domain)
+        return {
+            "ok": True,
+            "url": crawl_res.get("root_url"),
+            "domain": domain,
+            "pages_crawled": [p.get("url") for p in crawl_res.get("pages", [])],
+            "suggested_tenant_id": suggested_id,
+            "extracted": extracted,
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Auto-onboard preview failed: %s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Website analysis failed: {exc}")
+
+
+@router.post("/auto-onboard-execute")
+def auto_onboard_execute(
+    body: UrlAutoOnboardRequest,
+    current_admin: dict = Depends(get_current_admin),
+):
+    url = (body.url or "").strip()
+    if not url:
+        raise HTTPException(status_code=400, detail="Website URL is required")
+    try:
+        from services.url_scraper import UrlAutoOnboarder
+        onboarder = UrlAutoOnboarder(tenant_id=body.tenant_id, actor=current_admin)
+        result = onboarder.execute_onboarding(
+            url=url,
+            target_tenant_id=body.tenant_id,
+            auto_publish=body.auto_publish,
+        )
+        return {"ok": True, "result": result}
+    except Exception as exc:
+        logger.error("Auto-onboard execute failed: %s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Auto-onboarding failed: {exc}")
+
+
+@router.post("")
+def create_tenant(
+    body: TenantCreate,
+    background_tasks: BackgroundTasks,
+    current_admin: dict = Depends(require_permission("manage_operations")),
+):
+    if current_admin.get("role") != "super_admin":
+        # Admins and sub admins register tenants through the approval queue;
+        # only a super admin's approval creates the tenant.
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "Tenant registration by an admin needs super admin approval — "
+                "submit it via POST /api/tenant-change-requests"
+            ),
+        )
+    tid = str(body.tenant_id or "").strip()
+    if not tid:
+        raise HTTPException(status_code=400, detail="tenant_id is required")
+    # Registry id/slug only — do not use get_tenant() here; that also matches
+    # display_name aliases and falsely reports "already exists".
+    slug = (body.slug or tid).strip() or tid
+    conflict = tenancy_store.find_registry_conflict(tid, slug)
+    if conflict:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"tenant '{tid}' already exists "
+                f"(conflicts with '{conflict.get('id')}' / slug '{conflict.get('slug')}')"
+            ),
+        )
+
+    from shared.tenancy import loader as _loader
+
+    try:
+        # Fail before writing the row if the vertical is unknown.
+        _loader.build_profile(tid, db_layer={}, file_layer={}, include_db=False)
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=f"Invalid vertical: {exc}")
+
+    website_clean = (body.website or "").strip()
+    with get_db_context() as conn:
+        if tenancy_store.find_registry_conflict(tid, slug):
+            raise HTTPException(status_code=409, detail=f"tenant '{tid}' already exists")
+        clash = tenancy_store.find_tenant_by_mobile(body.mobile_number)
+        if clash and clash != tid:
+            raise HTTPException(
+                status_code=409,
+                detail=f"mobile_number already registered to tenant '{clash}'",
+            )
+        tenancy_store.ensure_tenant(
+            tid,
+            slug=slug,
+            vertical=body.vertical,
+            waba_phone_id=body.waba_phone_id,
+            mobile_number=body.mobile_number,
+            display_name=body.display_name,
+            status=body.status,
+            conn=conn,
+        )
+        _backfill_domain(conn, tid, website_clean)
+        record_admin_audit_event(
+            conn,
+            action="tenant_created",
+            actor=current_admin,
+            resource_type="tenant",
+            resource_id=tid,
+            tenant_id=tid,
+            details={"vertical": body.vertical, "status": body.status, "website": website_clean},
+        )
+    tenancy_cache.purge(tid)
+    logger.info("TENANT_CREATED | tenant=%s | vertical=%s | by=%s",
+                tid, body.vertical, current_admin.get("username"))
+
+    if website_clean and body.auto_scrape and website_clean.startswith("http"):
+        def _bg_crawl(target_tid: str, crawl_url: str, actor: dict):
+            try:
+                from services.url_scraper import UrlAutoOnboarder
+                logger.info("Auto-onboarding background crawler starting for %s at %s", target_tid, crawl_url)
+                onboarder = UrlAutoOnboarder(tenant_id=target_tid, actor=actor)
+                res = onboarder.execute_onboarding(url=crawl_url, target_tenant_id=target_tid, auto_publish=True)
+                logger.info("Auto-onboarding background crawler finished for %s: %s offerings, %s faqs",
+                            target_tid, res.get("offerings_seeded", 0), res.get("faqs_seeded", 0))
+            except Exception as e:
+                logger.error("Auto-onboarding background crawler error for %s: %s", target_tid, e, exc_info=True)
+
+        background_tasks.add_task(_bg_crawl, tid, website_clean, current_admin)
+
+    return {"ok": True, "tenant": _public_tenant(tenancy_store.get_tenant(tid))}
+
+
+@router.delete("/{tenant_id}")
+def delete_tenant(
+    tenant_id: str,
+    principal: dict = Depends(require_tenant_access()),
+):
+    """Permanently wipe a tenant: registry, profile, and all tenant-scoped DB/disk data.
+
+    Super-admin only. ``admin_audit_events`` for the delete are kept.
+    """
+    _admin_only(principal)
+    if principal.get("role") != "super_admin":
+        raise HTTPException(
+            status_code=403,
+            detail="Only a super admin can permanently delete a tenant and its data",
+        )
+    tenant_snapshot = tenancy_store.get_tenant(tenant_id)
+    if not tenant_snapshot:
+        raise HTTPException(status_code=404, detail="tenant not found")
+    with get_db_context() as conn:
+        purge = tenancy_store.purge_tenant_data(
+            tenant_id,
+            conn=conn,
+            slug=str(tenant_snapshot.get("slug") or ""),
+        )
+        record_admin_audit_event(
+            conn,
+            action="tenant_deleted",
+            actor=principal,
+            resource_type="tenant",
+            resource_id=tenant_id,
+            tenant_id=tenant_id,
+            tenant_name=tenant_snapshot.get("display_name"),
+            tenant_slug=tenant_snapshot.get("slug"),
+            details={
+                "display_name": tenant_snapshot.get("display_name"),
+                "slug": tenant_snapshot.get("slug"),
+                "hard_delete": True,
+                "purged_tables": {k: v for k, v in (purge.get("tables") or {}).items() if v},
+                "purged_disk": purge.get("disk") or [],
+            },
+        )
+    tenancy_cache.purge(tenant_id)
+    logger.info("TENANT_DELETED | tenant=%s | by=%s | hard=1", tenant_id, principal.get("username"))
+    return {"ok": True, "tenant_id": tenant_id, "purged": purge}
+
+
+# ── profile: read ─────────────────────────────────────────────────────────
+
+@router.get("/{tenant_id}/resolved")
+def resolved_profile(tenant_id: str, principal: dict = Depends(require_tenant_access())):
+    """The merged, validated profile the bot reads right now.
+
+    This is the 'profile-derived smoke test' surface: menus, intents, features
+    and flows here all come from data, not constants.
+    """
+    profile = tenancy_loader.get_tenant_profile(tenant_id)
+    return {
+        "tenant_id": profile.tenant_id,
+        "vertical": profile.vertical,
+        "version": profile.version,
+        "source": profile.source,
+        "features": profile.features.model_dump(),
+        "vocabulary": profile.vocabulary.model_dump(),
+        "brand": profile.brand.model_dump(),
+        "business_hours": profile.business_hours.model_dump(),
+        "guardrails": profile.guardrails.model_dump(),
+        "notifications": profile.notifications.model_dump(),
+        "menu": profile.menu.model_dump(),
+        "active_intents": [i.model_dump() for i in profile.active_intents()],
+        "inactive_intents": [
+            i.model_dump() for i in profile.intents
+            if i not in profile.active_intents()
+        ],
+        "flows": [f.model_dump() for f in profile.active_flows()],
+    }
+
+
+@router.get("/{tenant_id}/detail")
+def tenant_detail(tenant_id: str, principal: dict = Depends(require_tenant_access())):
+    """Layer-by-layer view for the profile editor: defaults, file, DB."""
+    layers = tenancy_loader.describe_layers(tenant_id)
+    effective = None
+    try:
+        effective = tenancy_loader.get_tenant_profile(tenant_id).to_payload()
+    except Exception as exc:  # never fail the editor on a bad layer
+        logger.error("Could not build effective profile for %s: %s", tenant_id, exc)
+    # What the editor should show when a working copy is pending: the draft
+    # merged over the file baseline — exactly what publish would make live.
+    pending, pending_error = None, None
+    draft = tenancy_store.get_draft(tenant_id)
+    if draft:
+        try:
+            pending = tenancy_loader.validate_merged_profile(tenant_id, draft).to_payload()
+        except Exception as exc:
+            pending_error = str(exc)
+    return {
+        "tenant": _public_tenant(layers.get("tenant")),
+        "layers": layers.get("layers", {}),
+        "current_version": layers.get("current_version", 0),
+        "versions": layers.get("versions", []),
+        "effective": effective,
+        "effective_error": None if effective else "effective profile could not be built",
+        "has_draft": bool(draft),
+        "pending": pending,
+        "pending_error": pending_error,
+    }
+
+
+@router.get("/{tenant_id}/versions")
+def list_versions(
+    tenant_id: str,
+    limit: int = 50,
+    principal: dict = Depends(require_tenant_access()),
+):
+    return {
+        "tenant_id": tenant_id,
+        "current_version": tenancy_store.current_version(tenant_id),
+        "versions": tenancy_store.list_versions(tenant_id, limit=limit),
+    }
+
+
+@router.get("/{tenant_id}/versions/{version}")
+def get_version(
+    tenant_id: str,
+    version: int,
+    principal: dict = Depends(require_tenant_access()),
+):
+    record = tenancy_store.get_version(tenant_id, version)
+    if not record:
+        raise HTTPException(status_code=404, detail=f"version {version} not found")
+    return record
+
+
+# ── profile: write ────────────────────────────────────────────────────────
+
+@router.put("/{tenant_id}/profile")
+def save_profile_draft(    tenant_id: str,
+    body: ProfileDraft,
+    principal: dict = Depends(require_tenant_access()),
+):
+    """Save the working copy. Does not affect the live bot.
+
+    The draft is validated immediately so the editor can show errors before
+    anyone presses publish.
+
+    The draft accumulates: this merges the snapshot over the existing draft
+    instead of replacing it, so partial saves from different screens (the
+    profile editor, the info-page panels) keep each other's pending changes.
+    Tombstones survive the merge — deleting a default menu option is a marker
+    only the publish-time live merge may consume.
+    """
+    if not tenancy_store.get_tenant(tenant_id):
+        raise HTTPException(status_code=404, detail="tenant not found")
+    by = principal.get("username") or principal.get("label", "")
+    draft = tenancy_store.get_draft(tenant_id) or {}
+    merged = merge_drafts(draft, body.snapshot)
+    with get_db_context() as conn:
+        tenancy_store.save_draft(tenant_id, merged, updated_by=by, conn=conn)
+        _backfill_domain(conn, tenant_id, (body.snapshot.get("brand") or {}).get("website") or "", only_if_empty=True)
+        if principal.get("type") == "admin":
+            audit_details: Dict[str, Any] = {
+                "changed_sections": sorted(body.snapshot.keys()),
+            }
+            menu_data = body.snapshot.get("menu")
+            if isinstance(menu_data, dict):
+                buttons = menu_data.get("buttons") or []
+                disabled_buttons = [
+                    b.get("id") or b.get("title")
+                    for b in buttons
+                    if isinstance(b, dict) and (b.get("enabled") is False or b.get("is_active") is False)
+                ]
+                enabled_buttons = [
+                    b.get("id") or b.get("title")
+                    for b in buttons
+                    if isinstance(b, dict) and b.get("enabled") is True and not b.get("__remove__")
+                ]
+                removed_buttons = [
+                    b.get("id")
+                    for b in buttons
+                    if isinstance(b, dict) and b.get("__remove__")
+                ]
+                if disabled_buttons:
+                    audit_details["disabled_menu_buttons"] = disabled_buttons
+                if enabled_buttons:
+                    audit_details["enabled_menu_buttons"] = enabled_buttons
+                if removed_buttons:
+                    audit_details["removed_menu_buttons"] = removed_buttons
+                if menu_data.get("header"):
+                    audit_details["menu_header"] = str(menu_data.get("header"))[:100]
+                if menu_data.get("body"):
+                    audit_details["menu_greeting"] = str(menu_data.get("body"))[:100]
+                if menu_data.get("button_text"):
+                    audit_details["menu_button_text"] = str(menu_data.get("button_text"))[:50]
+                audit_details["total_buttons"] = len(buttons)
+
+            record_admin_audit_event(
+                conn,
+                action="tenant_profile_draft_saved",
+                actor=principal,
+                resource_type="tenant_profile",
+                resource_id=tenant_id,
+                tenant_id=tenant_id,
+                details=audit_details,
+            )
+
+    warnings: list = []
+    try:
+        tenancy_loader.validate_merged_profile(tenant_id, merged)
+    except tenancy_loader.ProfileValidationError as exc:
+        # Saving a broken draft is allowed; publishing it is not.
+        warnings.append(str(exc))
+    return {"ok": True, "tenant_id": tenant_id, "has_draft": True, "validation": warnings}
+
+
+# Info pages whose panel edits a single informational intent. The map is the
+# authorisation contract: an intent is editable through this endpoint only if
+# it has a panel and a permission behind it.
+INFO_PAGE_PERMISSIONS = {
+    "projects": "manage_projects",
+    "technologies": "manage_technologies",
+    "careers": "manage_careers",
+    "benefits": "manage_benefits",
+}
+
+# A new informational intent created from the menu editor becomes an id the
+# classifier and flow runner switch on, so keep the grammar narrow.
+INTENT_NAME_RE = re.compile(r"^[a-z][a-z0-9_]{0,39}$")
+
+
+@router.put("/{tenant_id}/intents/{intent_name}")
+def save_intent_draft(
+    tenant_id: str,
+    intent_name: str,
+    body: IntentOverride,
+    request: Request,
+    principal: dict = Depends(require_tenant_access()),
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+):
+    """Merge one informational intent's answer into the working draft.
+
+    Projects / technologies / careers / benefits have no flow and no service:
+    the answer text is the whole page. A name that does not exist yet is a new
+    page created from the menu editor — gated on manage_operations. This merges
+    into the existing draft (never replaces), so a pending profile edit
+    survives a panel save and vice versa. Publishing is what makes the answer
+    live.
+    """
+    if not tenancy_store.get_tenant(tenant_id):
+        raise HTTPException(status_code=404, detail="tenant not found")
+
+    profile = tenancy_loader.get_tenant_profile(tenant_id)
+    existing = {i.name for i in profile.intents}
+
+    permission = INFO_PAGE_PERMISSIONS.get(intent_name)
+    if permission:
+        if intent_name not in existing:
+            raise HTTPException(
+                status_code=404,
+                detail=f"intent '{intent_name}' is not part of this tenant's profile",
+            )
+    elif intent_name not in existing:
+        if not INTENT_NAME_RE.match(intent_name):
+            raise HTTPException(
+                status_code=422,
+                detail="Intent names are lowercase letters, digits and underscores, starting with a letter.",
+            )
+        permission = "manage_operations"
+    else:
+        permission = "manage_operations"
+
+    # Tenant tokens are scoped to their own tenant above; admins need the
+    # page's own grant, not just manage_operations.
+    if principal.get("type") != "tenant" and not has_permission(
+        get_current_admin(request, credentials), permission
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail=f"You need the '{permission}' permission to edit this page",
+        )
+
+    override: Dict[str, Any] = {"name": intent_name}
+    if body.answer is not None:
+        override["answer"] = body.answer
+    if body.keywords is not None:
+        override["keywords"] = [k for k in (s.strip() for s in body.keywords) if k]
+    if body.examples is not None:
+        override["examples"] = [k for k in (s.strip() for s in body.examples) if k]
+    if body.enabled is not None:
+        override["enabled"] = body.enabled
+    if body.flow is not None:
+        override["flow"] = body.flow or None
+    if body.requires_feature is not None:
+        override["requires_feature"] = body.requires_feature or None
+    if body.remove or body.__remove__:
+        override["__remove__"] = True
+
+    by = principal.get("username") or principal.get("label", "")
+    draft = tenancy_store.get_draft(tenant_id) or {}
+    merged = deep_merge(draft, {"intents": [override]})
+    with get_db_context() as conn:
+        tenancy_store.save_draft(tenant_id, merged, updated_by=by, conn=conn)
+        # Intent drafts have no brand.snapshot — do not call _backfill_domain here.
+        if principal.get("type") == "admin":
+            record_admin_audit_event(
+                conn,
+                action="tenant_intent_draft_saved",
+                actor=principal,
+                resource_type="tenant_intent",
+                resource_id=intent_name,
+                tenant_id=tenant_id,
+                details={
+                    "intent_name": intent_name,
+                    "enabled": body.enabled,
+        "changed_fields": sorted(k for k in override if k != "name"),
+        "keywords": [str(k)[:50] for k in (body.keywords or [])][:20] if body.keywords is not None else None,
+        "examples": [str(k)[:50] for k in (body.examples or [])][:20] if body.examples is not None else None,
+        "has_answer": bool(body.answer),
+        "removed": bool(body.remove or body.__remove__),
+    },
+            )
+
+    warnings: list = []
+    try:
+        tenancy_loader.validate_merged_profile(tenant_id, merged)
+    except tenancy_loader.ProfileValidationError as exc:
+        warnings.append(str(exc))
+    return {"ok": True, "tenant_id": tenant_id, "has_draft": True, "validation": warnings}
+
+
+def _draft_changes_menu_only(draft, live) -> bool:
+    """Menu edits publish without approval; anything else needs a super admin.
+
+    The menu editor also writes the intent pages its options route to, so
+    `menu` and `intents` both count as the menu scope. Any other change —
+    brand, features, flows, business hours — keeps the approval gate.
+    """
+    if not isinstance(draft, dict):
+        return False
+    # Without a published baseline there is nothing to diff against, so a
+    # non-super admin's first publish goes through approval like any other
+    # profile-wide change.
+    if not isinstance(live, dict) or not live:
+        return False
+    changed = {key for key in set(draft) | set(live) if draft.get(key) != live.get(key)}
+    return changed <= {"menu", "intents"}
+
+
+@router.post("/{tenant_id}/scrape-website")
+def scrape_website_for_tenant(
+    tenant_id: str,
+    body: UrlAutoOnboardRequest,
+    principal: dict = Depends(require_tenant_access()),
+):
+    url = (body.url or "").strip()
+    if not url:
+        raise HTTPException(status_code=400, detail="Website URL is required")
+    try:
+        from services.url_scraper import UrlAutoOnboarder
+        onboarder = UrlAutoOnboarder(tenant_id=tenant_id, actor=principal)
+        result = onboarder.execute_onboarding(
+            url=url,
+            target_tenant_id=tenant_id,
+            auto_publish=body.auto_publish,
+        )
+        return {"ok": True, "result": result}
+    except Exception as exc:
+        logger.error("Scrape website failed for tenant %s: %s", tenant_id, exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Website crawl and sync failed: {exc}")
+
+
+# ── Scheduled website re-crawling ─────────────────────────────────────────
+# A schedule stores the tenant's source URL and a refresh interval; the
+# background scheduler in main.py re-runs UrlAutoOnboarder when it is due.
+
+def _run_scheduled_crawl(tenant_id: str, url: str, auto_publish: bool, max_pages: int = 8) -> None:
+    """Blocking crawl run — invoked from a background task's threadpool."""
+    try:
+        mark_crawl_started(tenant_id)
+        from services.url_scraper import UrlAutoOnboarder
+
+        onboarder = UrlAutoOnboarder(
+            tenant_id=tenant_id,
+            actor={"username": "crawl_schedule", "role": "system", "tenant_id": tenant_id},
+        )
+        onboarder.execute_onboarding(
+            url=url,
+            target_tenant_id=tenant_id,
+            auto_publish=auto_publish,
+            max_pages=max_pages,
+        )
+        mark_crawl_finished(tenant_id, "success")
+    except Exception as exc:
+        logger.error("Scheduled crawl failed for tenant %s: %s", tenant_id, exc, exc_info=True)
+        mark_crawl_finished(tenant_id, "failed", str(exc)[:500])
+
+
+@router.get("/{tenant_id}/crawl-schedule")
+def get_tenant_crawl_schedule(
+    tenant_id: str,
+    principal: dict = Depends(require_tenant_access()),
+):
+    return {"ok": True, "tenant_id": tenant_id, "schedule": get_crawl_schedule(tenant_id)}
+
+
+@router.put("/{tenant_id}/crawl-schedule")
+def set_tenant_crawl_schedule(
+    tenant_id: str,
+    body: CrawlScheduleIn,
+    principal: dict = Depends(require_tenant_access()),
+):
+    url = (body.url or "").strip()
+    if not url:
+        raise HTTPException(status_code=400, detail="Website URL is required")
+    schedule = upsert_crawl_schedule(
+        tenant_id=tenant_id,
+        url=url,
+        interval_hours=body.interval_hours,
+        max_pages=body.max_pages,
+        auto_publish=body.auto_publish,
+        is_enabled=body.is_enabled,
+    )
+    with get_db_context() as conn:
+        record_admin_audit_event(
+            conn,
+            action="crawl_schedule_saved",
+            actor=principal,
+            resource_type="crawl_schedule",
+            resource_id=tenant_id,
+            tenant_id=tenant_id,
+            details={"url": url[:200], "interval_hours": body.interval_hours},
+        )
+    return {"ok": True, "schedule": schedule}
+
+
+@router.delete("/{tenant_id}/crawl-schedule")
+def remove_tenant_crawl_schedule(
+    tenant_id: str,
+    principal: dict = Depends(require_tenant_access()),
+):
+    deleted = delete_crawl_schedule(tenant_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="No crawl schedule exists for this tenant")
+    with get_db_context() as conn:
+        record_admin_audit_event(
+            conn,
+            action="crawl_schedule_deleted",
+            actor=principal,
+            resource_type="crawl_schedule",
+            resource_id=tenant_id,
+            tenant_id=tenant_id,
+        )
+    return {"ok": True, "deleted": True}
+
+
+@router.post("/{tenant_id}/crawl-schedule/run")
+def run_tenant_crawl_now(
+    tenant_id: str,
+    background_tasks: BackgroundTasks,
+    principal: dict = Depends(require_tenant_access()),
+):
+    """Trigger the tenant's scheduled crawl immediately, in the background."""
+    schedule = get_crawl_schedule(tenant_id)
+    if not schedule:
+        raise HTTPException(status_code=404, detail="Save a crawl schedule first")
+    if schedule.get("last_status") == "running":
+        raise HTTPException(status_code=409, detail="A crawl is already running for this tenant")
+    background_tasks.add_task(
+        _run_scheduled_crawl,
+        tenant_id,
+        schedule["url"],
+        schedule["auto_publish"],
+        schedule["max_pages"],
+    )
+    return {"ok": True, "status": "queued", "url": schedule["url"]}
+
+
+@router.post("/{tenant_id}/publish")
+def publish_profile(
+    tenant_id: str,
+    request: Request,
+    principal: dict = Depends(require_tenant_access()),
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+):
+    """Validate the merged profile, append a version, go live, purge the cache.
+
+    Super admins and tenant-scoped tokens publish directly. For every other
+    admin the scope of the edit decides: a menu-only edit goes live
+    immediately, while anything that touches the rest of the profile is
+    queued as a pending request only a super admin can approve — the same
+    gate as the Register a tenant panel. Each publish is audit-logged below,
+    so who made a profile live is always answerable.
+    """
+    draft = tenancy_store.get_draft(tenant_id)
+    if draft is None:
+        raise HTTPException(status_code=400, detail=f"No draft exists for tenant '{tenant_id}'")
+
+    if principal.get("type") == "admin" and principal.get("role") != "super_admin":
+        if not _draft_changes_menu_only(draft, tenancy_store.get_published_mirror(tenant_id)):
+            from routes.tenant_approvals import queue_publish_for_approval
+
+            current_admin = get_current_admin(request, credentials)
+            result = queue_publish_for_approval(tenant_id, current_admin)
+            return {
+                "ok": True,
+                "tenant_id": tenant_id,
+                "status": "pending_approval",
+                "request": result["request"],
+                "message": (
+                    "Profile change sent for super admin approval — "
+                    "it goes live only once approved."
+                ),
+            }
+
+    try:
+        profile = tenancy_loader.validate_merged_profile(tenant_id, draft)
+    except tenancy_loader.ProfileValidationError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Profile failed validation, nothing published: {exc}",
+        )
+
+    from shared.tenancy import schemas as tenancy_schemas
+
+    missing = tenancy_schemas.missing_contact_fields(profile.brand)
+    if missing:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Missing required profile fields: {', '.join(missing)}",
+        )
+
+    by = principal.get("username") or principal.get("label", "")
+    with get_db_context() as conn:
+        version = tenancy_store.publish_version(tenant_id, draft, published_by=by, conn=conn)
+        if principal.get("type") == "admin":
+            record_admin_audit_event(
+                conn,
+                action="tenant_profile_published",
+                actor=principal,
+                resource_type="tenant_profile",
+                resource_id=tenant_id,
+                tenant_id=tenant_id,
+                details={
+                    "version": version,
+                    "vertical": profile.vertical,
+                    "active_intents": profile.active_intent_names(),
+                    "visible_buttons": [b.id for b in profile.menu.buttons],
+                    "total_buttons": len(profile.menu.buttons),
+                },
+            )
+    tenancy_cache.purge(tenant_id)
+    logger.info("TENANT_PROFILE_PUBLISHED | tenant=%s | version=%s | by=%s", tenant_id, version, by)
+
+    # Keep the on-disk client pack in sync with what was just published so an
+    # edit made in the console (intents editor, menu editor, ...) also lands in
+    # clients/<tenant>/config.json. A missing pack or I/O error is non-fatal:
+    # the DB version is already live.
+    try:
+        written = tenancy_loader.write_client_config_file(tenant_id, draft)
+        if written:
+            logger.info("CLIENT_CONFIG_SYNCED | tenant=%s | path=%s", tenant_id, written)
+    except Exception as exc:
+        logger.warning("Could not sync client config file for %s: %s", tenant_id, exc)
+    return {
+        "ok": True,
+        "tenant_id": tenant_id,
+        "version": version,
+        "vertical": profile.vertical,
+        "active_intents": profile.active_intent_names(),
+        "visible_buttons": [b.id for b in profile.menu.buttons],
+    }
+
+
+class TestQuestion(BaseModel):
+    message: str = Field(min_length=1, max_length=500)
+
+
+@router.post("/{tenant_id}/test-question")
+def test_question(
+    tenant_id: str,
+    body: TestQuestion,
+    principal: dict = Depends(require_tenant_access()),
+):
+    """The admin 'test a question' box: run one utterance through this
+    tenant's live intent matcher (rules then embeddings — the same tiers
+    eval/run.py drives), so an editor can see routing change as they tune
+    the profile without waiting for a real customer to ask."""
+    if not tenancy_store.get_tenant(tenant_id):
+        raise HTTPException(status_code=404, detail="tenant not found")
+
+    from shared.tenancy.intent_match import match_intent
+
+    profile = tenancy_loader.get_tenant_profile(tenant_id)
+    intent, score, tier = match_intent(body.message.strip(), profile)
+    matched = profile.intent(intent) if intent else None
+    return {
+        "tenant_id": tenant_id,
+        "message": body.message,
+        "intent": intent,
+        "score": round(score, 3),
+        "tier": tier,
+        "flow": matched.flow if matched else None,
+        "active_intents": profile.active_intent_names(),
+    }
+
+
+@router.post("/{tenant_id}/rollback")
+def rollback_profile(
+    tenant_id: str,
+    body: RollbackRequest,
+    principal: dict = Depends(require_tenant_access()),
+):
+    """Re-point is_current at an earlier version. Nothing is deleted."""
+    with get_db_context() as conn:
+        if not tenancy_store.rollback(tenant_id, body.version, conn=conn):
+            raise HTTPException(status_code=404, detail=f"version {body.version} not found")
+        if principal.get("type") == "admin":
+            record_admin_audit_event(
+                conn,
+                action="tenant_profile_rolled_back",
+                actor=principal,
+                resource_type="tenant_profile",
+                resource_id=tenant_id,
+                tenant_id=tenant_id,
+                details={"version": body.version},
+            )
+    tenancy_cache.purge(tenant_id)
+    profile = tenancy_loader.get_tenant_profile(tenant_id)
+    logger.info("TENANT_PROFILE_ROLLBACK | tenant=%s | to=v%s | by=%s",
+                tenant_id, body.version, principal.get("username"))
+    return {
+        "ok": True,
+        "tenant_id": tenant_id,
+        "version": body.version,
+        "active": profile.version,
+        "active_intents": profile.active_intent_names(),
+    }
+
+
+# ── inbound routing + secrets ─────────────────────────────────────────────
+
+@router.post("/{tenant_id}/phone-id")
+def bind_phone(
+    tenant_id: str,
+    body: PhoneBind,
+    principal: dict = Depends(require_tenant_access()),
+):
+    _admin_only(principal)
+    if not tenancy_store.get_tenant(tenant_id):
+        raise HTTPException(status_code=404, detail="tenant not found")
+    phone_id = (body.waba_phone_id or "").strip()
+    try:
+        phone_id = tenancy_store.normalize_waba_phone_id(phone_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    with get_db_context() as conn:
+        if not tenancy_store.set_waba_phone_id(tenant_id, phone_id, conn=conn):
+            raise HTTPException(
+                status_code=409,
+                detail="phone id already bound to another tenant",
+            )
+        record_admin_audit_event(
+            conn,
+            action="tenant_phone_id_bound",
+            actor=principal,
+            resource_type="tenant",
+            resource_id=tenant_id,
+            tenant_id=tenant_id,
+            details={"configured": bool(body.waba_phone_id.strip())},
+        )
+    return {"ok": True, "tenant_id": tenant_id, "waba_phone_id": body.waba_phone_id}
+
+
+@router.post("/{tenant_id}/mobile-number")
+def bind_mobile(
+    tenant_id: str,
+    body: MobileBind,
+    principal: dict = Depends(require_tenant_access()),
+):
+    """Set the required business mobile for a tenant (separate from Meta phone-id)."""
+    _admin_only(principal)
+    if not tenancy_store.get_tenant(tenant_id):
+        raise HTTPException(status_code=404, detail="tenant not found")
+    try:
+        mobile = tenancy_store.normalize_mobile_number(body.mobile_number)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    with get_db_context() as conn:
+        if not tenancy_store.set_mobile_number(tenant_id, mobile, conn=conn):
+            raise HTTPException(
+                status_code=409,
+                detail="mobile_number already bound to another tenant",
+            )
+        record_admin_audit_event(
+            conn,
+            action="tenant_mobile_bound",
+            actor=principal,
+            resource_type="tenant",
+            resource_id=tenant_id,
+            tenant_id=tenant_id,
+            details={"mobile_number": mobile},
+        )
+    return {"ok": True, "tenant_id": tenant_id, "mobile_number": mobile}
+
+
+@router.put("/{tenant_id}/webhook-secret")
+def set_webhook_secret(
+    tenant_id: str,
+    body: WebhookSecretSet,
+    principal: dict = Depends(require_tenant_access()),
+):
+    """Per-tenant HMAC secret for outbound CRM webhooks."""
+    _admin_only(principal)
+    with get_db_context() as conn:
+        cur = conn.execute(
+            "UPDATE tenants SET webhook_secret = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (body.secret, tenant_id),
+        )
+        if cur.rowcount == 0:
+            raise HTTPException(status_code=404, detail="tenant not found")
+        record_admin_audit_event(
+            conn,
+            action="tenant_webhook_secret_configured",
+            actor=principal,
+            resource_type="tenant",
+            resource_id=tenant_id,
+            tenant_id=tenant_id,
+            details={"configured": True},
+        )
+    logger.info("TENANT_WEBHOOK_SECRET_SET | tenant=%s | by=%s",
+                tenant_id, principal.get("username"))
+    return {"ok": True, "tenant_id": tenant_id, "configured": True}
+
+
+# ── tenant-scoped tokens (Phase 0.5) ──────────────────────────────────────
+
+@router.post("/{tenant_id}/tokens")
+def create_token(
+    tenant_id: str,
+    body: TokenCreate,
+    principal: dict = Depends(require_tenant_access()),
+):
+    """Mint an opaque token scoped to this tenant.
+
+    The plaintext is returned exactly once. Only admins may mint.
+    """
+    by = _admin_only(principal)
+    if not tenancy_store.get_tenant(tenant_id):
+        raise HTTPException(status_code=404, detail="tenant not found")
+    raw = secrets.token_urlsafe(40)
+    with get_db_context() as conn:
+        token_id = tenancy_store.create_tenant_token(
+            tenant_id, hash_tenant_token(raw), label=body.label, created_by=by, conn=conn
+        )
+        record_admin_audit_event(
+            conn,
+            action="tenant_token_created",
+            actor=principal,
+            resource_type="tenant_token",
+            resource_id=token_id,
+            tenant_id=tenant_id,
+            details={},
+        )
+    logger.info("TENANT_TOKEN_CREATED | tenant=%s | id=%s | by=%s", tenant_id, token_id, by)
+    return {
+        "ok": True,
+        "id": token_id,
+        "tenant_id": tenant_id,
+        "token": raw,
+        "warning": "Store this now — it is hashed on the server and cannot be shown again.",
+    }
+
+
+@router.get("/{tenant_id}/tokens")
+def list_tokens(tenant_id: str, principal: dict = Depends(require_tenant_access())):
+    _admin_only(principal)
+    return {"tenant_id": tenant_id, "tokens": tenancy_store.list_tenant_tokens(tenant_id)}
+
+
+@router.delete("/{tenant_id}/tokens/{token_id}")
+def revoke_token(
+    tenant_id: str,
+    token_id: int,
+    principal: dict = Depends(require_tenant_access()),
+):
+    _admin_only(principal)
+    with get_db_context() as conn:
+        row = conn.execute(
+            "SELECT id, label FROM tenant_tokens WHERE id = ? AND tenant_id = ? AND revoked_at IS NULL",
+            (token_id, tenant_id),
+        ).fetchone()
+        if not row or not tenancy_store.revoke_tenant_token(token_id, conn=conn):
+            raise HTTPException(status_code=404, detail="token not found or already revoked")
+        record_admin_audit_event(
+            conn,
+            action="tenant_token_revoked",
+            actor=principal,
+            resource_type="tenant_token",
+            resource_id=token_id,
+            tenant_id=tenant_id,
+            details={},
+        )
+    return {"ok": True, "id": token_id}
+
+
+# ── smoke test ────────────────────────────────────────────────────────────
+
+@router.get("/{tenant_id}/smoke")
+def profile_smoke(tenant_id: str, principal: dict = Depends(require_tenant_access())):
+    """Assert the runtime really is data-derived.
+
+    Guards the Phase 4/7 exit test: menus and intents must equal the profile,
+    not any hardcoded constant. Fails loudly if a code default leaks back in.
+    """
+    from shared.tenancy import gating
+
+    profile = tenancy_loader.get_tenant_profile(tenant_id)
+    visible = [b.id for b in profile.menu.visible_buttons(profile.features)]
+    active = profile.active_intent_names()
+
+    leaked = sorted(
+        set(profile.guardrails.forbidden_terms)
+        & {s.lower() for s in tenancy_loader.profile_strings(profile)
+           if len(s) < 40 and s.strip().lower() in
+           {t.lower() for t in profile.guardrails.forbidden_terms}}
+    )
+    return {
+        "tenant_id": tenant_id,
+        "vertical": profile.vertical,
+        "version": profile.version,
+        "visible_buttons": visible,
+        "active_intents": active,
+        "gated_intents": {
+            intent: gating.is_enabled(tenant_id, gate)
+            for intent, gate in gating.INTENT_GATES.items()
+        },
+        "forbidden_term_leaks": leaked,
+        "ok": not leaked,
+    }
