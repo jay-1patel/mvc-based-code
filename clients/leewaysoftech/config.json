@@ -1,0 +1,465 @@
+{
+  "tenant_id": "leeway-softech",
+  "vertical": "ecommerce",
+  "display_name": "Leeway Softech",
+  "brand": {
+    "name": "Leeway Softech",
+    "bot_name": "Leeway Assistant",
+    "tagline": "Your trusted partner for AI engineering & digital transformation",
+    "website": "https://leewaysoftech.com",
+    "support_email": "sales@leewaysoftech.com",
+    "support_phone": "+91 86907 83030",
+    "signature": "Leeway Softech — At your service.",
+    "legal_name": "Leeway Softech Private Limited",
+    "headquarters": "Ahmedabad, Gujarat, India",
+    "global_reach": "USA, UK, UAE, Canada, Australia, India",
+    "founded": "2012",
+    "core_capabilities": [
+      "Generative AI & LLM Solutions",
+      "AI Chatbots & Virtual Assistants",
+      "Enterprise Software Development",
+      "Cloud & Data Engineering",
+      "WhatsApp Business API Solutions",
+      "Mobile & Web Applications",
+      "Shopify & Headless Commerce",
+      "UI/UX Design Systems"
+    ],
+    "logo_url": "https://leewaysoftech.com/assets/logo.png"
+  },
+  "features": {
+    "cart": false,
+    "buy_now": false,
+    "orders": false,
+    "track_order": false,
+    "returns": false,
+    "brochure_pdf": false,
+    "distributors": false,
+    "offerings": true,
+    "offering_details": true,
+    "lead_capture": true,
+    "quote": false,
+    "callback": false,
+    "book_appointment": false,
+    "handoff": true,
+    "faq": true,
+    "kb": true,
+    "complaints": false,
+    "campaigns": false,
+    "human_handover": true,
+    "services": false,
+    "payments": false,
+    "products": false,
+    "products_schemes": false
+  },
+  "vocabulary": {
+    "item_noun": "products",
+    "item_noun_singular": "product",
+    "browse_label": "Browse Products",
+    "catalog_label": "View Brochure",
+    "catalog_noun": "services",
+    "brochure_label": "Company Profile",
+    "brochure_noun": "company profile",
+    "offer_noun": "engagement",
+    "offer_noun_plural": "engagements",
+    "lead_noun": "enquiry",
+    "enquiry_label": "Enquire",
+    "quote_label": "Get a Quote",
+    "callback_label": "Request a Callback",
+    "support_label": "Raise Ticket"
+  },
+  "business_hours": {
+    "timezone": "Asia/Kolkata",
+    "always_open": false,
+    "open": "09:00",
+    "close": "19:00",
+    "open_days": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "raw": "09:30 AM - 07:00 PM (Mon-Sat)",
+    "out_of_hours_message": "We are outside working hours (Mon–Sat 09:30–19:00 IST). Leave your name, phone and project summary — sales will call you next working day."
+  },
+  "intents": [
+    {
+      "name": "technologies",
+      "answer": "Frontend: React/Next/Vue/Angular. Backend: Node/Python/Golang/.NET. AI: OpenAI, LangChain, PyTorch. Mobile: Flutter/RN. Cloud: AWS/Azure/GCP.",
+      "examples": [
+        "what technologies do you work with",
+        "what is your tech stack"
+      ],
+      "keywords": [
+        "technologies",
+        "tech stack",
+        "react",
+        "python",
+        "flutter",
+        "aws"
+      ],
+      "enabled": true,
+      "description": "Technologies"
+    },
+    {
+      "name": "projects",
+      "answer": "1500+ clients · 14 years · Tata Tele, BHEL, Powergrid, Bandhan Bank, Club Mahindra, AAI, Railways, Lodha. MoU with Govt of Gujarat for AI.",
+      "examples": [
+        "show me your work",
+        "who have you built for"
+      ],
+      "keywords": [
+        "projects",
+        "portfolio",
+        "case study",
+        "clients",
+        "our work"
+      ],
+      "enabled": true,
+      "description": "Projects"
+    },
+    {
+      "name": "careers",
+      "answer": "Hiring across sales, QA, design, support. Apply https://leewaysoftech.com/careers with PDF resume (max 2 MB).",
+      "keywords": [
+        "careers",
+        "job",
+        "hiring",
+        "vacancy",
+        "internship"
+      ],
+      "examples": [
+        "are you hiring",
+        "job openings at your company"
+      ],
+      "enabled": true,
+      "description": "Careers"
+    },
+    {
+      "name": "benefits",
+      "answer": "ISO/CMMI certified, 1500+ clients, Gujarat AI MoU, end-to-end from CPaaS to full software builds, NDA/IP-friendly.",
+      "keywords": [
+        "benefits",
+        "why choose",
+        "advantages",
+        "differentiators"
+      ],
+      "examples": [
+        "why should we work with you",
+        "what are the benefits"
+      ],
+      "enabled": true,
+      "description": "Benefits"
+    },
+    {
+      "name": "service_enquiry",
+      "examples": [
+        "what services do you offer",
+        "do you build mobile apps"
+      ],
+      "keywords": [
+        "service",
+        "services",
+        "what do you do",
+        "capability",
+        "capabilities",
+        "offerings",
+        "solution",
+        "expertise"
+      ],
+      "requires_feature": "offerings",
+      "answer": "",
+      "enabled": true
+    },
+    {
+      "name": "menu_development",
+      "answer": "",
+      "keywords": [],
+      "enabled": true
+    },
+    {
+      "name": "service-enquiry",
+      "examples": [
+        "what services do you offer",
+        "tell me about your offerings"
+      ],
+      "keywords": [
+        "service",
+        "services",
+        "what do you do",
+        "offerings",
+        "catalog"
+      ],
+      "enabled": true,
+      "description": "What services / offerings we provide",
+      "answer": "• Here's what Leeway Softech offers:\n• *Custom AI & Generative LLMs* — Custom AI & Generative LLMs\n• *WhatsApp Business CPaaS* — WhatsApp Business CPaaS\n• *Custom SaaS & App Eng* — Custom SaaS & App Eng\n• *Cloud & DevOps Setup* — Cloud & DevOps Setup\n• Ask for details on any item, or tap *Get a Quote* / *Request a Callback*."
+    },
+    {
+      "name": "pricing-enquiry",
+      "examples": [
+        "what are your prices",
+        "how much does it cost"
+      ],
+      "keywords": [
+        "price",
+        "pricing",
+        "cost",
+        "rate",
+        "package",
+        "quote"
+      ],
+      "enabled": true,
+      "description": "Pricing and packages",
+      "answer": "• Pricing depends on scope, volume, and packaging.\n• *Custom AI & Generative LLMs* — Custom AI & Generative LLMs\n• *WhatsApp Business CPaaS* — WhatsApp Business CPaaS\n• *Custom SaaS & App Eng* — Custom SaaS & App Eng\n• *Cloud & DevOps Setup* — Cloud & DevOps Setup\n• Share your requirements and we'll send a tailored quote — tap *Get a Quote*."
+    }
+  ],
+  "guardrails": {
+    "never_state": [
+      "Never offer unauthorized commercial discounts; Never promise unlisted completion dates; Never ask for server credentials or passwords."
+    ],
+    "escalate_keywords": [
+      "human",
+      "agent",
+      "manager",
+      "dispute",
+      "representative"
+    ],
+    "escalation_message": "Transfer to a senior solutions advisor when user asks for 'human', 'agent', or expresses a technical escalation / dispute.",
+    "handoff_keywords": [
+      "human",
+      "agent",
+      "person"
+    ],
+    "tone": "Consultative, professional, technically accurate, and brand-aligned",
+    "forbidden_terms": [
+      "OTP",
+      "password",
+      "share card details",
+      "wire transfer to personal account"
+    ]
+  },
+  "notifications": {
+    "sales_email": "sales@leewaysoftech.com",
+    "support_email": "support@leewaysoftech.com",
+    "brochure_url": "https://leewaysoftech.com/company-profile.pdf",
+    "brochure_label": "Service Brochure",
+    "channels": [
+      {
+        "type": "email",
+        "to": "sales@leewaysoftech.com",
+        "label": "sales"
+      }
+    ]
+  },
+  "flows": [
+    {
+      "name": "get_quote",
+      "success_message": "Thank you! Our specialist will prepare a customized quote and follow up promptly."
+    },
+    {
+      "name": "raise_ticket",
+      "success_message": "Your request has been logged. A support ticket has been created and an executive will assist you."
+    },
+    {
+      "name": "book_callback",
+      "success_message": "Thank you! Your consultation request has been scheduled with Leeway Assistant."
+    }
+  ],
+  "menu": {
+    "key": "kb_main",
+    "header": "Leeway Softech",
+    "body": "\"Welcome to Leeway Softech! How can I assist you with your AI & software needs today?\"",
+    "footer": "Select an option or type your query directly",
+    "button_text": "Select Option",
+    "buttons": [
+      {
+        "id": "menu_services",
+        "title": "Our Services",
+        "description": "AI, software, web, mobile & CPaaS",
+        "section": "💻 Services",
+        "icon": "🛠️",
+        "sort_order": 0,
+        "enabled": true,
+        "intent": "offerings"
+      },
+      {
+        "id": "menu_technologies",
+        "title": "Technologies",
+        "description": "React, Python, Flutter, cloud & AI",
+        "section": "💻 Services",
+        "icon": "💻",
+        "sort_order": 1,
+        "enabled": true,
+        "intent": "technologies"
+      },
+      {
+        "id": "menu_projects",
+        "title": "Projects",
+        "description": "Clients, portfolio & industries served",
+        "section": "🏢 Company",
+        "icon": "📁",
+        "sort_order": 2,
+        "enabled": true,
+        "intent": "projects"
+      },
+      {
+        "id": "menu_quote",
+        "title": "Get a Quote",
+        "description": "Share scope for a written estimate",
+        "section": "📋 Sales",
+        "icon": "📝",
+        "sort_order": 3,
+        "enabled": true,
+        "flow": "get_quote"
+      },
+      {
+        "id": "menu_careers",
+        "title": "Careers",
+        "description": "Open roles & how to apply",
+        "section": "🏢 Company",
+        "icon": "💼",
+        "sort_order": 4,
+        "enabled": true,
+        "intent": "careers"
+      },
+      {
+        "id": "menu_benefits",
+        "title": "Benefits",
+        "description": "Why 1500+ clients choose Leeway",
+        "section": "🏢 Company",
+        "icon": "🎁",
+        "sort_order": 5,
+        "enabled": true,
+        "intent": "benefits"
+      },
+      {
+        "id": "menu_brochure",
+        "title": "Service Brochure",
+        "description": "Download our capability brochure",
+        "section": "🏢 Company",
+        "icon": "📄",
+        "sort_order": 6,
+        "enabled": true,
+        "intent": "offerings"
+      },
+      {
+        "id": "menu_callback",
+        "title": "Book a Callback",
+        "description": "Have our team call you back",
+        "section": "📞 Talk To Us",
+        "icon": "📞",
+        "sort_order": 7,
+        "enabled": true,
+        "flow": "book_callback"
+      },
+      {
+        "id": "menu_support",
+        "title": "Support",
+        "description": "Existing client support tickets",
+        "section": "📞 Talk To Us",
+        "icon": "🆘",
+        "sort_order": 8,
+        "enabled": true,
+        "flow": "raise_ticket"
+      },
+      {
+        "id": "our_offerings",
+        "title": "Our Offerings",
+        "description": "Browse AI engineering, CPaaS, SaaS & cloud services",
+        "section": "Offerings",
+        "sort_order": 1,
+        "enabled": true,
+        "intent": "offerings"
+      },
+      {
+        "id": "pricing_quote",
+        "title": "Pricing & Quote",
+        "description": "Request custom estimates tailored to your project scope",
+        "section": "Pricing",
+        "sort_order": 2,
+        "enabled": true,
+        "flow": "get_quote"
+      },
+      {
+        "id": "schedule_a_callback",
+        "title": "Schedule a Callback",
+        "description": "Connect directly with an AI & Software Specialist",
+        "section": "Contact",
+        "sort_order": 3,
+        "enabled": true,
+        "flow": "book_callback"
+      },
+      {
+        "id": "knowledge_faqs",
+        "title": "Knowledge & FAQs",
+        "description": "Common technical questions, SLAs & ISO security compliance",
+        "section": "FAQs",
+        "sort_order": 4,
+        "enabled": true,
+        "intent": "knowledge_faqs"
+      },
+      {
+        "id": "customer_support",
+        "title": "Customer Support",
+        "description": "Raise a support ticket or speak with a live engineer",
+        "section": "Support",
+        "sort_order": 5,
+        "enabled": true,
+        "flow": "raise_ticket"
+      }
+    ]
+  },
+  "prompt": {
+    "tone": "Consultative, professional, technically accurate, and brand-aligned",
+    "keywords": [
+      "government",
+      "bfsi",
+      "education",
+      "hospitality",
+      "enterprise",
+      "ai",
+      "software",
+      "cpaas",
+      "whatsapp api",
+      "web",
+      "mobile",
+      "cloud",
+      "use case",
+      "timeline",
+      "budget band",
+      "existing stack",
+      "fixed-price",
+      "t&m",
+      "dedicated pods",
+      "retainers"
+    ],
+    "domain_specific_topics": "Primary industries: Government, BFSI, Education, Hospitality, Enterprise; Core capabilities: AI, software, CPaaS, WhatsApp API, web, mobile, cloud; Lead context: Use case, timeline, budget band, existing stack; Delivery model: Fixed-price, T&M;, dedicated pods, retainers",
+    "industry": "retail and e-commerce",
+    "listing_type": "products",
+    "domain_specific_queries": "products, prices, stock, delivery, returns, or payment"
+  },
+  "waba_phone_hint": "+91 8690783030",
+  "domain_answers": [
+    {
+      "label": "Primary industries",
+      "help": "Sectors you serve",
+      "value": "Government, BFSI, Education, Hospitality, Enterprise"
+    },
+    {
+      "label": "Core capabilities",
+      "help": "Keywords for classifier",
+      "value": "AI, software, CPaaS, WhatsApp API, web, mobile, cloud"
+    },
+    {
+      "label": "Lead context",
+      "help": "What sales needs",
+      "value": "Use case, timeline, budget band, existing stack"
+    },
+    {
+      "label": "Delivery model",
+      "help": "How you engage",
+      "value": "Fixed-price, T&M;, dedicated pods, retainers"
+    }
+  ]
+}

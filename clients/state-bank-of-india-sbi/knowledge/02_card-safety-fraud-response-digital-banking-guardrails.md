@@ -1,0 +1,1 @@
+# Stay Safe Block lost cards immediately via the menu, SMS BLOCK to 567676 or 1800 1234. Never share OTP, PIN, CVV, or passwords in chat. This WhatsApp assistant does not move money. Use official apps/net banking for payments. Report unauthorized transactions at once with amount, time, and merchant details.

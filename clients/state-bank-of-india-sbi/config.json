@@ -1,0 +1,237 @@
+{
+  "vertical": "banking",
+  "display_name": "State Bank of India (SBI)",
+  "features": {
+    "cart": false,
+    "buy_now": false,
+    "orders": false,
+    "payments": false,
+    "track_order": false,
+    "returns": false,
+    "brochure_pdf": false,
+    "distributors": false,
+    "offerings": true,
+    "offering_details": true,
+    "services": false,
+    "products": false,
+    "products_schemes": true,
+    "lead_capture": true,
+    "quote": false,
+    "callback": true,
+    "book_appointment": false,
+    "handoff": true,
+    "faq": true,
+    "kb": true,
+    "complaints": true,
+    "campaigns": false,
+    "human_handover": true
+  },
+  "brand": {
+    "name": "State Bank of India (SBI)",
+    "bot_name": "SBI Assistant",
+    "tagline": "SBI · The Banker to Every Indian",
+    "website": "https://www.sbi.co.in",
+    "support_email": "support@state-bank-of-india-sbi.com",
+    "support_phone": "+91 80 26599990",
+    "signature": "State Bank of India (SBI) — At your service."
+  },
+  "vocabulary": {
+    "item_noun": "schemes",
+    "item_noun_singular": "scheme",
+    "browse_label": "Our Products",
+    "catalog_label": "Product Brochure",
+    "lead_noun": "enquiry",
+    "enquiry_label": "Enquire"
+  },
+  "prompt": {
+    "tone": "Consultative, professional and brand-aligned",
+    "industry": "banking and insurance",
+    "listing_type": "products or schemes",
+    "domain_specific_queries": "accounts, cards, charges, claims, or eligibility"
+  },
+  "business_hours": {
+    "timezone": "Asia/Kolkata",
+    "always_open": false,
+    "open": "10:00",
+    "close": "16:00",
+    "open_days": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5
+    ]
+  },
+  "guardrails": {
+    "escalation_message": "Transfer to human sales advisor when user asks for 'human', 'agent' or expresses dispute",
+    "handoff_keywords": [
+      "human",
+      "agent",
+      "person",
+      "manager"
+    ],
+    "never_state": [
+      "Never offer unauthorized discounts; Never promise unlisted dates; Never ask for OTPs"
+    ],
+    "tone": "Consultative, professional and brand-aligned",
+    "escalate_keywords": [
+      "human",
+      "agent",
+      "manager",
+      "dispute",
+      "representative"
+    ]
+  },
+  "tenant_id": "state-bank-of-india-sbi",
+  "menu": {
+    "key": "kb_main",
+    "header": "State Bank of India (SBI)",
+    "body": "Welcome to State Bank of India! How can I assist you today?",
+    "footer": "Select an option or type your query directly",
+    "button_text": "Select Option",
+    "buttons": [
+      {
+        "id": "menu_products",
+        "title": "Banking Products",
+        "description": "Accounts, cards & loans",
+        "section": "Banking Products",
+        "sort_order": 1,
+        "enabled": true,
+        "intent": "menu_products"
+      },
+      {
+        "id": "menu_cards",
+        "title": "Cards",
+        "description": "Credit & debit card help",
+        "section": "Banking Products",
+        "sort_order": 2,
+        "enabled": true,
+        "intent": "offerings"
+      },
+      {
+        "id": "menu_loans",
+        "title": "Loans",
+        "description": "Personal, home & business loans",
+        "section": "Banking Products",
+        "sort_order": 3,
+        "enabled": true,
+        "intent": "offerings"
+      },
+      {
+        "id": "menu_deposits",
+        "title": "Deposits & FDs",
+        "description": "Savings, fixed & recurring deposit rates",
+        "section": "Banking Products",
+        "sort_order": 4,
+        "enabled": true,
+        "intent": "offerings"
+      },
+      {
+        "id": "menu_eligibility",
+        "title": "Check Eligibility",
+        "description": "Get a quick check",
+        "section": "Talk To Us",
+        "sort_order": 5,
+        "enabled": true,
+        "flow": "book_callback"
+      },
+      {
+        "id": "menu_callback",
+        "title": "Request a Callback",
+        "description": "Have us call you back",
+        "section": "Talk To Us",
+        "sort_order": 6,
+        "enabled": true,
+        "flow": "book_callback"
+      },
+      {
+        "id": "menu_grievance",
+        "title": "Raise a Complaint",
+        "description": "Register a grievance",
+        "section": "Support",
+        "sort_order": 7,
+        "enabled": true,
+        "flow": "raise_ticket"
+      },
+      {
+        "id": "menu_branch",
+        "title": "Branch & Support",
+        "description": "Find us / contact support",
+        "section": "Support",
+        "sort_order": 8,
+        "enabled": true,
+        "intent": "branch_locator"
+      },
+      {
+        "id": "menu_human",
+        "title": "Talk to Human",
+        "description": "Chat with our team",
+        "section": "Support",
+        "sort_order": 9,
+        "enabled": true,
+        "flow": "book_callback"
+      },
+      {
+        "id": "menu_block_card",
+        "title": "Block Lost Card",
+        "description": "Instantly block lost or stolen card",
+        "section": "Support",
+        "sort_order": 10,
+        "enabled": true,
+        "flow": "raise_ticket"
+      }
+    ]
+  },
+  "intents": [
+    {
+      "name": "service-enquiry",
+      "examples": [
+        "what services do you offer",
+        "tell me about your offerings"
+      ],
+      "keywords": [
+        "service",
+        "services",
+        "what do you do",
+        "offerings",
+        "catalog"
+      ],
+      "enabled": true,
+      "description": "What services / offerings we provide",
+      "answer": "• Here's what State Bank of India (SBI) offers:\n• *SBI Savings Account* — SBI Savings Account (On Request)\n• *SBI Fixed Deposit* — SBI Fixed Deposit (On Request)\n• *Cashback SBI Card* — Cashback SBI Card (On Request)\n• *SBI Home Loan* — SBI Home Loan (On Request)\n• Ask for details on any item, or tap *Get a Quote* / *Request a Callback*."
+    },
+    {
+      "name": "pricing-enquiry",
+      "examples": [
+        "what are your prices",
+        "how much does it cost"
+      ],
+      "keywords": [
+        "price",
+        "pricing",
+        "cost",
+        "rate",
+        "package",
+        "quote"
+      ],
+      "enabled": true,
+      "description": "Pricing and packages",
+      "answer": "• Pricing depends on scope, volume, and packaging.\n• *SBI Savings Account* — SBI Savings Account (On Request)\n• *SBI Fixed Deposit* — SBI Fixed Deposit (On Request)\n• *Cashback SBI Card* — Cashback SBI Card (On Request)\n• *SBI Home Loan* — SBI Home Loan (On Request)\n• Share your requirements and we'll send a tailored quote — tap *Get a Quote*."
+    }
+  ],
+  "flows": [
+    {
+      "name": "book_callback",
+      "success_message": "Thank you! Your consultation request has been scheduled with SBI Assistant."
+    },
+    {
+      "name": "get_quote",
+      "success_message": "Thank you! Our specialist will prepare a customized quote and follow up promptly."
+    },
+    {
+      "name": "raise_ticket",
+      "success_message": "Your request has been logged. A support ticket has been created and an executive will assist you."
+    }
+  ]
+}

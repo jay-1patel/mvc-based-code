@@ -1,0 +1,309 @@
+{
+  "vertical": "real_estate",
+  "display_name": "DLF India",
+  "features": {
+    "cart": false,
+    "buy_now": false,
+    "orders": false,
+    "payments": false,
+    "track_order": false,
+    "returns": false,
+    "brochure_pdf": true,
+    "distributors": false,
+    "offerings": true,
+    "offering_details": true,
+    "services": false,
+    "products": false,
+    "products_schemes": false,
+    "lead_capture": true,
+    "quote": true,
+    "callback": true,
+    "book_appointment": true,
+    "handoff": true,
+    "faq": true,
+    "kb": true,
+    "complaints": true,
+    "campaigns": false,
+    "human_handover": true
+  },
+  "brand": {
+    "name": "DLF India",
+    "tagline": "DLF - Where Luxury Meets Life",
+    "website": "https://www.dlf.in/",
+    "support_email": "care@dlf.com",
+    "support_phone": "+91 8000305305",
+    "signature": "DLF - Where Luxury Meets Life",
+    "bot_name": "dlf bot"
+  },
+  "vocabulary": {
+    "item_noun": "properties",
+    "item_noun_singular": "property",
+    "browse_label": "Featured Properties",
+    "catalog_label": "Project Brochure",
+    "lead_noun": "site visit request",
+    "enquiry_label": "Schedule Site Visit",
+    "catalog_noun": "project brochure",
+    "order_noun": "booking",
+    "order_noun_plural": "bookings",
+    "cart_noun": "shortlist",
+    "checkout_label": "Book Unit",
+    "brochure_label": "Project Brochure",
+    "brochure_noun": "project brochure",
+    "offer_noun": "offer",
+    "offer_noun_plural": "offers",
+    "quote_label": "Price & Payment Plan",
+    "callback_label": "Request a Callback",
+    "support_label": "Customer Support",
+    "track_label": "Track Booking"
+  },
+  "prompt": {
+    "tone": "reassuring, consultative, and knowledgeable",
+    "industry": "real estate & property development",
+    "listing_type": "properties or projects",
+    "domain_specific_queries": "properties, floor plans, pricing, possession dates, or site visits",
+    "keywords": [
+      "property",
+      "flat",
+      "apartment",
+      "villa",
+      "bhk",
+      "sqft",
+      "possession",
+      "rera",
+      "site visit",
+      "amenities",
+      "floor plan",
+      "price",
+      "emi",
+      "residential",
+      "commercial",
+      "luxury",
+      "penthouse"
+    ]
+  },
+  "business_hours": {
+    "timezone": "Asia/Kolkata",
+    "always_open": true,
+    "open": "09:00",
+    "close": "21:00",
+    "open_days": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
+    "out_of_hours_message": "We are currently outside our working hours. Leave your details and our team will call you back on the next working day."
+  },
+  "guardrails": {
+    "escalation_message": "Let me connect you with our team.",
+    "handoff_keywords": [
+      "human",
+      "agent",
+      "person"
+    ],
+    "never_state": [
+      "guaranteed price appreciation",
+      "unconfirmed discounts",
+      "guaranteed rental yield without contract",
+      "non-RERA details"
+    ],
+    "escalate_keywords": [
+      "legal dispute",
+      "refund advance",
+      "court",
+      "rera complaint",
+      "builder delay",
+      "police",
+      "fraud"
+    ],
+    "forbidden_terms": [
+      "add to cart",
+      "buy now",
+      "checkout",
+      "shipping charge",
+      "delivery boy",
+      "dispatch"
+    ]
+  },
+  "notifications": {
+    "sales_email": "sales@dlf.in",
+    "support_email": "care@dlf.com",
+    "brochure_url": ""
+  },
+  "menu": {
+    "key": "kb_main",
+    "header": "",
+    "body": "Welcome to Skyline Realty! How can we assist with your dream property today?",
+    "footer": "Or type your question directly",
+    "button_text": "Explore Options",
+    "buttons": [
+      {
+        "id": "menu_properties",
+        "title": "Explore Properties",
+        "description": "2, 3 & 4 BHK apartments & villas",
+        "section": "🏢 Properties",
+        "icon": "🏙️",
+        "sort_order": 0,
+        "enabled": true,
+        "requires_feature": "offerings",
+        "out_of_hours_only": false,
+        "flow": null,
+        "intent": "property_listings"
+      },
+      {
+        "id": "menu_projects",
+        "title": "Ongoing Projects",
+        "description": "Prime locations & specifications",
+        "section": "🏢 Properties",
+        "icon": "🏗️",
+        "sort_order": 1,
+        "enabled": true,
+        "requires_feature": "offering_details",
+        "out_of_hours_only": false,
+        "flow": null,
+        "intent": "project_details"
+      },
+      {
+        "id": "menu_site_visit",
+        "title": "Schedule/book Site Visit",
+        "description": "Free cab pick-up & guided site tour",
+        "section": "📞 Bookings",
+        "icon": "🚗",
+        "sort_order": 2,
+        "enabled": true,
+        "requires_feature": "book_appointment",
+        "out_of_hours_only": false,
+        "flow": "book_callback",
+        "intent": null
+      },
+      {
+        "id": "menu_pricing_plan",
+        "title": "Pricing & Plans",
+        "description": "Flexible payment schemes & home loans",
+        "section": "📞 Bookings",
+        "icon": "💳",
+        "sort_order": 3,
+        "enabled": true,
+        "requires_feature": "quote",
+        "out_of_hours_only": false,
+        "flow": null,
+        "intent": "pricing_plan"
+      },
+      {
+        "id": "menu_support",
+        "title": "Customer Support",
+        "description": "Existing buyer queries & tickets",
+        "section": "🆘 Support",
+        "icon": "🆘",
+        "sort_order": 5,
+        "enabled": true,
+        "requires_feature": "complaints",
+        "out_of_hours_only": false,
+        "flow": "raise_ticket",
+        "intent": null
+      },
+      {
+        "id": "menu_callback",
+        "title": "Request Callback",
+        "description": "receive callback from our team",
+        "section": "🆘 Support",
+        "icon": "📞",
+        "sort_order": 6,
+        "enabled": true,
+        "requires_feature": "human_handover",
+        "out_of_hours_only": false,
+        "flow": "book_callback",
+        "intent": null
+      },
+      {
+        "id": "menu_about_us",
+        "title": "About us",
+        "description": "about us",
+        "section": "🏠  About DLF Real Estate",
+        "icon": "📝 ",
+        "sort_order": 4,
+        "enabled": true,
+        "requires_feature": null,
+        "out_of_hours_only": false,
+        "flow": null,
+        "intent": "menu_about_us"
+      },
+      {
+        "id": "menu_nri",
+        "title": "NRI investment",
+        "description": "view NRI investment",
+        "section": "🏢 Properties",
+        "icon": "🏆",
+        "sort_order": 7,
+        "enabled": true,
+        "requires_feature": null,
+        "out_of_hours_only": false,
+        "flow": null,
+        "intent": "menu_nri"
+      }
+    ]
+  },
+  "intents": [
+    {
+      "name": "menu_about_us",
+      "answer": "",
+      "keywords": [],
+      "enabled": true
+    },
+    {
+      "name": "project_details",
+      "answer": "• 🏗️ *Project Highlights & World-Class Amenities:*\n• *Prime Connectivity:* Centrally situated on SG Highway, 5 mins from metro, 15 mins from airport.\n• *50,000 sq.ft. Luxury Clubhouse:* Temperature-controlled infinity pool, fully equipped gym & spa.\n• *Open Greenery:* 75% open landscaped spaces with jogging track & children's themed park.\n• *Eco-Friendly & Smart:* EV charging bays, solar rooftop power, rainwater harvesting, 3-tier smart security.\n• *Possession:* Tower A & B Ready-to-Move; Tower C & D possession by December 2026.\n• Tap *Project Brochure* to get full architectural drawings!",
+      "keywords": [
+        "project",
+        "location",
+        "amenities",
+        "clubhouse",
+        "gym",
+        "swimming pool",
+        "possession",
+        "specifications",
+        "master plan"
+      ],
+      "examples": [
+        "where is the project located",
+        "what amenities are provided",
+        "possession date"
+      ],
+      "enabled": true,
+      "requires_feature": "offering_details"
+    },
+    {
+      "name": "menu_nri",
+      "answer": "",
+      "keywords": [],
+      "enabled": true
+    },
+    {
+      "name": "property_listings",
+      "answer": "• 🏙️ *Featured Properties & Residences:*\n• *Skyline Elegance:* 2 & 3 BHK Premium Apartments (1,150 – 1,680 sq.ft.) starting from ₹68 Lakhs.\n• *Skyline Grandeur:* 4 BHK Ultra-Luxury Residences & Penthouses (2,450 – 3,200 sq.ft.) starting from ₹1.45 Cr.\n• *Skyline Business Park:* Grade-A Commercial Office Suites & Retail Shops (500 – 4,500 sq.ft.) starting from ₹42 Lakhs.\n• *Skyline Orchard:* Exclusive Gated Villa Plots starting from ₹35 Lakhs.\n• Tap *Schedule Site Visit* or *Request a Callback* to view available units!",
+      "keywords": [
+        "property",
+        "properties",
+        "apartment",
+        "apartments",
+        "flat",
+        "flats",
+        "bhk",
+        "villa",
+        "villas",
+        "residence",
+        "penthouse"
+      ],
+      "examples": [
+        "what apartments do you have",
+        "show 3 bhk flats",
+        "villa options"
+      ],
+      "enabled": true,
+      "requires_feature": "offerings"
+    }
+  ]
+}

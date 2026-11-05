@@ -1,0 +1,1 @@
+# Product Guide Savings accounts earn 2.50% p.a. with no minimum balance; BSBD accounts include 4 free cash withdrawals a month (revised charges from 1 Oct 2026). FD rates 3.05%-6.40% p.a., 6.45% on 444 days; senior citizens +0.50%. Cashback SBI Card and Home Loans have published eligibility - ask for the latest rate sheet and document checklist before applying.

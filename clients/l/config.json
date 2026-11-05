@@ -1,0 +1,370 @@
+{
+  "tenant_id": "l",
+  "vertical": "generic",
+  "display_name": "Leewaysoftech",
+  "brand": {
+    "name": "Leewaysoftech",
+    "bot_name": "l Assistant",
+    "tagline": "Your trusted partner for all needs.",
+    "website": "https://leewaysoftech.com/",
+    "support_email": "customercare@leewaysoftech.com",
+    "support_phone": "+91 8000305305",
+    "signature": "Leewaysoftech — Innovative Technology, Creative Work"
+  },
+  "features": {
+    "cart": false,
+    "buy_now": false,
+    "orders": false,
+    "track_order": false,
+    "returns": false,
+    "brochure_pdf": true,
+    "distributors": false,
+    "offerings": true,
+    "offering_details": true,
+    "lead_capture": true,
+    "quote": true,
+    "callback": true,
+    "book_appointment": true,
+    "handoff": true,
+    "faq": true,
+    "kb": true,
+    "complaints": true,
+    "campaigns": false,
+    "human_handover": true,
+    "payments": false,
+    "services": true,
+    "products": true,
+    "products_schemes": true
+  },
+  "vocabulary": {
+    "item_noun": "services",
+    "item_noun_singular": "service",
+    "browse_label": "Our Services",
+    "catalog_label": "Services",
+    "catalog_noun": "services",
+    "brochure_label": "Company Profile",
+    "brochure_noun": "company profile",
+    "offer_noun": "engagement",
+    "offer_noun_plural": "engagements",
+    "lead_noun": "requirement",
+    "enquiry_label": "Enquire",
+    "quote_label": "Get a Quote",
+    "callback_label": "Request a Callback",
+    "support_label": "Raise Ticket",
+    "order_noun": "engagement",
+    "order_noun_plural": "engagements",
+    "cart_noun": "shortlist",
+    "checkout_label": "Request a Quote",
+    "track_label": "Track Request"
+  },
+  "business_hours": {
+    "timezone": "Asia/Kolkata",
+    "always_open": false,
+    "open": "09:30",
+    "close": "18:30",
+    "open_days": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "out_of_hours_message": "We are currently outside our working hours. Leave your details and our team will call you back on the next working day."
+  },
+  "intents": [
+    {
+      "name": "technologies",
+      "answer": "• Here's the stack we build with:\n• *Frontend:* React.js, Next.js, Vue.js, Angular, TypeScript and Tailwind CSS\n• *Backend:* Node.js, Python (FastAPI / Django), Golang, Laravel and .NET Core\n• *AI & Machine Learning:* OpenAI (GPT-4 / GPT-5 APIs), LangChain, PyTorch, TensorFlow, Hugging Face, Vertex AI (Google Cloud AI), Azure OpenAI and IBM\n• *Mobile Development:* iOS (Swift), Android (Kotlin), React Native and Flutter\n• *Databases & Data Platforms:* PostgreSQL, MySQL, MongoDB, DynamoDB, Firebase, Snowflake, BigQuery and Redis\n• Tell us what you're building and we'll match the right stack for it.",
+      "keywords": [],
+      "enabled": true
+    },
+    {
+      "name": "projects",
+      "answer": "• A snapshot of the work we deliver:\n• *Web platforms:* e-commerce stores, customer portals and internal systems\n• *Mobile apps:* customer and field-force apps for iOS and Android\n• *Enterprise:* CRM/ERP integrations, workflow automation and analytics dashboards\n• *Industries:* retail, healthcare, finance, logistics and education\n• We share client names and detailed case studies only with their written permission — our team can walk you through relevant examples on a call."
+    },
+    {
+      "name": "careers",
+      "answer": "\n*Sales*\n• We're always glad to hear from good people: — 2–4 yrs · Mumbai\n• *Roles we hire for:* frontend, backend and mobile developers, QA engineers, DevOps and UI/UX designers — 2–4 yrs · Mumbai\n• *Internships:* available for final — - · Mumbai\n\n*Other*\n• *How to apply:* send your CV to hr@leewaysoftech.com with the role in the subject line\n• Shortlisted candidates hear from us within a few working days.",
+      "keywords": [],
+      "enabled": true
+    },
+    {
+      "name": "benefits",
+      "answer": "• Why teams choose to work with us:\n• *Dedicated project manager* as your single point of contact\n• *Agile delivery* in two-week sprints with regular demos\n• *Transparent reporting* — you always know where things stand\n• *Post-launch support and maintenance* packages\n• *Your IP stays yours* — full code and documentation handover\n• *Fixed-price or dedicated-team* engagement models, NDA on request"
+    },
+    {
+      "name": "service_enquiry",
+      "examples": [
+        "what services do you offer",
+        "do you build mobile apps"
+      ],
+      "keywords": [
+        "service",
+        "services",
+        "what do you do",
+        "capability",
+        "capabilities",
+        "offerings",
+        "solution",
+        "expertise"
+      ],
+      "requires_feature": "offerings",
+      "answer": "services offered by Leeway are:-\nCommunication Services\n1. SMS Gateway\n2. Virtual Number / Missed Call\n3. WhatsApp Business API\n4. Voice and IVR\n5. Bulk Email\nAI Development Services\n6. Generative AI Development\n7. AI Chatbot Development\n8. Machine Learning Solutions\n9. AI Automation Services",
+      "enabled": true,
+      "flow": "offerings"
+    },
+    {
+      "name": "request-quote",
+      "examples": [
+        "Can I get a quote for the 3BHK apartment?",
+        "What is the price for the office space?",
+        "I need a price estimate for the villa."
+      ],
+      "keywords": [
+        "quote",
+        "price",
+        "estimate"
+      ],
+      "flow": "get_quote",
+      "enabled": true
+    },
+    {
+      "name": "schedule-visit",
+      "examples": [
+        "I would like to schedule a visit to the property",
+        "Can I book a tour of the office space?",
+        "When can I visit the villa?"
+      ],
+      "keywords": [
+        "visit",
+        "schedule",
+        "tour"
+      ],
+      "flow": "book_callback",
+      "enabled": true
+    },
+    {
+      "name": "ask-faq",
+      "examples": [
+        "What are the payment terms?",
+        "How long does the lease last?",
+        "Do you offer maintenance?"
+      ],
+      "keywords": [
+        "faq",
+        "question",
+        "help"
+      ],
+      "flow": null,
+      "enabled": true
+    },
+    {
+      "name": "report-issue",
+      "examples": [
+        "I have a problem with my booking",
+        "The property listing is incorrect",
+        "I need help with my account"
+      ],
+      "keywords": [
+        "issue",
+        "problem",
+        "support"
+      ],
+      "flow": "raise_ticket",
+      "enabled": true
+    },
+    {
+      "name": "product-inquiry",
+      "examples": [
+        "Tell me more about the 2BHK apartment",
+        "What are the specifications of the office space?",
+        "Can you give me the features of the villa?"
+      ],
+      "keywords": [
+        "details",
+        "specs",
+        "features"
+      ],
+      "flow": null,
+      "enabled": true
+    }
+  ],
+  "guardrails": {
+    "never_state": [
+      "prices, budgets, or rates before the team confirms a quote",
+      "delivery dates without team confirmation",
+      "client names without their written permission"
+    ],
+    "escalate_keywords": [
+      "production down",
+      "urgent bug",
+      "security breach",
+      "data loss",
+      "legal",
+      "contract dispute"
+    ],
+    "escalation_message": "That needs a person from our team — connecting you now.",
+    "handoff_keywords": [
+      "human",
+      "agent",
+      "manager",
+      "urgent",
+      "complaint"
+    ],
+    "forbidden_terms": [
+      "cart",
+      "checkout",
+      "add to cart",
+      "buy now",
+      "place order",
+      "track order",
+      "shipping",
+      "delivery charge",
+      "mrp"
+    ]
+  },
+  "notifications": {
+    "sales_email": "sales@leewaysoftech.com",
+    "support_email": "customercare@leewaysoftech.com",
+    "brochure_url": "",
+    "brochure_label": "Company Profile",
+    "channels": [
+      {
+        "type": "email",
+        "to": "sales@leewaysoftech.com",
+        "label": "sales"
+      }
+    ]
+  },
+  "flows": [
+    {
+      "name": "get_quote",
+      "success_message": "Thank you! Our specialist will prepare a customized quote and follow up promptly."
+    },
+    {
+      "name": "raise_ticket",
+      "success_message": "Your request has been logged. A support ticket has been created and an executive will assist you."
+    },
+    {
+      "name": "book_callback",
+      "success_message": "Thank you! Your consultation request has been scheduled with l Assistant."
+    }
+  ],
+  "menu": {
+    "key": "kb_main",
+    "header": "l",
+    "body": "Welcome! How can we assist you today?",
+    "footer": "Select an option or type your query directly",
+    "button_text": "Select Option",
+    "buttons": [
+      {
+        "id": "menu_services",
+        "title": "Services",
+        "description": "what we build and offer",
+        "section": "about & offerings",
+        "icon": "🚀",
+        "sort_order": 0,
+        "enabled": true,
+        "requires_feature": "services",
+        "out_of_hours_only": false,
+        "flow": null,
+        "intent": null
+      },
+      {
+        "id": "menu_technologies",
+        "title": "Technologies",
+        "description": "our tech stack & expertise ",
+        "section": "about & offerings",
+        "icon": "💻",
+        "sort_order": 1,
+        "enabled": true,
+        "requires_feature": "offering_details",
+        "out_of_hours_only": false,
+        "flow": null,
+        "intent": "technologies"
+      },
+      {
+        "id": "menu_benefits",
+        "title": "Benefits",
+        "description": "Our expertise & trust",
+        "section": "careers & help",
+        "icon": "🏆",
+        "sort_order": 2,
+        "enabled": true,
+        "requires_feature": null,
+        "out_of_hours_only": false,
+        "flow": null,
+        "intent": "benefits"
+      },
+      {
+        "id": "menu_development",
+        "title": "Development",
+        "description": "what we develop",
+        "section": "about & offerings",
+        "icon": "👨‍💻",
+        "sort_order": 4,
+        "enabled": true,
+        "requires_feature": null,
+        "out_of_hours_only": false,
+        "flow": null,
+        "intent": null
+      },
+      {
+        "id": "menu_career",
+        "title": "Career",
+        "description": "Join our team/openings",
+        "section": "careers & help",
+        "icon": "💼",
+        "sort_order": 6,
+        "enabled": true,
+        "requires_feature": null,
+        "out_of_hours_only": false,
+        "flow": null,
+        "intent": null
+      },
+      {
+        "id": "menu_complaint",
+        "title": "Raise a Complaint",
+        "description": "Tell us what went wrong",
+        "section": "Support",
+        "icon": "📝",
+        "sort_order": 3,
+        "enabled": true,
+        "requires_feature": "complaints",
+        "out_of_hours_only": false,
+        "flow": "raise_ticket",
+        "intent": null
+      },
+      {
+        "id": "menu_human",
+        "title": "Request Callback",
+        "description": "connect with our team",
+        "section": "Support",
+        "icon": "📞",
+        "sort_order": 5,
+        "enabled": true,
+        "requires_feature": "human_handover",
+        "out_of_hours_only": false,
+        "flow": "book_callback",
+        "intent": null
+      }
+    ]
+  },
+  "prompt": {
+    "keywords": [
+      "software",
+      "development",
+      "technical",
+      "it",
+      "technology",
+      "solution",
+      "service",
+      "website",
+      "mobile app",
+      "cloud",
+      "support",
+      "maintenance"
+    ]
+  }
+}

@@ -1,0 +1,1 @@
+# Everyday Banking Help Insurance claims follow the checklist under Insurance & Claims. Branch/ATM locator helps with IFSC and timings (typically weekdays, closed 2nd/4th Saturdays). Service requests (statements, nomination, mobile update) may require authenticated banking channels or a branch visit for regulatory compliance.

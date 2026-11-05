@@ -1,0 +1,373 @@
+{
+  "vertical": "ecommerce",
+  "display_name": "NovaToys",
+  "features": {
+    "cart": true,
+    "buy_now": true,
+    "orders": true,
+    "payments": false,
+    "track_order": true,
+    "returns": true,
+    "brochure_pdf": true,
+    "distributors": false,
+    "offerings": true,
+    "offering_details": true,
+    "services": false,
+    "products": true,
+    "products_schemes": false,
+    "lead_capture": false,
+    "quote": false,
+    "callback": false,
+    "book_appointment": false,
+    "handoff": true,
+    "faq": true,
+    "kb": true,
+    "complaints": true,
+    "campaigns": false,
+    "human_handover": true
+  },
+  "brand": {
+    "name": "NovaToys",
+    "bot_name": "Nova Assistant",
+    "tagline": "Play bigger. Discover more.",
+    "website": "https://www.novatoys.example",
+    "support_email": "support@novatoys.example",
+    "support_phone": "+91 98765 43210",
+    "signature": "NovaToys ? Happy playing!"
+  },
+  "vocabulary": {
+    "item_noun": "products",
+    "item_noun_singular": "product",
+    "browse_label": "Browse Products",
+    "catalog_label": "View Brochure",
+    "lead_noun": "enquiry",
+    "enquiry_label": "Enquire",
+    "catalog_noun": "brochure",
+    "order_noun": "order",
+    "order_noun_plural": "orders",
+    "cart_noun": "cart",
+    "checkout_label": "Checkout",
+    "brochure_label": "Brochure",
+    "brochure_noun": "brochure",
+    "offer_noun": "offer",
+    "offer_noun_plural": "offers",
+    "quote_label": "Request a Quote",
+    "callback_label": "Request a Callback",
+    "support_label": "Raise Complaint",
+    "track_label": "Track Order"
+  },
+  "prompt": {
+    "tone": "friendly and helpful",
+    "industry": "retail and e-commerce",
+    "listing_type": "products",
+    "domain_specific_queries": "products, prices, stock, delivery, returns, or payment",
+    "keywords": [
+      "product",
+      "price",
+      "order",
+      "shipping",
+      "delivery",
+      "cart",
+      "checkout",
+      "catalog",
+      "catalogue",
+      "stock",
+      "refund",
+      "return",
+      "pack size",
+      "snack"
+    ]
+  },
+  "business_hours": {
+    "timezone": "Asia/Kolkata",
+    "open": "09:30",
+    "close": "19:00",
+    "open_days": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "raw": "09:30 AM - 06:30 PM (Mon-Sat)"
+  },
+  "guardrails": {
+    "escalation_message": "Let me connect you with our team.",
+    "handoff_keywords": [
+      "human",
+      "agent",
+      "person"
+    ],
+    "never_state": [],
+    "escalate_keywords": [],
+    "forbidden_terms": []
+  },
+  "notifications": {
+    "sales_email": "zuru@sales.com",
+    "support_email": "zuru@care.com",
+    "brochure_url": ""
+  },
+  "tenant_id": "13",
+  "menu": {
+    "key": "kb_main",
+    "header": "NovaToys",
+    "body": "Welcome! How can we assist you today?",
+    "footer": "Select an option or type your query directly",
+    "button_text": "Select Option",
+    "buttons": [
+      {
+        "id": "menu_destinations",
+        "title": "Destinations",
+        "description": "Places we take you to",
+        "section": "✈️ Travel",
+        "action": "offerings"
+      },
+      {
+        "id": "menu_packages",
+        "title": "Packages",
+        "description": "Holidays & tour packages",
+        "section": "✈️ Travel",
+        "action": "offerings"
+      },
+      {
+        "id": "menu_brochure",
+        "title": "Travel Brochure",
+        "description": "Download our brochure",
+        "section": "✈️ Travel",
+        "action": "brochure_pdf"
+      },
+      {
+        "id": "menu_booking_policy",
+        "title": "Booking Policy",
+        "description": "Cancellations & payments",
+        "section": "ℹ️ Info",
+        "action": "offerings"
+      },
+      {
+        "id": "menu_visa",
+        "title": "Visa & Documents",
+        "description": "What you need to travel",
+        "section": "ℹ️ Info",
+        "action": "offerings"
+      },
+      {
+        "id": "menu_quote",
+        "title": "Enquire",
+        "description": "Plan a trip with us",
+        "section": "📞 Talk To Us",
+        "action": "enquire"
+      },
+      {
+        "id": "menu_products",
+        "title": "View Products",
+        "description": "Browse all products",
+        "section": "🛍️ Products",
+        "action": "products",
+        "flow": null,
+        "intent": "product_details",
+        "requires_feature": "products"
+      },
+      {
+        "id": "menu_catalogue",
+        "title": "Brochure",
+        "description": "Download the brochure PDF",
+        "section": "🛍️ Products",
+        "action": "brochure_pdf",
+        "flow": null,
+        "intent": "catalogue_request",
+        "requires_feature": "brochure_pdf"
+      },
+      {
+        "id": "menu_new_arrivals",
+        "title": "New Releases",
+        "description": "Fresh releases this month",
+        "section": "🛍️ Products",
+        "action": "offerings",
+        "flow": null,
+        "intent": "new_arrivals",
+        "requires_feature": null
+      },
+      {
+        "id": "menu_about",
+        "title": "Company Policies",
+        "description": "About us & company policies",
+        "section": "ℹ️ Info",
+        "action": "offerings",
+        "flow": null,
+        "intent": "policy_query",
+        "requires_feature": null
+      },
+      {
+        "id": "menu_discounts",
+        "title": "Discounts & Offers",
+        "description": "Current deals & bulk discounts",
+        "section": "ℹ️ Info",
+        "action": "offerings",
+        "flow": null,
+        "intent": "offer_discount",
+        "requires_feature": null
+      },
+      {
+        "id": "menu_gst",
+        "title": "GST Info",
+        "description": "GST number & tax invoice details",
+        "section": "ℹ️ Info",
+        "action": "offerings",
+        "flow": null,
+        "intent": "policy_query",
+        "requires_feature": null
+      },
+      {
+        "id": "browse-offerings",
+        "title": "Browse Toys",
+        "description": "Explore catalog and bestsellers",
+        "section": "Explore",
+        "sort_order": 1,
+        "enabled": true,
+        "intent": "offerings"
+      },
+      {
+        "id": "track-order",
+        "title": "Track Order",
+        "description": "Check delivery status with order ID",
+        "section": "Assistance",
+        "sort_order": 2,
+        "enabled": true,
+        "flow": "get_quote"
+      },
+      {
+        "id": "returns-help",
+        "title": "Returns Help",
+        "description": "Return, exchange, or missing parts",
+        "section": "Assistance",
+        "sort_order": 3,
+        "enabled": true,
+        "flow": "raise_ticket"
+      },
+      {
+        "id": "safety-tips",
+        "title": "Safety Tips",
+        "description": "Age guidance and safe play advice",
+        "section": "Guidance",
+        "sort_order": 4,
+        "enabled": true,
+        "intent": "safety-tips"
+      },
+      {
+        "id": "contact-support",
+        "title": "Talk to Support",
+        "description": "Request callback from our team",
+        "section": "Assistance",
+        "sort_order": 5,
+        "enabled": true,
+        "flow": "book_callback"
+      },
+      {
+        "id": "about-company",
+        "title": "About NovaToys",
+        "description": "Company story and contact details",
+        "section": "Company",
+        "sort_order": 6,
+        "enabled": true,
+        "intent": "about-company"
+      }
+    ]
+  },
+  "flows": [
+    {
+      "name": "book_callback",
+      "success_message": "Thank you! Your request has been scheduled with 13 Advisor."
+    },
+    {
+      "name": "get_quote",
+      "success_message": "Thank you! Our specialist will prepare a customized quote and follow up promptly."
+    },
+    {
+      "name": "raise_ticket",
+      "success_message": "Your request has been logged. A support ticket has been created and an executive will assist you."
+    }
+  ],
+  "intents": [
+    {
+      "name": "ask-price",
+      "examples": [
+        "how much is the blaster",
+        "price of robo shark"
+      ],
+      "keywords": [
+        "price",
+        "cost",
+        "how much"
+      ],
+      "flow": "get_quote",
+      "enabled": true
+    },
+    {
+      "name": "browse-catalog",
+      "examples": [
+        "show toys",
+        "what do you sell"
+      ],
+      "keywords": [
+        "show toys",
+        "what do you sell"
+      ],
+      "flow": "offerings",
+      "enabled": true
+    },
+    {
+      "name": "track-order",
+      "examples": [
+        "where is my order",
+        "track shipment"
+      ],
+      "keywords": [
+        "track order",
+        "where is my order"
+      ],
+      "flow": "get_quote",
+      "enabled": true
+    },
+    {
+      "name": "return-request",
+      "examples": [
+        "I want to return",
+        "damaged product"
+      ],
+      "keywords": [
+        "return",
+        "exchange",
+        "damaged product"
+      ],
+      "flow": "raise_ticket",
+      "enabled": true
+    },
+    {
+      "name": "safety-info",
+      "examples": [
+        "age for rainbowcorn",
+        "is it safe for 4 year old"
+      ],
+      "keywords": [
+        "age for rainbowcorn",
+        "is it safe"
+      ],
+      "flow": "faq",
+      "enabled": true
+    },
+    {
+      "name": "contact-support",
+      "examples": [
+        "talk to human",
+        "call me back"
+      ],
+      "keywords": [
+        "talk to human",
+        "call me back"
+      ],
+      "flow": "book_callback",
+      "enabled": true
+    }
+  ]
+}

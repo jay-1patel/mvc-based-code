@@ -1,0 +1,95 @@
+{
+  "tenant_id": "troogood",
+  "vertical": "ecommerce",
+  "display_name": "TrooGood",
+
+  "brand": {
+    "name": "TrooGood",
+    "bot_name": "TrooGood",
+    "tagline": "a premium Indian snack brand known for its healthy, homemade-style chikki made from jaggery, peanuts, sesame, and dry fruits",
+    "website": "www.troogood.com",
+    "support_email": "support@troogood.com",
+    "support_phone": "+91 1234567891",
+    "signature": "For more delicious updates, visit us at www.troogood.com - Eat Good. Do Good."
+  },
+
+  "features": {
+    "cart": true,
+    "buy_now": true,
+    "orders": true,
+    "track_order": true,
+    "returns": true,
+    "brochure_pdf": true,
+    "distributors": true,
+    "offerings": true,
+    "offering_details": true,
+    "lead_capture": true,
+    "quote": false,
+    "callback": false,
+    "book_appointment": false,
+    "handoff": true,
+    "faq": true,
+    "kb": true,
+    "complaints": true,
+    "campaigns": true,
+    "human_handover": true
+  },
+
+  "vocabulary": {
+    "item_noun": "products",
+    "item_noun_singular": "product",
+    "browse_label": "View Products",
+    "catalog_label": "Catalogue",
+    "catalog_noun": "catalogue",
+    "order_noun": "order",
+    "order_noun_plural": "orders",
+    "cart_noun": "cart",
+    "checkout_label": "Checkout",
+    "brochure_label": "Catalogue",
+    "brochure_noun": "catalogue",
+    "offer_noun": "offer",
+    "offer_noun_plural": "offers",
+    "lead_noun": "enquiry",
+    "enquiry_label": "Enquire",
+    "quote_label": "Request a Quote",
+    "callback_label": "Request a Callback",
+    "support_label": "Raise Complaint",
+    "track_label": "Track Order"
+  },
+
+  "business_hours": {
+    "timezone": "Asia/Kolkata",
+    "always_open": true
+  },
+
+  "guardrails": {
+    "never_state": ["stock availability without a stock check", "delivery dates without a dispatch confirmation"],
+    "escalate_keywords": [
+      "damaged", "spoiled", "expired", "food poisoning", "wrong item", "missing item",
+      "refund not received", "fraud", "fake order"
+    ],
+    "escalation_message": "I'm sorry about that — let me connect you with our support team right away.",
+    "handoff_keywords": ["human", "agent", "person", "manager", "complaint"]
+  },
+
+  "notifications": {
+    "sales_email": "support@troogood.com",
+    "support_email": "support@troogood.com",
+    "brochure_url": "",
+    "brochure_label": "Catalogue",
+    "channels": [
+      { "type": "email", "to": "support@troogood.com", "label": "support" }
+    ]
+  },
+
+  "flows": [
+    {
+      "name": "enquire",
+      "success_message": "Thanks! Our team has your details and will reach out shortly."
+    },
+    {
+      "name": "raise_ticket",
+      "success_message": "We've noted your issue. Our support team will get back to you shortly."
+    }
+  ]
+}
