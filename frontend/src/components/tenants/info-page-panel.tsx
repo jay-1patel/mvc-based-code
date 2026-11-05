@@ -1,0 +1,732 @@
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { Check, ListTree, MessageSquareQuote, Pencil, Plus, Send, X } from 'lucide-react'
+import { useAction } from '@/lib/hooks'
+import { useAuth } from '@/lib/auth'
+import { tenantsApi } from '@/lib/tenants'
+import type { IntentSpec } from '@/lib/types'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Card, CardBody, CardHeader } from '@/components/ui/card'
+import { Input, Textarea } from '@/components/ui/input'
+import { Switch } from '@/components/ui/switch'
+import { TagInput } from '@/components/ui/tags'
+import { Alert, EmptyState, LoadingBlock } from '@/components/ui/feedback'
+import { PageHeader } from '@/components/layout/page-header'
+import { useToast } from '@/components/ui/toast'
+import { useResolved } from '@/components/tenants/hooks'
+
+/**
+ * Company info pages for Software & IT tenants — projects, technologies,
+ * careers, benefits. Each is one intent with answer text: no flow, no backend
+ * service, the text is the whole page. Filled from IT vertical defaults, kit
+ * upload ([SECTION: INFO PAGES]), or manual edit. Same save-draft/publish
+ * contract as the profile editor. Other verticals do not show these in nav.
+ */
+
+export type InfoPageId = 'projects' | 'technologies' | 'careers' | 'benefits'
+
+const PAGES: Record<
+  InfoPageId,
+  { title: string; description: string; permission: string; subject: string }
+> = {
+  projects: {
+    title: 'Projects',
+    description:
+      'What the bot answers when a customer asks about your past work, case studies or clients.',
+    permission: 'manage_projects',
+    subject: 'your past work and case studies',
+  },
+  technologies: {
+    title: 'Technologies',
+    description:
+      'What the bot answers when a customer asks about your tech stack, tools or languages.',
+    permission: 'manage_technologies',
+    subject: 'your tech stack',
+  },
+  careers: {
+    title: 'Careers',
+    description:
+      'What the bot answers when a customer asks about hiring, vacancies or internships.',
+    permission: 'manage_careers',
+    subject: 'openings and hiring',
+  },
+  benefits: {
+    title: 'Benefits',
+    description:
+      'What the bot answers when a customer asks why they should work with you.',
+    permission: 'manage_benefits',
+    subject: 'why teams choose you',
+  },
+}
+
+interface FormShape {
+  answer: string
+  keywords: string[]
+  enabled: boolean
+}
+
+export function InfoPagePanel({ tenantId, page }: { tenantId: string; page: InfoPageId }) {
+  const spec = PAGES[page]
+  const { data, loading, error, reload } = useResolved(tenantId)
+  const { can } = useAuth()
+  const action = useAction()
+  const toast = useToast()
+  const canEdit = can(spec.permission)
+
+  const [editing, setEditing] = useState(false)
+  const [form, setForm] = useState<FormShape | null>(null)
+  const [warnings, setWarnings] = useState<string[]>([])
+  const [draftSaved, setDraftSaved] = useState(false)
+
+  const intent = useMemo(() => findIntent(data, page), [data, page])
+  const menuButton = useMemo(
+    () => (data?.menu.buttons ?? []).find((b) => b.intent === page) ?? null,
+    [data, page],
+  )
+  const isActive = data?.active_intents.some((i) => i.name === page) ?? false
+
+  useEffect(() => {
+    if (!intent) return
+    setForm(toForm(intent))
+    setDraftSaved(false)
+  }, [intent])
+
+  if (loading) return <LoadingBlock label={`Loading ${spec.title.toLowerCase()}…`} />
+  if (error) {
+    return (
+      <div>
+        <PageHeader title={spec.title} description={spec.description} />
+        <Alert tone="danger" title="Could not load the page">
+          {error}
+        </Alert>
+      </div>
+    )
+  }
+  if (!intent || !form) {
+    return (
+      <div>
+        <PageHeader title={spec.title} description={spec.description} />
+        <Alert tone="warning" title="No answer configured">
+          This tenant's profile has no <code>{page}</code> intent, so the bot never
+          answers questions about {spec.subject}. It has to come from the vertical
+          defaults or a published profile version first.
+        </Alert>
+      </div>
+    )
+  }
+
+  const dirty = JSON.stringify(form) !== JSON.stringify(toForm(intent))
+
+  const save = async (thenPublish: boolean) => {
+    const saved = await action.run(() =>
+      tenantsApi.saveIntent(tenantId, page, {
+        answer: form.answer,
+        keywords: form.keywords,
+        enabled: form.enabled,
+      }),
+    )
+    if (!saved) return
+    setWarnings(saved.validation ?? [])
+    setDraftSaved(true)
+    if (!thenPublish) {
+      toast.push('Draft saved. Nothing is live until you publish.')
+      return
+    }
+    if ((saved.validation ?? []).length) {
+      toast.push('Draft has validation warnings — review them before publishing.', 'error')
+      return
+    }
+    const published = await action.run(() => tenantsApi.publish(tenantId))
+    if (published) {
+      if (published.status === 'pending_approval') {
+        toast.push(published.message ?? 'Change sent for super admin approval.')
+      } else {
+        toast.push(`Published version ${published.version}`)
+      }
+      setEditing(false)
+      setDraftSaved(false)
+      reload()
+    }
+  }
+
+  return (
+    <div>
+      <PageHeader
+        title={spec.title}
+        description={spec.description}
+        meta={
+          <>
+            <Badge tone={isActive ? 'success' : 'muted'}>
+              {isActive ? 'the bot answers this' : 'hidden from the bot'}
+            </Badge>
+            {menuButton ? (
+              <Badge tone="accent">
+                menu row: “{menuButton.title}” in {menuButton.section}
+              </Badge>
+            ) : (
+              <Badge tone="warning">no menu row points here</Badge>
+            )}
+          </>
+        }
+        actions={
+          !editing ? (
+            canEdit ? (
+              <Button
+                variant="primary"
+                icon={<Pencil className="h-4 w-4" />}
+                onClick={() => setEditing(true)}
+              >
+                Edit answer
+              </Button>
+            ) : undefined
+          ) : (
+            <>
+              <Button
+                variant="ghost"
+                icon={<X className="h-4 w-4" />}
+                onClick={() => {
+                  setEditing(false)
+                  setForm(toForm(intent))
+                  setWarnings([])
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="secondary"
+                icon={<Check className="h-4 w-4" />}
+                loading={action.busy}
+                disabled={!dirty}
+                onClick={() => save(false)}
+              >
+                Save draft
+              </Button>
+              <Button
+                variant="primary"
+                icon={<Send className="h-4 w-4" />}
+                loading={action.busy}
+                disabled={!dirty}
+                onClick={() => save(true)}
+              >
+                Save & publish
+              </Button>
+            </>
+          )
+        }
+      />
+
+      {!canEdit && (
+        <Alert tone="warning" title="Read-only" className="mb-4">
+          Editing this page needs the <strong>{spec.permission}</strong> permission —
+          a super admin can grant it under Team &amp; permissions.
+        </Alert>
+      )}
+      {action.error && (
+        <Alert tone="danger" title="Action failed" className="mb-4">
+          {action.error}
+        </Alert>
+      )}
+      {warnings.length > 0 && (
+        <Alert tone="warning" title="Draft saved with warnings" className="mb-4">
+          <ul className="list-disc space-y-1 pl-4">
+            {warnings.map((w) => (
+              <li key={w}>{w}</li>
+            ))}
+          </ul>
+        </Alert>
+      )}
+      {draftSaved && !editing && (
+        <Alert tone="info" title="Saved to the working draft" className="mb-4">
+          The draft carries a newer answer for this page. It goes live when the draft
+          is published — from here, or from the Profile or Versions screen.
+        </Alert>
+      )}
+
+      {editing && form ? (
+        <Card>
+          <CardHeader
+            title={`Edit the ${spec.title.toLowerCase()} answer`}
+            description="Saving writes the working draft. Publishing validates it, versions it and swaps the live profile — publishing is the only thing the bot ever sees."
+            actions={
+              <Badge tone={form.enabled ? 'success' : 'muted'}>
+                {form.enabled ? 'will answer' : 'will not answer'}
+              </Badge>
+            }
+          />
+          <CardBody className="space-y-5">
+            {page === 'careers' ? (
+              <CareersEditor
+                value={form.answer}
+                onChange={(answer) => setForm((f) => (f ? { ...f, answer } : f))}
+              />
+            ) : page === 'technologies' || page === 'benefits' || page === 'projects' ? (
+              <BulletsEditor
+                value={form.answer}
+                onChange={(answer) => setForm((f) => (f ? { ...f, answer } : f))}
+              />
+            ) : (
+            <Textarea
+              label="Answer text"
+              rows={8}
+              value={form.answer}
+              onChange={(e) => setForm((f) => (f ? { ...f, answer: e.target.value } : f))}
+              hint='What the bot sends, verbatim. One bullet per line starting with "• "; *stars* make a word bold. Leave empty to stop answering directly — questions then fall through to the knowledge-base pipeline.'
+              />
+            )}
+            <TagInput
+              value={form.keywords}
+              onChange={(keywords) => setForm((f) => (f ? { ...f, keywords } : f))}
+              placeholder="Add a keyword and press Enter"
+            />
+            <p className="hint">
+              Phrases that route a question to this answer. The classifier only ever
+              picks intents the tenant has switched on.
+            </p>
+            <Switch
+              checked={form.enabled}
+              onChange={(enabled) => setForm((f) => (f ? { ...f, enabled } : f))}
+              label="The bot answers questions about this page"
+              description="Turn off to keep the text but stop the intent from winning — the menu row disappears too."
+            />
+            <p className="text-2xs text-slate-500">
+              {dirty ? 'Unsaved changes will be written as a draft, not published.' : 'No changes yet.'}
+            </p>
+          </CardBody>
+        </Card>
+      ) : (
+        <div className="grid gap-4 lg:grid-cols-3">
+          <Card className="lg:col-span-2">
+            <CardHeader
+              title="What the bot replies"
+              description={`The live answer for questions about ${spec.subject}.`}
+              icon={<MessageSquareQuote className="h-4 w-4" />}
+            />
+            <CardBody>
+              <AnswerPreview text={intent.answer ?? ''} />
+            </CardBody>
+          </Card>
+          <Card>
+            <CardHeader
+              title="How customers reach it"
+              description="Routing and entry points."
+              icon={<ListTree className="h-4 w-4" />}
+            />
+            <CardBody className="space-y-4">
+              {intent.keywords?.length ? (
+                <div>
+                  <p className="mb-1.5 text-2xs font-semibold uppercase tracking-wider text-slate-500">
+                    Keywords
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {intent.keywords.map((k) => (
+                      <Badge key={k} tone="neutral">
+                        {k}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <p className="text-xs text-slate-500">No keywords routed to this answer.</p>
+              )}
+              {intent.examples?.length ? (
+                <div>
+                  <p className="mb-1.5 text-2xs font-semibold uppercase tracking-wider text-slate-500">
+                    Phrases it answers
+                  </p>
+                  <ul className="space-y-1">
+                    {intent.examples.map((ex) => (
+                      <li key={ex} className="text-xs italic leading-relaxed text-slate-600">
+                        “{ex}”
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              <div>
+                <p className="mb-1.5 text-2xs font-semibold uppercase tracking-wider text-slate-500">
+                  Menu row
+                </p>
+                {menuButton ? (
+                  <p className="text-xs leading-relaxed text-slate-400">
+                    “{menuButton.title}” in the {menuButton.section} section of the
+                    bot's menu{isActive ? '' : ' — currently hidden because the intent is off'}.
+                  </p>
+                ) : (
+                  <p className="text-xs leading-relaxed text-slate-500">
+                    No menu button points here — customers only reach this answer by
+                    asking in their own words.
+                  </p>
+                )}
+              </div>
+            </CardBody>
+          </Card>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function findIntent(
+  data: ReturnType<typeof useResolved>['data'],
+  page: InfoPageId,
+): IntentSpec | null {
+  if (!data) return null
+  return [...data.active_intents, ...data.inactive_intents].find((i) => i.name === page) ?? null
+}
+
+function toForm(intent: IntentSpec): FormShape {
+  return {
+    answer: intent.answer ?? '',
+    keywords: [...(intent.keywords ?? [])],
+    enabled: intent.enabled ?? true,
+  }
+}
+
+/** Render the WhatsApp-style answer: "• " bullets, *bold* segments. */
+function AnswerPreview({ text }: { text: string }) {
+  const lines = text
+    .split('\n')
+    .map((s) => s.trim())
+    .filter(Boolean)
+
+  if (!lines.length) {
+    return (
+      <EmptyState
+        title="No answer configured"
+        description="Questions about this page fall through to the knowledge-base pipeline instead of a fixed reply."
+        icon={<MessageSquareQuote className="h-6 w-6" />}
+      />
+    )
+  }
+
+  return (
+    <ul className="space-y-2">
+      {lines.map((line, i) => {
+        const bullet = line.startsWith('•')
+        const body = bullet ? line.slice(1).trim() : line
+        return (
+          <li key={i} className="flex gap-2.5 text-sm leading-relaxed text-slate-300">
+            {bullet && <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-accent-400" />}
+            <span>{renderInline(body)}</span>
+          </li>
+        )
+      })}
+    </ul>
+  )
+}
+
+function renderInline(text: string): ReactNode[] {
+  return text.split(/\*([^*]+)\*/g).map((part, i) =>
+    i % 2 === 1 ? (
+      <strong key={i} className="font-semibold text-slate-100">
+        {part}
+      </strong>
+    ) : (
+      part
+    ),
+  )
+}
+
+// ── Careers: structured openings editor ─────────────────────────────────────
+
+/** One open role as an editable row. */
+interface Opening {
+  role: string
+  dept: string
+  exp: string
+  location: string
+}
+
+interface CareersShape {
+  intro: string
+  openings: Opening[]
+  closing: string
+}
+
+/**
+ * The careers page is a table of openings, not prose. The editor keeps one
+ * input row per role — role, department, experience and location are all
+ * editable, and the department doubles as the bold group heading — and
+ * serializes the rows into the WhatsApp-format answer the bot sends.
+ * Answers that do not fit the openings format (hand-written or legacy text)
+ * fall back to the plain textarea.
+ */
+function CareersEditor({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [shape, setShape] = useState<CareersShape>(() => parseOpenings(value) ?? { intro: '', openings: [], closing: '' })
+
+  const emit = (next: CareersShape) => {
+    setShape(next)
+    onChange(serializeOpenings(next))
+  }
+  const update = (i: number, patch: Partial<Opening>) =>
+    emit({ ...shape, openings: shape.openings.map((o, j) => (j === i ? { ...o, ...patch } : o)) })
+  const remove = (i: number) => emit({ ...shape, openings: shape.openings.filter((_, j) => j !== i) })
+  const add = () =>
+    emit({ ...shape, openings: [...shape.openings, { role: '', dept: '', exp: '', location: '' }] })
+
+  return (
+    <div className="space-y-4">
+      <Input
+        label="Heading line"
+        value={shape.intro}
+        onChange={(e) => emit({ ...shape, intro: e.target.value })}
+        hint="The first line of the reply. *Stars* make it bold on WhatsApp."
+      />
+
+      <div className="space-y-2">
+        {shape.openings.map((o, i) => (
+          <div
+            key={i}
+            className="grid items-end gap-2 rounded-xl bg-surface-panel p-3 ring-1 ring-inset ring-surface-line sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]"
+          >
+            <Input
+              label="Role"
+              value={o.role}
+              onChange={(e) => update(i, { role: e.target.value })}
+              placeholder="Sales Executive"
+            />
+            <Input
+              label="Department"
+              value={o.dept}
+              onChange={(e) => update(i, { dept: e.target.value })}
+              placeholder="Sales"
+            />
+            <Input
+              label="Experience"
+              value={o.exp}
+              onChange={(e) => update(i, { exp: e.target.value })}
+              placeholder="2-4 yrs"
+            />
+            <Input
+              label="Location"
+              value={o.location}
+              onChange={(e) => update(i, { location: e.target.value })}
+              placeholder="Mumbai"
+            />
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={<X className="h-4 w-4" />}
+              onClick={() => remove(i)}
+              aria-label="Remove role"
+            />
+          </div>
+        ))}
+        <Button variant="secondary" size="sm" icon={<Plus className="h-4 w-4" />} onClick={add}>
+          Add role
+        </Button>
+      </div>
+
+      <Input
+        label="Closing line"
+        value={shape.closing}
+        onChange={(e) => emit({ ...shape, closing: e.target.value })}
+        hint="Sent after the openings, e.g. how to apply."
+      />
+
+      <div>
+        <p className="mb-1.5 text-2xs font-semibold uppercase tracking-wider text-slate-500">
+          Preview — what the bot sends
+        </p>
+        <div className="rounded-xl bg-surface-panel p-3.5 ring-1 ring-inset ring-surface-line">
+          <AnswerPreview text={serializeOpenings(shape)} />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/** Parse the canonical openings answer; null when the text is not in the format. */
+function parseOpenings(text: string): CareersShape | null {
+  const lines = text.split('\n').map((s) => s.replace(/\r$/, '').trim()).filter(Boolean)
+  const intro: string[] = []
+  const closing: string[] = []
+  const openings: Opening[] = []
+  let dept = ''
+  let inOpenings = false
+  for (const line of lines) {
+    if (line.startsWith('•')) {
+      inOpenings = true
+      const body = line.slice(1).trim()
+      const m = body.match(/^(.+?)\s*[—–-]\s*(.+?)(?:\s*·\s*(.+))?$/)
+      if (m) openings.push({ role: m[1], dept, exp: m[2] ?? '', location: m[3] ?? '' })
+      else openings.push({ role: body, dept, exp: '', location: '' })
+      continue
+    }
+    const header = line.match(/^\*(.+)\*$/)
+    if (header) {
+      inOpenings = true
+      dept = header[1]
+      continue
+    }
+    if (inOpenings) closing.push(line)
+    else intro.push(line)
+  }
+  if (!openings.length) return null
+  return { intro: intro.join('\n'), openings, closing: closing.join('\n') }
+}
+
+/** Serialize the rows back into the WhatsApp-format answer. */
+function serializeOpenings(shape: CareersShape): string {
+  const groups: { dept: string; rows: Opening[] }[] = []
+  for (const o of shape.openings) {
+    const label = o.dept.trim() || 'Other'
+    const existing = groups.find((g) => g.dept === label)
+    if (existing) existing.rows.push(o)
+    else groups.push({ dept: label, rows: [o] })
+  }
+  const parts: string[] = []
+  if (shape.intro.trim()) parts.push(shape.intro.trim())
+  for (const g of groups) {
+    parts.push('')
+    parts.push(`*${g.dept}*`)
+    for (const o of g.rows) {
+      const tail = [o.exp.trim(), o.location.trim()].filter(Boolean).join(' · ')
+      parts.push(tail ? `• ${o.role.trim() || 'Role'} — ${tail}` : `• ${o.role.trim() || 'Role'}`)
+    }
+  }
+  if (shape.closing.trim()) {
+    parts.push('')
+    parts.push(shape.closing.trim())
+  }
+  return parts.join('\n')
+}
+
+// ── Technologies / Benefits: labelled bullet editor ──────────────────────────
+
+/** One bold-labelled bullet: a label that is bolded and its detail text. */
+interface BulletRow {
+  label: string
+  details: string
+}
+
+interface BulletsShape {
+  intro: string
+  rows: BulletRow[]
+  closing: string
+}
+
+/**
+ * Technologies and benefits answers are a list of labelled bullets — a bold
+ * label and its detail, e.g. "• *Frontend:* modern JavaScript frameworks". The
+ * editor gives each bullet its own label and details inputs and writes the
+ * "• " and *stars* for you, so a non-technical editor never types them. An
+ * answer that is not in this format (hand-written or legacy text) falls back to
+ * the plain textarea so nothing is lost.
+ */
+function BulletsEditor({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [shape, setShape] = useState<BulletsShape>(() => parseBullets(value) ?? { intro: '', rows: [], closing: '' })
+
+  const emit = (next: BulletsShape) => {
+    setShape(next)
+    onChange(serializeBullets(next))
+  }
+  const update = (i: number, patch: Partial<BulletRow>) =>
+    emit({ ...shape, rows: shape.rows.map((r, j) => (j === i ? { ...r, ...patch } : r)) })
+  const remove = (i: number) => emit({ ...shape, rows: shape.rows.filter((_, j) => j !== i) })
+  const add = () => emit({ ...shape, rows: [...shape.rows, { label: '', details: '' }] })
+
+  return (
+    <div className="space-y-4">
+      <Input
+        label="Heading line"
+        value={shape.intro}
+        onChange={(e) => emit({ ...shape, intro: e.target.value })}
+        placeholder="Here's the stack we build with:"
+        hint="The line before the bullets, sent as its own bullet. Leave empty to start straight with the list."
+      />
+
+      <div className="space-y-2">
+        {shape.rows.map((r, i) => (
+          <div
+            key={i}
+            className="grid items-end gap-2 rounded-xl bg-surface-panel p-3 ring-1 ring-inset ring-surface-line sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)_auto]"
+          >
+            <Input
+              label="Bold label"
+              value={r.label}
+              onChange={(e) => update(i, { label: e.target.value })}
+              placeholder="Frontend"
+            />
+            <Input
+              label="Details"
+              value={r.details}
+              onChange={(e) => update(i, { details: e.target.value })}
+              placeholder="modern JavaScript frameworks and UI systems"
+            />
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={<X className="h-4 w-4" />}
+              onClick={() => remove(i)}
+              aria-label="Remove bullet"
+            />
+          </div>
+        ))}
+        <Button variant="secondary" size="sm" icon={<Plus className="h-4 w-4" />} onClick={add}>
+          Add bullet
+        </Button>
+      </div>
+
+      <Input
+        label="Closing line"
+        value={shape.closing}
+        onChange={(e) => emit({ ...shape, closing: e.target.value })}
+        placeholder="Tell us what you're building and we'll match the right stack for it."
+        hint="Sent after the bullets. Leave empty to finish on the last bullet."
+      />
+
+      <div>
+        <p className="mb-1.5 text-2xs font-semibold uppercase tracking-wider text-slate-500">
+          Preview — what the bot sends
+        </p>
+        <div className="rounded-xl bg-surface-panel p-3.5 ring-1 ring-inset ring-surface-line">
+          <AnswerPreview text={serializeBullets(shape)} />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/** Parse a labelled-bullet answer; null when it is not in that format. */
+function parseBullets(text: string): BulletsShape | null {
+  const lines = text.split('\n').map((s) => s.replace(/\r$/, '').trim()).filter(Boolean)
+  const intro: string[] = []
+  const closing: string[] = []
+  const rows: BulletRow[] = []
+  let seenRow = false
+  for (const line of lines) {
+    const bullet = line.startsWith('•')
+    const body = bullet ? line.slice(1).trim() : line
+    // A labelled bullet is "• *label* details" — the label is the bold run.
+    const m = body.match(/^\*([^*]+)\*\s*(.*)$/)
+    if (bullet && m) {
+      seenRow = true
+      rows.push({ label: m[1].trim(), details: m[2].trim() })
+      continue
+    }
+    // Anything before the first labelled bullet is the heading; anything
+    // after it is the closing — both sent as their own bullets.
+    if (!seenRow) intro.push(body)
+    else closing.push(body)
+  }
+  if (!rows.length) return null
+  return { intro: intro.join('\n'), rows, closing: closing.join('\n') }
+}
+
+/** Serialize the labelled rows back into the WhatsApp-format answer. */
+function serializeBullets(shape: BulletsShape): string {
+  const lines = (block: string) =>
+    block.split('\n').map((l) => l.trim()).filter(Boolean)
+  const parts: string[] = []
+  for (const line of lines(shape.intro)) parts.push(`• ${line}`)
+  for (const r of shape.rows) {
+    const label = r.label.trim()
+    const details = r.details.trim()
+    if (!label && !details) continue
+    if (label) parts.push(`• *${label}*${details ? ` ${details}` : ''}`)
+    else parts.push(`• ${details}`)
+  }
+  for (const line of lines(shape.closing)) parts.push(`• ${line}`)
+  return parts.join('\n')
+}

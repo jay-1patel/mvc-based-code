@@ -1,0 +1,138 @@
+[
+  {
+    "name": "b2b_welcome",
+    "category": "MARKETING",
+    "description": "Welcome message for new customers",
+    "header_type": "noheader",
+    "body_template": "Hello! Welcome to our service. How can we help you today?",
+    "footer": "Reply with any questions",
+    "buttons": [],
+    "params": []
+  },
+  {
+    "name": "b2b_greeting",
+    "category": "UTILITY",
+    "description": "General greeting message",
+    "header_type": "noheader",
+    "body_template": "Hi there! Thank you for reaching out. How can I assist you?",
+    "footer": "",
+    "buttons": [],
+    "params": []
+  },
+  {
+    "name": "b2b_product_reply",
+    "category": "UTILITY",
+    "description": "Product information response",
+    "header_type": "noheader",
+    "body_template": "{{1}}",
+    "footer": "Let me know if you need more details",
+    "buttons": [
+      {
+        "type": "quick_reply",
+        "title": "Show more products",
+        "id": "more_products"
+      },
+      {
+        "type": "quick_reply",
+        "title": "Get pricing",
+        "id": "get_pricing"
+      }
+    ],
+    "params": ["answer"]
+  },
+  {
+    "name": "b2b_policy_reply",
+    "category": "UTILITY",
+    "description": "Policy and terms response",
+    "header_type": "noheader",
+    "body_template": "{{1}}",
+    "footer": "Hope this helps clarify",
+    "buttons": [
+      {
+        "type": "quick_reply",
+        "title": "Talk to agent",
+        "id": "talk_agent"
+      }
+    ],
+    "params": ["answer"]
+  },
+  {
+    "name": "b2b_order_status",
+    "category": "UTILITY",
+    "description": "Order status update",
+    "header_type": "noheader",
+    "body_template": "{{1}}",
+    "footer": "Track your order anytime",
+    "buttons": [
+      {
+        "type": "quick_reply",
+        "title": "Track order",
+        "id": "track_order"
+      }
+    ],
+    "params": ["answer"]
+  },
+  {
+    "name": "b2b_escalation",
+    "category": "UTILITY",
+    "description": "Escalation to human agent",
+    "header_type": "noheader",
+    "body_template": "{{1}}",
+    "footer": "Our team will assist you shortly",
+    "buttons": [],
+    "params": ["answer"]
+  },
+  {
+    "name": "b2b_closing",
+    "category": "UTILITY",
+    "description": "Closing message",
+    "header_type": "noheader",
+    "body_template": "Thank you for contacting us. Have a great day!",
+    "footer": "",
+    "buttons": [],
+    "params": []
+  },
+  {
+    "name": "b2b_menu_prompt",
+    "category": "UTILITY",
+    "description": "Menu options prompt",
+    "header_type": "noheader",
+    "body_template": "Please select an option:",
+    "footer": "",
+    "buttons": [
+      {
+        "type": "quick_reply",
+        "title": "Products",
+        "id": "menu_products"
+      },
+      {
+        "type": "quick_reply",
+        "title": "Orders",
+        "id": "menu_orders"
+      },
+      {
+        "type": "quick_reply",
+        "title": "Support",
+        "id": "menu_support"
+      }
+    ],
+    "params": []
+  },
+  {
+    "name": "b2b_coupon_offer",
+    "category": "MARKETING",
+    "description": "Coupon or promotional offer",
+    "header_type": "text",
+    "header_text": "Special Offer!",
+    "body_template": "Use code {{1}} for {{2}} off your next order!",
+    "footer": "Valid until {{3}}",
+    "buttons": [
+      {
+        "type": "quick_reply",
+        "title": "Get offer",
+        "id": "get_offer"
+      }
+    ],
+    "params": ["code", "discount", "expiry"]
+  }
+]
