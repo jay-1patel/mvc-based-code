@@ -1,0 +1,2 @@
+# After Go-Live
+Projects include 60 days warranty for defects attributable to our delivery. Ongoing SLAs can cover uptime monitoring, dependency patches, and a monthly feature capacity. Severity-1 production incidents get priority response under active retainer terms.

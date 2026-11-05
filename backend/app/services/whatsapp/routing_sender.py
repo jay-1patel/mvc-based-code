@@ -1,0 +1,576 @@
+import logging
+import re
+import requests
+import httpx
+from routing.config import (
+    SEND2_USERNAME,
+    SEND2_PASSWORD,
+    SEND2_SESSION_SEND_URL,
+    SEND2_LIST_MENU_URL,
+    SEND2_QUICK_BUTTON_URL,
+)
+
+logger = logging.getLogger("chiki_webhook")
+
+VALID_MSG_TYPES = ("text", "image", "video", "audio", "document")
+
+
+def _resolve_media_url(media_url: str) -> str:
+    """Make a media URL absolute. send2.digital needs a public http(s) URL.
+
+    Relative server paths (e.g. ``/uploaded_files/x.pdf``) are prefixed with the
+    configured public base URL; otherwise a broken ``https:///...`` URL results.
+    """
+    if not media_url:
+        return media_url
+    if media_url.startswith(("http://", "https://")):
+        return media_url
+    from routing.config import PUBLIC_BASE_URL
+    base = (PUBLIC_BASE_URL or "").rstrip("/")
+    if base:
+        return base + "/" + media_url.lstrip("/")
+    return "https://" + media_url
+
+
+def _normalize_msg_type(msg_type: str) -> str:
+    """Map FAQ/other media labels to the WhatsApp media types send2 accepts."""
+    if not msg_type:
+        return "text"
+    mt = msg_type.lower()
+    if mt in ("pdf", "doc", "docx", "xlsx", "csv"):
+        return "document"
+    if mt == "jpg":
+        return "image"
+    if mt == "png":
+        return "image"
+    if mt in VALID_MSG_TYPES:
+        return mt
+    return "text"
+
+
+def normalize_whatsapp_formatting(text: str) -> str:
+    """
+    Normalize Markdown-ish emphasis, headers, links, and bullets so WhatsApp
+    renders clean bold/italic (*bold* / _italic_) and clickable URLs instead of
+    broken raw markdown syntax. Also formats markdown tables into clean bulleted lists.
+    """
+    if not text:
+        return text or ""
+    import re
+
+    # 0. Strip wrapping code fences (e.g. ```json ... ``` or ```markdown ... ``` or bare ```)
+    clean = text.strip()
+    clean = re.sub(r"^```(?:json|markdown|text)?\s*\n?", "", clean)
+    clean = re.sub(r"\n?```\s*$", "", clean)
+    text = clean
+
+    # 1. Convert markdown tables into clean WhatsApp bullet points
+    lines = text.split("\n")
+    table_converted = []
+    in_table = False
+    headers = []
+    for line in lines:
+        s = line.strip()
+        if s.startswith("|") and s.endswith("|") and s.count("|") >= 2:
+            parts = [p.strip() for p in s.strip("|").split("|")]
+            # Skip separator rows like | --- | --- |
+            if all(re.match(r"^:?-+:?$", p) for p in parts if p):
+                continue
+            if not in_table:
+                headers = parts
+                in_table = True
+            else:
+                row_items = []
+                for idx, cell in enumerate(parts):
+                    if not cell:
+                        continue
+                    if idx < len(headers) and headers[idx]:
+                        row_items.append(f"*{headers[idx]}*: {cell}")
+                    else:
+                        row_items.append(cell)
+                if row_items:
+                    table_converted.append("• " + " | ".join(row_items))
+        else:
+            in_table = False
+            headers = []
+            table_converted.append(line)
+    text = "\n".join(table_converted)
+
+    # 2. Markdown headers (# Header, ## Subheading) -> WhatsApp bold (*Header*)
+    text = re.sub(r"(?m)^#{1,6}\s*(.+?)\s*$", r"*\1*", text)
+
+    # 3. Markdown links: [Title](https://...) -> Title: https://...
+    def _link_repl(m):
+        title = m.group(1).strip()
+        url = m.group(2).strip()
+        if not title or title.lower() == url.lower():
+            return url
+        return f"{title}: {url}"
+    text = re.sub(r"\[([^\]]+)\]\((https?://[^\)]+)\)", _link_repl, text)
+
+    # 4. Bold + Italic: ***text*** / ___text___ -> *_text_*
+    text = re.sub(r"\*\*\*(.+?)\*\*\*", r"*_\1_*", text)
+    text = re.sub(r"___(.+?)___", r"*_\1_*", text)
+
+    # 5. Bold: **text** / __text__ -> *text*
+    text = re.sub(r"\*\*(.+?)\*\*", r"*\1*", text)
+    text = re.sub(r"__(.+?)__", r"*\1*", text)
+
+    # 6. Strikethrough: ~~text~~ -> ~text~
+    text = re.sub(r"~~(.+?)~~", r"~\1~", text)
+
+    # 7. Asterisk bullet points at line starts (* Item) -> • Item
+    # Prevents WhatsApp from pairing asterisks across lines and bolding entire lists
+    text = re.sub(r"(?m)^\*\s+", r"• ", text)
+
+    # 8. Compress 3+ consecutive newlines down to 2
+    text = re.sub(r"\n{3,}", "\n\n", text)
+
+    return text.strip()
+
+
+def send_whatsapp_typing(to: str, tenant_id: str = None) -> bool:
+    """Send typing indicator or mark as read if supported by provider, failing silently."""
+    try:
+        username, password = get_tenant_send2_credentials(tenant_id)
+        if not username or not password:
+            return False
+        clean_to = re.sub(r"[^\d]", "", str(to or "")).strip() or str(to)
+        payload = {
+            "user_name": username,
+            "password": password,
+            "contact_no": clean_to,
+            "message_type": "action",
+            "action": "typing",
+            "messaging_product": "whatsapp",
+        }
+        requests.post(SEND2_SESSION_SEND_URL, json=payload, timeout=2)
+        return True
+    except Exception:
+        return False
+
+
+def get_tenant_send2_credentials(tenant_id: str = None) -> tuple:
+    """Retrieve Send2 username/password for the given tenant, or fall back to default env."""
+    tid = tenant_id
+    if not tid:
+        try:
+            from routing.database import get_request_tenant
+            tid = get_request_tenant()
+        except Exception:
+            # deliberate: fall back to the default (env) credentials when
+            # no request tenant can be determined.
+            logger.debug("SEND2_TENANT_LOOKUP_FALLBACK | no request tenant — using env credentials", exc_info=True)
+
+    if tid:
+        try:
+            from routing.database import get_db_context
+            import json
+            with get_db_context() as conn:
+                row = conn.execute(
+                    "SELECT credentials_json FROM tenant_integrations WHERE tenant_id = ? AND LOWER(provider) IN ('send2', 'whatsapp')",
+                    (tid,),
+                ).fetchone()
+                if row and row["credentials_json"]:
+                    creds = json.loads(row["credentials_json"])
+                    u = creds.get("username") or creds.get("send2_username") or creds.get("user_name")
+                    p = creds.get("password") or creds.get("send2_password")
+                    if u and p:
+                        return str(u), str(p)
+        except Exception as e:
+            logger.debug(f"Could not load custom credentials for tenant {tid}: {e}")
+
+    return SEND2_USERNAME, SEND2_PASSWORD
+
+
+def _chunk_text(text: str, limit: int = 4000) -> list:
+    """Split long text into safe chunks for WhatsApp (Meta max 4096 chars)."""
+    text = (text or "").strip()
+    if len(text) <= limit:
+        return [text] if text else []
+    chunks = []
+    while text:
+        if len(text) <= limit:
+            chunks.append(text)
+            break
+        split_at = text.rfind("\n\n", 0, limit)
+        if split_at == -1 or split_at < limit // 3:
+            split_at = text.rfind("\n", 0, limit)
+        if split_at == -1 or split_at < limit // 3:
+            split_at = text.rfind(" ", 0, limit)
+        if split_at == -1:
+            split_at = limit
+        chunk = text[:split_at].strip()
+        if chunk:
+            chunks.append(chunk)
+        text = text[split_at:].strip()
+    return chunks
+
+
+def send_whatsapp_message(to, text, msg_type="text", timeout=15, retries=2, tenant_id=None):
+    norm_type = _normalize_msg_type(msg_type)
+    username, password = get_tenant_send2_credentials(tenant_id)
+    clean_to = re.sub(r"[^\d]", "", str(to or "")).strip() or str(to)
+
+    if norm_type == "text":
+        formatted_text = normalize_whatsapp_formatting(text)
+        chunks = _chunk_text(formatted_text, limit=4000)
+        if not chunks:
+            chunks = [" "]
+        all_ok = True
+        for chunk in chunks:
+            payload = {
+                "user_name": username,
+                "password": password,
+                "contact_no": clean_to,
+                "message_type": "text",
+                "message": chunk,
+                "messaging_product": "whatsapp",
+            }
+            last_err = None
+            sent_chunk = False
+            for attempt in range(1, retries + 1):
+                try:
+                    resp = requests.post(
+                        SEND2_SESSION_SEND_URL,
+                        json=payload,
+                        timeout=timeout,
+                    )
+                    logger.info(f"Reply sent to {to} [{norm_type}], status={resp.status_code}, body={resp.text[:300]}")
+                    from routing.hookdeck import tee_outbound
+                    tee_outbound(SEND2_SESSION_SEND_URL, payload, resp.status_code, resp.text, to=clean_to)
+                    body = (resp.text or "").lower()
+                    if resp.status_code == 200 and (
+                        '"success":true' in body
+                        or '"success": 1' in body
+                        or '"success":1' in body
+                        or "message sent successfully" in body
+                    ):
+                        sent_chunk = True
+                        break
+                except Exception as e:
+                    last_err = e
+                    logger.warning(f"send2.digital send failed for {norm_type} (attempt {attempt}/{retries}): {e}")
+            if not sent_chunk:
+                from routing.hookdeck import tee_outbound
+                tee_outbound(SEND2_SESSION_SEND_URL, payload, None, f"exception: {last_err}", to=clean_to)
+                logger.error(f"send2.digital send failed for {norm_type} after {retries} attempts: {last_err}")
+                all_ok = False
+        return all_ok
+    else:
+        media_url = _resolve_media_url(str(text or "").strip())
+        logger.info(f"MEDIA_SEND | to={to} | type={norm_type} | url={media_url[:120]}")
+        payload = {
+            "user_name": username,
+            "password": password,
+            "contact_no": clean_to,
+            "message_type": norm_type,
+            "media_url": media_url,
+            "message": media_url,
+            "messaging_product": "whatsapp",
+        }
+
+        last_err = None
+        for attempt in range(1, retries + 1):
+            try:
+                resp = requests.post(
+                    SEND2_SESSION_SEND_URL,
+                    json=payload,
+                    timeout=timeout,
+                )
+                logger.info(f"Reply sent to {to} [{norm_type}], status={resp.status_code}, body={resp.text[:300]}")
+                from routing.hookdeck import tee_outbound
+                tee_outbound(SEND2_SESSION_SEND_URL, payload, resp.status_code, resp.text, to=clean_to)
+                body = (resp.text or "").lower()
+                return resp.status_code == 200 and (
+                    '"success":true' in body
+                    or '"success": 1' in body
+                    or '"success":1' in body
+                    or "message sent successfully" in body
+                )
+            except Exception as e:
+                last_err = e
+                logger.warning(f"send2.digital send failed for {norm_type} (attempt {attempt}/{retries}): {e}")
+        from routing.hookdeck import tee_outbound
+        tee_outbound(SEND2_SESSION_SEND_URL, payload, None, f"exception: {last_err}", to=clean_to)
+        logger.error(f"send2.digital send failed for {norm_type} after {retries} attempts: {last_err}")
+        return False
+
+
+def send_whatsapp_list_menu(to, header_text, body_text, button_text, sections, footer_text=None, tenant_id=None):
+    username, password = get_tenant_send2_credentials(tenant_id)
+    # Enforce WhatsApp / Send2 character limits:
+    # row title <= 24, row desc <= 72, section title <= 24, button <= 20
+    api_sections = []
+    seen_row_ids: set = set()
+    for section in sections:
+        api_section = {
+            "title": str(section.get("title", "") or "")[:24],
+            "rows": []
+        }
+        for row in section.get("rows", []):
+            rid = str(row.get("id", "") or "")[:200]
+            if not rid:
+                continue
+            # WhatsApp rejects the whole list when two rows share an id.
+            base = rid
+            n = 2
+            while rid in seen_row_ids:
+                suffix = f"_{n}"
+                rid = (base[: 200 - len(suffix)] + suffix)
+                n += 1
+            seen_row_ids.add(rid)
+            api_row = {
+                "id": rid,
+                "title": str(row.get("title", "") or "")[:24],
+                "description": str(row.get("description", "") or "")[:72],
+            }
+            api_section["rows"].append(api_row)
+        api_sections.append(api_section)
+
+    # WhatsApp rejects the whole message when the body is empty or > 1024 chars
+    # ("Body text length invalid. Min length: 1, Max length: 1024").
+    # If the body is long (> 950 chars), deliver the FULL untruncated content
+    # first via text message, and present the menu with a clean prompt.
+    raw_body = normalize_whatsapp_formatting(body_text or " ")
+    if len(raw_body) > 950:
+        logger.info(f"LIST_MENU_SPLIT | to={to} | chars={len(raw_body)} | sending full text first")
+        send_whatsapp_message(to, body_text, tenant_id=tenant_id)
+        norm_body = "Please select an option below:"
+    else:
+        norm_body = _truncate_body(raw_body, limit=1020)
+
+    payload = {
+        "username": username,
+        "password": password,
+        "number": to,
+        "headertext": str(header_text or " ")[:60],
+        "bodytext": norm_body or " ",
+        "footertext": str(footer_text or " ")[:60],
+        "buttontext": str(button_text or "Menu")[:20],
+        "total_number_section": len(api_sections),
+        "total_rows": sum(len(section.get("rows", [])) for section in api_sections),
+        "sections": api_sections,
+    }
+    try:
+        logger.info(f"LIST_MENU_REQUEST | to={to} | sections={len(api_sections)} | rows={sum(len(s.get('rows', [])) for s in api_sections)}")
+        with httpx.Client(timeout=30) as client:
+            resp = client.post(SEND2_LIST_MENU_URL, json=payload)
+        logger.info(f"LIST_MENU_RESPONSE | to={to} | status={resp.status_code} | body={resp.text[:300]}")
+        from routing.hookdeck import tee_outbound
+        tee_outbound(SEND2_LIST_MENU_URL, payload, resp.status_code, resp.text, to=to)
+        body = (resp.text or "").lower()
+        return resp.status_code == 200 and (
+            "message sent successfully" in body
+            or '"success":true' in body
+            or '"success": true' in body
+            or '"success": 1' in body
+            or '"success":1' in body
+        )
+    except Exception as e:
+        logger.error(f"send2.digital list menu send failed: {e}")
+        return False
+
+
+def _truncate_body(text: str, limit: int = 1020) -> str:
+    if len(text) <= limit:
+        return text
+    cut = text[:limit]
+    last_space = cut.rfind(" ")
+    if last_space > limit // 2:
+        cut = cut[:last_space]
+    return cut.rstrip()
+
+
+def send_whatsapp_cta_url(
+    to: str,
+    body_text: str,
+    cta_url: str,
+    display_text: str = "Learn More",
+    image_url: str = None,
+    footer_text: str = None,
+    tenant_id: str = None,
+    timeout: int = 60,
+) -> bool:
+    """Send send2 interactive ``cta_url`` with optional image header.
+
+    Notes from send2:
+    - Do not mix reply buttons with CTA URL in one payload.
+    - Max 1 CTA URL button per interactive payload.
+    - Image goes in ``interactive.header`` (type=image).
+    """
+    username, password = get_tenant_send2_credentials(tenant_id)
+    clean_to = re.sub(r"[^\d]", "", str(to or "")).strip() or str(to)
+    url = str(cta_url or "").strip()
+    if not url.startswith(("http://", "https://")):
+        logger.error("CTA_URL_INVALID | to=%s | url=%r", to, url)
+        return False
+
+    body = _truncate_body(normalize_whatsapp_formatting(body_text or " ") or " ", limit=1020)
+    label = str(display_text or "Learn More").strip()[:20] or "Learn More"
+    footer = str(footer_text or " ").strip() or " "
+
+    interactive = {
+        "type": "cta_url",
+        "body": {"text": body},
+        "footer": {"text": footer[:60]},
+        "action": {
+            "name": "cta_url",
+            "parameters": {
+                "display_text": label,
+                "url": url,
+            },
+        },
+    }
+
+    image_link = str(image_url or "").strip()
+    if image_link:
+        try:
+            from kb.services.whatsapp import resolve_public_media_url
+            resolved = resolve_public_media_url(image_link)
+            if resolved:
+                image_link = resolved
+        except Exception:
+            image_link = _resolve_media_url(image_link)
+        if image_link.startswith(("http://", "https://")):
+            interactive["header"] = {
+                "type": "image",
+                "image": {"link": image_link},
+            }
+
+    payload = {
+        "user_name": username,
+        "password": password,
+        "contact_no": clean_to,
+        "message_type": "interactive",
+        "interactive": interactive,
+    }
+    try:
+        logger.info(
+            "CTA_URL_REQUEST | to=%s | has_image=%s | display=%r | url=%s",
+            to, "header" in interactive, label, url[:120],
+        )
+        with httpx.Client(timeout=timeout) as client:
+            resp = client.post(SEND2_SESSION_SEND_URL, json=payload)
+        logger.info(
+            "CTA_URL_RESPONSE | to=%s | status=%s | body=%s",
+            to, resp.status_code, (resp.text or "")[:300],
+        )
+        try:
+            from routing.hookdeck import tee_outbound
+            tee_outbound(SEND2_SESSION_SEND_URL, payload, resp.status_code, resp.text, to=clean_to)
+        except Exception:
+            # deliberate: the outbound tee is an observability side-channel;
+            # its failure must never affect the actual send.
+            logger.debug("TEE_OUTBOUND_FAILED | to=%s", clean_to, exc_info=True)
+        low = (resp.text or "").lower()
+        ok = resp.status_code == 200 and (
+            "message sent successfully" in low
+            or '"success":true' in low
+            or '"success": true' in low
+            or '"success":1' in low
+            or '"success": 1' in low
+        )
+        return bool(ok)
+    except Exception as e:
+        logger.error("CTA_URL_FAILED | to=%s | error=%s", to, e)
+        return False
+
+
+def normalize_reply_buttons(buttons):
+    """Coerce incoming buttons into send2.digital's interactive button shape.
+
+    Callers hand us buttons in two shapes: already-formatted
+    ``{"type": "reply", "reply": {"id", "title"}}`` (what the bot workflows
+    emit) or flat ``{"id", "title"}``. send2.digital / WhatsApp reject the
+    entire message when ``reply.id`` is empty, so any button missing an id or a
+    title is dropped rather than sent half-formed.
+    """
+    out = []
+    for btn in buttons or []:
+        if not isinstance(btn, dict):
+            continue
+        reply = btn.get("reply")
+        if isinstance(reply, dict):
+            bid = reply.get("id") or btn.get("id")
+            title = reply.get("title") or btn.get("title")
+        else:
+            bid = btn.get("id")
+            title = btn.get("title")
+        bid = str(bid).strip() if bid is not None else ""
+        title = str(title).strip() if title is not None else ""
+        if bid and title:
+            out.append({"type": "reply", "reply": {"id": bid, "title": title}})
+    return out
+
+
+def send_whatsapp_interactive(to, text, buttons, footer=None, tenant_id=None):
+    """Send an interactive button message via send2.digital Quick Button API.
+
+    `buttons` is a list of button objects in the send2.digital format, e.g.:
+        [{"type": "reply", "reply": {"id": "check_moq", "title": "Check MOQ by product"}}]
+    """
+    username, password = get_tenant_send2_credentials(tenant_id)
+    buttons = normalize_reply_buttons(buttons)
+    if not buttons:
+        logger.warning("No usable buttons for interactive message (missing id/title)")
+        return False
+
+    if len(buttons) > 3:
+        logger.warning(f"Too many buttons ({len(buttons)}), limiting to 3")
+        buttons = buttons[:3]
+
+    # Enforce button title limit (WhatsApp max 20 chars)
+    formatted_buttons = []
+    for btn in buttons:
+        if isinstance(btn, dict):
+            b_copy = dict(btn)
+            if "reply" in b_copy and isinstance(b_copy["reply"], dict):
+                r_copy = dict(b_copy["reply"])
+                r_copy["title"] = str(r_copy.get("title", ""))[:20]
+                b_copy["reply"] = r_copy
+            formatted_buttons.append(b_copy)
+        else:
+            formatted_buttons.append(btn)
+
+    raw_text = normalize_whatsapp_formatting(text or " ")
+    if len(raw_text) > 950:
+        logger.info(f"INTERACTIVE_SPLIT | to={to} | chars={len(raw_text)} | sending full text first")
+        send_whatsapp_message(to, text, tenant_id=tenant_id)
+        body_to_send = "Please select an option below:"
+    else:
+        body_to_send = _truncate_body(raw_text, limit=1020)
+
+    # NOTE: headertext and footertext must be NON-EMPTY strings, otherwise
+    # send2.digital rejects the whole request with {"error":"INVALID PARAMETER"}.
+    payload = {
+        "username": username,
+        "password": password,
+        "number": to,
+        "headertype": "text",
+        "headertext": " ",
+        "bodytext": body_to_send,
+        "footertext": str(footer or " ")[:60],
+        "total_buttons": len(formatted_buttons),
+        "buttons": formatted_buttons,
+    }
+    try:
+        resp = requests.post(
+            SEND2_QUICK_BUTTON_URL,
+            json=payload,
+            timeout=30,
+        )
+        logger.info(f"Interactive reply sent to {to}, status={resp.status_code}, body={resp.text[:300]}")
+        from routing.hookdeck import tee_outbound
+        tee_outbound(SEND2_QUICK_BUTTON_URL, payload, resp.status_code, resp.text, to=to)
+        body = (resp.text or "").lower()
+        return resp.status_code == 200 and (
+            '"success":true' in body
+            or '"success": true' in body
+            or '"success": 1' in body
+            or '"success":1' in body
+            or "message sent successfully" in body
+        )
+    except Exception as e:
+        logger.error(f"send2.digital interactive send failed: {e}")
+        return False

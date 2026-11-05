@@ -1,0 +1,939 @@
+import logging
+import re
+
+from routing.classifier import classify_query, generate_greeting
+from routing.config import SEND_MEDIA, BUSINESS_NAME, CATALOG_DELIVERY_MODE
+
+logger = logging.getLogger("message")
+
+
+def _get_greeting_menu(wa_id: str, tenant_id: str = None):
+    """Lazy import to avoid circular imports in standalone KB mode."""
+    from services.menu_service import get_greeting_menu
+    return get_greeting_menu(wa_id, tenant_id=tenant_id)
+
+
+BUTTON_INTENTS = [
+    {
+        "name": "moq",
+        "keywords": (
+            "moq", "minimum order quantity", "minimum order", "minimum quantity",
+            "min order", "min quantity", "min qty", "minimum qty", "order quantity",
+        ),
+        "buttons": [{"type": "reply", "reply": {"id": "check_moq", "title": "Check MOQ by product"}}],
+    },
+    {
+        "name": "bulk_discount",
+        "keywords": (
+            "bulk discount", "quantity discount", "volume discount", "wholesale discount",
+            "wholesale price", "bulk pricing", "discount on bulk", "discounts on bulk",
+            "large order discount", "discount for large order",
+        ),
+        "buttons": [{"type": "reply", "reply": {"id": "view_discounts", "title": "View qty discounts"}}],
+    },
+    {
+        "name": "credit",
+        "keywords": (
+            "credit period", "credit terms", "credit line", "credit facility",
+            "credit eligibility", "buy now pay later", "net 30", "net 45", "net 60",
+        ),
+        "buttons": [{"type": "reply", "reply": {"id": "check_credit", "title": "Credit eligibility"}}],
+    },
+    {
+        "name": "payment",
+        "keywords": (
+            "payment method", "payment methods", "payment option", "payment options",
+            "payment terms", "how can i pay", "how to pay", "how do i pay", "ways to pay",
+            "mode of payment", "make payment", "payment",
+        ),
+        "buttons": [{"type": "reply", "reply": {"id": "view_payment", "title": "View payment methods"}}],
+    },
+]
+
+DOCUMENT_BUTTON_ID = "send_document"
+DOCUMENT_BUTTON_TITLE = "View Document"
+
+_DOCUMENT_MEDIA_TYPES = frozenset(
+    {"pdf", "doc", "docx", "xlsx", "xls", "csv", "document"}
+)
+
+
+def _media_is_document(media_type: str) -> bool:
+    """True only when the attached media is a document (not an image/video)."""
+    return (media_type or "").lower().strip() in _DOCUMENT_MEDIA_TYPES
+
+DIRECT_MEDIA_KEYWORDS = (
+    "catalogue", "catalog", "brochure", "product list", "price list", "product lineup",
+    "product range", "menu", "new arrival", "new arrivals", "new launch", "new launches",
+    "new release", "new releases", "new product", "latest product", "latest launch", "fresh drops", "recent additions",
+)
+
+NO_FALLBACK_KB_QUERIES = {
+    "about company", "about troogood", "about us", "company info",
+    "who is the founder", "when was troogood founded", "troogood story",
+    "tell me about troogood", "what is troogood",
+}
+
+
+# Question words/phrases indicate the user is asking about the *contents* of
+# the document (what's inside, prices, products, specs, etc.) — those should
+# get a text answer from the FAQ bot, not the raw PDF.
+CONTENT_QUESTION_MARKERS = (
+    "tell me", "is there", "are there", "detail", "details",
+    "ingredient", "contain", "contains", "included", "inside",
+    "spec", "nutrition", "flavour", "flavor",
+)
+
+
+def _tenant_profile(wa_id: str, tenant_id: str = None):
+    from shared.tenancy.loader import get_tenant_profile
+    from shared.tenancy.resolver import resolve_tenant_for_user
+
+    tid = tenant_id or resolve_tenant_for_user(wa_id or "")
+    return tid, get_tenant_profile(tid)
+
+
+def _profile_button_status(wa_id: str, button_id: str, tenant_id: str = None) -> tuple[bool, bool, str]:
+    """Return whether a current-profile button exists and can be tapped."""
+    try:
+        from backend.services.menu_catalog import profile_button_status
+
+        exists, available = profile_button_status(button_id, wa_id=wa_id, tenant_id=tenant_id)
+        tid, _profile = _tenant_profile(wa_id, tenant_id)
+        return exists, available, tid
+    except Exception as exc:
+        logger.warning("Could not validate menu option %s: %s", button_id, exc)
+        return False, False, tenant_id or ""
+
+
+def _profile_button_available(wa_id: str, button_id: str, tenant_id: str = None) -> tuple[bool, str]:
+    exists, available, tid = _profile_button_status(wa_id, button_id, tenant_id)
+    return exists and available, tid
+
+
+def _tenant_feature_enabled(wa_id: str, feature: str, tenant_id: str = None) -> tuple[bool, str]:
+    try:
+        tid, profile = _tenant_profile(wa_id, tenant_id)
+        return profile.feature_on(feature), tid
+    except Exception as exc:
+        logger.warning("Could not validate tenant feature %s: %s", feature, exc)
+        return False, tenant_id or ""
+
+
+def is_direct_media_query(text) -> bool:
+    lower = (text or "").lower()
+    # Word-boundary match for question words so "show" is not caught by "how".
+    if re.search(r"\b(what|which|how|why|when|who)\b", lower):
+        return False
+    if any(m in lower for m in CONTENT_QUESTION_MARKERS):
+        return False
+    return any(kw in lower for kw in DIRECT_MEDIA_KEYWORDS)
+
+
+# Plain-text triggers for the "send me the full PDF" follow-up that the
+# catalogue product-list footer prompts for.
+CATALOGUE_PDF_TRIGGERS = (
+    "pdf", "send pdf", "catalogue pdf", "catalog pdf", "full catalogue",
+    "full catalog", "send catalogue", "send catalog", "send document",
+    "catalogue document", "catalog document", "brochure pdf",
+    "price list pdf", "product list pdf", "brochure", "send brochure",
+    "share brochure", "download brochure", "project brochure", "e brochure",
+    "ebrochure", "project deck", "deck", "presentation", "share pdf",
+    "download pdf", "give brochure", "get brochure", "need brochure",
+    "catalogue", "catalog",
+)
+
+
+def _wants_catalogue_pdf(text) -> bool:
+    """True when the plain-text message is a request for a brochure/catalogue PDF."""
+    if not text:
+        return False
+    cleaned = re.sub(r"[^a-zA-Z\s]", " ", (text or "").lower()).strip()
+    if not cleaned or len(cleaned) > 50:
+        return False
+
+    words = cleaned.split()
+    # If the user is asking an informational question ("what is in the brochure", "why brochure", etc.), don't trigger PDF
+    if any(q in words for q in ("what", "why", "how", "who", "when", "where", "explain", "details")):
+        return False
+
+    # Direct phrase match
+    if cleaned in CATALOGUE_PDF_TRIGGERS:
+        return True
+
+    # Word-boundary match for multi-word triggers
+    for trigger in CATALOGUE_PDF_TRIGGERS:
+        if " " in trigger and re.search(rf"\b{re.escape(trigger)}\b", cleaned):
+            return True
+
+    # Natural combination match: (request verb) + (document noun)
+    has_pdf_keyword = any(kw in words for kw in ("pdf", "brochure", "brochures", "ebrochure", "deck", "catalogue", "catalog"))
+    has_request_intent = any(w in words for w in ("send", "share", "give", "get", "download", "need", "want", "provide", "show", "view", "attach"))
+    if has_pdf_keyword and (has_request_intent or len(words) <= 3):
+        return True
+    return False
+
+
+# Words that mean the user wants the catalogue document itself. Broader
+# DIRECT_MEDIA_KEYWORDS (e.g. "menu", "new arrival") should not trigger a PDF.
+_CATALOGUE_REQUEST_WORDS = (
+    "catalogue", "catalog", "brochure", "product list", "price list",
+    "product lineup", "product range", "send catalogue", "send catalog",
+    "send brochure", "full catalogue", "full catalog", "product brochure",
+    "company brochure", "e brochure", "ebrochure",
+)
+
+
+def _wants_catalogue(text) -> bool:
+    """True when the text asks for the product catalogue document."""
+    lower = (text or "").lower()
+    return any(w in lower for w in _CATALOGUE_REQUEST_WORDS)
+
+
+def _wants_new_arrivals(text) -> bool:
+    """True when the text asks for new releases specifically."""
+    lower = (text or "").lower()
+    return any(w in lower for w in ("arrival", "launch", "latest", "release", "new product"))
+
+
+# WhatsApp list-menu payload limits (send2.digital / Meta):
+#   - 10 sections max
+#   - 10 rows per section max
+#   - title <= 24 chars
+#   - description <= 72 chars
+_LIST_TITLE_LIMIT = 24
+_LIST_DESC_LIMIT = 72
+_LIST_MAX_SECTIONS = 5
+_LIST_MAX_ROWS_PER_SECTION = 10
+
+
+def _truncate(text: str, limit: int) -> str:
+    text = (text or "").strip()
+    if len(text) <= limit:
+        return text
+    return text[: limit - 1].rstrip() + "…"
+
+
+def build_catalog_summary(user_text: str) -> dict | None:
+    """Build an interactive product-list payload for direct catalogue / new-arrival
+    queries (matches `DIRECT_MEDIA_KEYWORDS`).
+
+    Returns a dict shaped like:
+        {
+            "text": "<body line + PDF hint>",  # plain-text body for send_whatsapp_list_menu
+            "header": "Browse our brochure",
+            "footer": "Reply *PDF* for the full brochure document.",
+            "button_text": "View Products",
+            "interactive": {"type": "list", "sections": [...]},
+            "media_url": "<catalogue PDF url or None>",
+            "media_type": "<catalogue PDF type or None>",
+        }
+
+    Returns ``None`` when CATALOG_DELIVERY_MODE is "pdf" (legacy direct-PDF
+    fallback), when the products table has no structured rows, or when the
+    lookup raises.
+    """
+    if CATALOG_DELIVERY_MODE == "pdf":
+        return None
+
+    lower = (user_text or "").lower()
+    wants_arrivals = (
+        "arrival" in lower or "launch" in lower or "latest" in lower or "new product" in lower or "release" in lower
+    )
+
+    try:
+        from backend.database import list_products
+        # list_products scopes via request tenant set in process_message.
+        if wants_arrivals:
+            products = list_products(category="new_arrival", limit=8)
+        else:
+            products = list_products(category="catalogue", limit=8)
+            if not products:
+                products = list_products(limit=8)
+    except Exception as e:
+        logger.warning(f"catalog summary product lookup failed: {e}")
+        return None
+
+    if not products:
+        return None
+
+    sections = []
+    for cat in sorted({(p.get("category") or "products") for p in products}):
+        rows = []
+        for p in products:
+            if (p.get("category") or "products") != cat:
+                continue
+            pid = p.get("id")
+            if pid is None:
+                continue
+            price = p.get("price")
+            unit = p.get("unit") or ""
+            desc_parts = []
+            if price:
+                desc_parts.append(f"₹{price}" + (f" / {unit}" if unit else ""))
+            short = p.get("short_description") or p.get("description") or ""
+            if short:
+                desc_parts.append(short)
+            description = " • ".join(desc_parts) or "Tap to view details"
+            rows.append({
+                "id": f"product_{pid}",
+                "title": _truncate(p.get("name") or f"Product {pid}", _LIST_TITLE_LIMIT),
+                "description": _truncate(description, _LIST_DESC_LIMIT),
+            })
+            if len(rows) >= _LIST_MAX_ROWS_PER_SECTION:
+                break
+        if rows:
+            sections.append({
+                "title": _truncate(cat.title(), _LIST_TITLE_LIMIT),
+                "rows": rows,
+            })
+        if len(sections) >= _LIST_MAX_SECTIONS:
+            break
+
+    if not sections:
+        return None
+
+    # Catalogue PDF fallback metadata for the "Reply *PDF*" text flow.
+    media_url = None
+    media_type = None
+    try:
+        from backend.database import get_db_context, _resolve_tenant_ids
+        t_ids = _resolve_tenant_ids(None)
+        placeholders = ", ".join(["?"] * len(t_ids))
+        with get_db_context() as conn:
+            row = conn.execute(
+                f"SELECT media_url, media_type FROM products "
+                f"WHERE tenant_id IN ({placeholders}) "
+                f"AND category = 'catalogue' AND media_url IS NOT NULL AND is_active = 1 "
+                f"ORDER BY sort_order ASC LIMIT 1",
+                list(t_ids),
+            ).fetchone()
+        if row:
+            media_url = row[0]
+            media_type = row[1]
+    except Exception as e:
+        logger.debug(f"catalogue PDF lookup failed: {e}")
+
+    if wants_arrivals:
+        body = "Here are our latest products — tap to see details."
+    else:
+        body = "Browse our brochure — tap to see details."
+
+    # The "Reply *PDF*" hint goes in the footer because the body becomes the
+    # list-menu body, which is rendered above the section list.
+    footer = "Reply *PDF* for the full brochure document."
+
+    return {
+        "text": body,
+        "header": "Our Products",
+        "body": body,
+        "footer": footer,
+        "button_text": "View Products",
+        "interactive": {"type": "list", "sections": sections, "body": body, "header": "Our Products", "footer": footer, "button_text": "View Products"},
+        "media_url": media_url,
+        "media_type": media_type,
+    }
+
+
+def build_catalog_text_fallback(user_text: str) -> dict | None:
+    """Legacy behaviour: return a plain-text summary + Browse button for the
+    legacy PDF-mode direct-media branch in the webhook. Used only when
+    CATALOG_DELIVERY_MODE == "pdf" or when list-building falls through.
+    """
+    lower = (user_text or "").lower()
+    wants_arrivals = "arrival" in lower or "launch" in lower or "latest" in lower or "new product" in lower or "release" in lower
+    try:
+        from backend.database import list_products
+        if wants_arrivals:
+            products = list_products(category="new_arrival", limit=8)
+        else:
+            products = list_products(category="catalogue", limit=8)
+            if not products:
+                products = list_products(limit=8)
+    except Exception as e:
+        logger.warning(f"catalog summary product lookup failed: {e}")
+        return None
+
+    if not products:
+        return None
+
+    lines = ["✨ Here's what we have for you:"]
+    for i, p in enumerate(products[:8], start=1):
+        price = f" — ₹{p['price']}" if p.get("price") else ""
+        desc = (p.get("short_description") or p.get("description") or "")[:60]
+        lines.append(f"{i}. {p['name']}{price}")
+        if desc:
+            lines.append(f"   {desc}")
+    lines.append("\nTap below to explore more.")
+
+    buttons = [
+        {"type": "reply", "reply": {"id": "menu_products", "title": "Browse Products"}},
+    ]
+    return {"text": "\n".join(lines), "buttons": buttons}
+
+
+def _is_distributor(wa_id) -> bool:
+    """Return True if wa_id is a registered B2B distributor."""
+    if not wa_id:
+        return False
+    try:
+        from backend.database import get_db_context
+        with get_db_context() as conn:
+            row = conn.execute(
+                "SELECT 1 FROM distributors WHERE wa_id = ?", (str(wa_id),)
+            ).fetchone()
+            return row is not None
+    except Exception as e:
+        logger.warning(f"distributor check failed for {wa_id}: {e}")
+        return False
+
+
+async def _handle_b2b_message(user_text: str, wa_id: str) -> dict:
+    """Route a recognized distributor through the B2B orchestrator.
+
+    The B2B flow sends its own replies (via the shared WhatsApp sender), so we
+    signal ``whatsapp_sent=True`` and return no text so the webhook does not
+    double-send.
+    """
+    try:
+        from backend.services.orchestrator import process_incoming_message
+        result = await process_incoming_message(wa_id, user_text)
+        status = result.get("status", "processed")
+        logger.info(f"B2B_ROUTE | wa_id={wa_id} | status={status} | msg='{user_text[:80]}'")
+        return {
+            "answer": "",
+            "media_url": None,
+            "media_type": None,
+            "whatsapp_sent": True,
+            "interactive": None,
+            "query_type": "b2b_distributor",
+        }
+    except Exception as e:
+        logger.error(f"B2B_ROUTE_FAILED | wa_id={wa_id} | error={e}")
+        # Fall back to the normal FAQ/KB handling below.
+        return None
+
+
+def _is_button_reply(raw_message) -> bool:
+    if not isinstance(raw_message, dict):
+        return False
+    return (
+        raw_message.get("type") == "interactive"
+        and raw_message.get("interactive", {}).get("type") in ("button_reply", "list_reply")
+    )
+
+
+def _interactive_reply_id(raw_message) -> str:
+    if not _is_button_reply(raw_message):
+        return ""
+    interactive = raw_message.get("interactive", {})
+    reply = interactive.get("button_reply") or interactive.get("list_reply") or {}
+    return str(reply.get("id") or "").strip()
+
+
+def _try_send_new_arrivals_pdf(wa_id) -> bool:
+    if not wa_id:
+        return False
+    try:
+        from kb.services.whatsapp import send_new_arrivals_pdf
+        return bool(send_new_arrivals_pdf(wa_id))
+    except Exception as e:
+        logger.debug(f"send_new_arrivals_pdf import/send failed: {e}")
+        return False
+
+
+def get_buttons_for_query(text) -> list | None:
+    lower = (text or "").lower()
+    for intent in BUTTON_INTENTS:
+        if any(kw in lower for kw in intent["keywords"]):
+            return intent["buttons"]
+    return None
+
+
+UNCERTAIN_PHRASES = [
+    "i don't know", "i dont know", "i do not know", "don't know", "dont know", "do not know",
+    "i'm not sure", "i am not sure", "im not sure", "not sure", "not certain", "not confident",
+    "i don't have information", "i do not have information", "don't have information",
+    "do not have information", "not have any information", "no information",
+    "not enough information", "don't have enough information", "do not have enough information",
+    "i don't have enough", "i do not have enough",
+    "can't answer", "cannot answer", "can not answer", "unable to answer", "not able to answer",
+    "unable to find", "couldn't find", "could not find", "no answer found",
+    "not able to help", "beyond my knowledge", "no relevant information",
+    "nothing in the context", "not in the context",
+]
+
+
+def is_uncertain_answer(answer: str) -> bool:
+    if not answer:
+        return False
+    lower = answer.lower()
+    return any(phrase in lower for phrase in UNCERTAIN_PHRASES)
+
+
+def get_greeting_response(text: str) -> str:
+    return generate_greeting(text)
+
+
+async def forward_to_bot(query_type, user_text, wa_id=None, raw_message=None, tenant_id=None):
+    # A tenant that switched the FAQ or KB substrate off gets the profile's
+    # polite refusal instead of an answer from a pipeline it disabled. The
+    # refusal is returned as a normal answer so callers send it unchanged;
+    # no fallback to the other pipeline is attempted for a disabled feature.
+    if wa_id:
+        try:
+            from shared.tenancy.gating import guard_result
+            feature = "faq" if query_type == "faq" else "kb"
+            blocked = guard_result(wa_id, feature)
+        except Exception as exc:
+            logger.debug(f"{query_type} gate unavailable: {exc}")
+            blocked = None
+        if blocked:
+            logger.info(f"{feature.upper()}_BLOCKED | {wa_id} | {feature} off for tenant")
+            return {
+                "answer": blocked["message"],
+                "media_url": None,
+                "media_type": None,
+                "whatsapp_sent": False,
+                "interactive": None,
+                "query_type": query_type,
+                "disabled": feature,
+            }
+
+    if query_type == "faq":
+        from backend.faq.service import handle_faq_query
+        data = await handle_faq_query({
+            "message": user_text,
+            "wa_id": wa_id,
+            "tenant_id": tenant_id,
+        })
+    else:
+        from kb.service import handle_kb_query
+        data = await handle_kb_query(
+            wa_id=wa_id or "",
+            message=user_text,
+            sender_name="",
+            update_session=True,
+            raw_message=raw_message,
+            tenant_id=tenant_id,
+        )
+    logger.info(f"{query_type} bot response keys: {list(data.keys())}, media_url={data.get('media_url')}, media_type={data.get('media_type')}, whatsapp_sent={data.get('whatsapp_sent')}")
+    return data
+
+
+async def process_message(user_text: str, wa_id: str = None, raw_message: dict = None, tenant_id: str = None):
+    try:
+        from shared.tenancy.resolver import resolve_effective_tenant_id
+        tenant_id = resolve_effective_tenant_id(
+            wa_id or "",
+            tenant_id,
+            allow_test_override=True,
+        )
+        if not tenant_id:
+            logger.warning("No active tenant resolved for message from %s", wa_id or "?")
+            return {
+                "answer": "",
+                "media_url": None,
+                "media_type": None,
+                "whatsapp_sent": False,
+                "interactive": None,
+                "query_type": "ignored",
+            }
+        from routing.database import set_request_tenant
+        set_request_tenant(tenant_id)
+    except Exception as exc:
+            logger.exception("Could not resolve active tenant for message from %s", wa_id or "?")
+            return {
+                "answer": "",
+                "media_url": None,
+                "media_type": None,
+                "whatsapp_sent": False,
+                "interactive": None,
+                "query_type": "error",
+                "error": f"Tenant resolution failed: {exc}",
+            }
+
+    is_btn_reply = _is_button_reply(raw_message)
+    query_type = classify_query(user_text)
+
+    # Interactive button/list replies (that weren't handled by the button
+    # registry in the webhook) carry structured IDs (prod_*, menu_*, action_*)
+    # that the KB handler's state machine knows how to route.  The plain-text
+    # classifier cannot interpret those IDs, so force interactive replies that
+    # would otherwise be misclassified as "greeting" to the KB bot.
+    if is_btn_reply and query_type in ("greeting", ""):
+        query_type = "kb"
+        logger.info(f"Interactive reply forced to KB: {user_text[:80]}")
+    logger.info(f"Query classified as: {query_type}")
+
+    result = {"answer": "", "media_url": None, "media_type": None, "whatsapp_sent": False, "interactive": None, "query_type": query_type}
+
+    # Greetings must short-circuit BEFORE intent/service matching. Otherwise a
+    # kit intent that happens to list "hi" as an example steals the reply, and
+    # the user gets a panel answer instead of (or in addition to) the menu.
+    if query_type == "greeting" and not is_btn_reply:
+        # Keep the webhook-resolved tenant; dropping it made get_main_menu
+        # re-resolve via user_states / defaults and mix Brand vs real headers.
+        if tenant_id:
+            try:
+                from routing.database import set_request_tenant
+                set_request_tenant(tenant_id)
+            except Exception:
+                try:
+                    from database import set_request_tenant
+                    set_request_tenant(tenant_id)
+                except Exception:
+                    logger.exception("SET_REQUEST_TENANT_FAILED | tenant=%s", tenant_id)
+        greeting_menu = _get_greeting_menu(wa_id, tenant_id=tenant_id)
+        if greeting_menu.get("type") == "text":
+            result["answer"] = greeting_menu.get("body", "")
+        else:
+            result["interactive"] = greeting_menu
+        result["tenant_id"] = tenant_id or greeting_menu.get("tenant_id")
+        return result
+
+    interactive_id = _interactive_reply_id(raw_message)
+    if interactive_id == "menu_brochure":
+        _exists, allowed, tid = _profile_button_status(wa_id or "", interactive_id, tenant_id)
+        if not allowed:
+            result["answer"] = "That menu option is no longer available. Please ask our team for help."
+            result["query_type"] = "menu_unavailable"
+            return result
+        try:
+            # Use the new brochure service with button_id to find relevant brochure
+            from backend.services.brochure_service import send_relevant_brochure
+            sent = send_relevant_brochure(wa_id, button_id=interactive_id, tenant_id=tid)
+        except Exception as exc:
+            logger.exception("Brochure menu action failed for tenant %s: %s", tid, exc)
+            # Fallback to original method
+            try:
+                from kb.services.whatsapp import send_catalogue_pdf
+                sent = send_catalogue_pdf(wa_id, tenant_id=tid)
+            except:
+                sent = False
+        result["answer"] = "📄 Here is the relevant brochure." if sent else "Sorry, the brochure isn't available right now. Please contact our team."
+        result["query_type"] = "catalog_pdf"
+        result["whatsapp_sent"] = bool(sent)
+        return result
+
+    if interactive_id == "menu_services":
+        _exists, allowed, tid = _profile_button_status(wa_id or "", interactive_id, tenant_id)
+        if not allowed:
+            result["answer"] = "That menu option is no longer available. Please ask our team for help."
+            result["query_type"] = "menu_unavailable"
+            return result
+        from backend.services import service_answers
+        answer = service_answers.answer_for_text(wa_id or "", "our services", tenant_id=tid)
+        if answer:
+            from faq.service import synthesize_intent_answer
+            answer = await synthesize_intent_answer(
+                raw_content=answer,
+                intent_name="Services",
+                user_query=user_text,
+                tenant_id=tid,
+            )
+        result["answer"] = answer or "We don't have any services listed right now. Please contact our team for details."
+        result["query_type"] = "service_enquiry"
+        return result
+    if is_btn_reply and interactive_id in ("new_arrival", "menu_new_arrivals"):
+        sent = _try_send_new_arrivals_pdf(wa_id)
+        if sent:
+            result["answer"] = "📄 Here is the latest new releases PDF."
+            result["query_type"] = "new_arrivals_pdf"
+            result["whatsapp_sent"] = True
+            logger.info(f"NEW_ARRIVALS_PDF_SENT | {wa_id}")
+            return result
+
+    # ── B2B DISTRIBUTOR PRE-ROUTE ─────────────────────────────────────────
+    # Recognized distributors go through the dedicated B2B flow (place order,
+    # catalogue, price list, schemes, outstanding, tickets, etc.). The B2B flow
+    # sends its own replies, so when it handles the message we stop here.
+    if wa_id and _is_distributor(wa_id):
+        b2b = await _handle_b2b_message(user_text, wa_id)
+        if b2b is not None:
+            return b2b
+
+    # ── PROFILE FLOWS (active flow progression & flow triggers) ───────────
+    try:
+        from backend.services import flow_runner
+        if wa_id and flow_runner.is_running(wa_id):
+            outcome = flow_runner.handle_reply(wa_id, user_text, tenant_id=tenant_id)
+            if outcome and outcome.get("handled") and outcome.get("messages"):
+                result["answer"] = flow_runner.messages_text(outcome["messages"])
+                result["query_type"] = "flow"
+                return result
+
+        # Tour package browsing: the package catalogue (list menu), a package
+        # card with its booking button, and the booking enquiry. Runs before
+        # the flow trigger so a package name never starts an unrelated flow.
+        try:
+            from backend.services import package_flow
+            _tid, _profile = _tenant_profile(wa_id or "", tenant_id)
+            package_result = await package_flow.handle_package_action(
+                wa_id or "", user_text, tenant_id=_tid,
+                pressed_id=interactive_id or "",
+            )
+            if package_result and package_result.get("handled"):
+                result["answer"] = ""
+                result["query_type"] = "package"
+                result["whatsapp_sent"] = True
+                logger.info("PACKAGE_ACTION | wa_id=%s | action=%s", wa_id,
+                            package_result.get("action"))
+                return result
+        except Exception as exc:
+            logger.debug("Package browsing failed: %s", exc)
+
+        flow_name = (
+            flow_runner.flow_for_button(wa_id or "", interactive_id or "", tenant_id=tenant_id)
+            or flow_runner.flow_for_text(wa_id or "", user_text, tenant_id=tenant_id)
+        )
+        if flow_name:
+            outcome = flow_runner.start_flow(wa_id or "", flow_name, tenant_id=tenant_id)
+            if outcome.get("handled") and outcome.get("messages"):
+                result["answer"] = flow_runner.messages_text(outcome["messages"])
+                result["query_type"] = "flow"
+                logger.info("FLOW_STARTED_VIA_MESSAGE | wa_id=%s | flow=%s", wa_id, flow_name)
+                return result
+    except Exception as exc:
+        logger.debug("Flow check in process_message: %s", exc)
+
+    # Typed brochure requests share the same tenant-specific sender as menu taps.
+    if not is_btn_reply and _wants_catalogue(user_text) and not _wants_new_arrivals(user_text):
+        enabled, tid = _tenant_feature_enabled(wa_id or "", "brochure_pdf", tenant_id)
+        if not enabled:
+            result["answer"] = "Brochure sharing isn't available right now. Please contact our team for help."
+            result["query_type"] = "brochure_unavailable"
+            return result
+        try:
+            # Use the new brochure service to find the most relevant brochure
+            from backend.services.brochure_service import send_relevant_brochure
+            sent = send_relevant_brochure(wa_id, user_text, tenant_id=tid)
+        except Exception as exc:
+            logger.exception("Typed brochure request failed for tenant %s: %s", tid, exc)
+            # Fallback to original method
+            try:
+                from kb.services.whatsapp import send_catalogue_pdf
+                sent = send_catalogue_pdf(wa_id, tenant_id=tid)
+            except:
+                sent = False
+        result["answer"] = "📄 Here is the relevant brochure." if sent else "Sorry, the brochure isn't available right now. Please contact our team."
+        result["query_type"] = "catalog_pdf"
+        result["whatsapp_sent"] = bool(sent)
+        return result
+
+    # ── DIRECT CATALOGUE / NEW-ARRIVALS QUERY ─────────────────────────────
+    # Bypass the LLM and land the user directly on the interactive product
+    # list (with `product_<id>` rows). The webhook's list-menu branch picks
+    # this up via `result["interactive"]`. In legacy "pdf" mode this returns
+    # None and the webhook falls through to the original PDF behaviour.
+    if not is_btn_reply and is_direct_media_query(user_text):
+        if _wants_new_arrivals(user_text):
+            enabled, tid = _tenant_feature_enabled(wa_id or "", "brochure_pdf", tenant_id)
+            if enabled:
+                try:
+                    from backend.services.brochure_service import send_relevant_brochure
+                    sent = send_relevant_brochure(wa_id, user_text, tenant_id=tid)
+                except Exception as exc:
+                    logger.exception("New arrivals brochure request failed for tenant %s: %s", tid, exc)
+                    sent = _try_send_new_arrivals_pdf(wa_id)
+            else:
+                sent = _try_send_new_arrivals_pdf(wa_id)
+            
+            if sent:
+                result["answer"] = "📄 Here is the latest new releases PDF."
+                result["query_type"] = "new_arrivals_pdf"
+                result["whatsapp_sent"] = True
+                logger.info(f"NEW_ARRIVALS_PDF_SENT_DIRECT | {wa_id}")
+                return result
+
+        summary = build_catalog_summary(user_text)
+        if summary:
+            result["answer"] = summary["text"]
+            result["interactive"] = summary["interactive"]
+            result["media_url"] = summary.get("media_url")
+            result["media_type"] = summary.get("media_type")
+            result["query_type"] = "catalog_list"
+            logger.info(f"CATALOG_LIST | wa_id={wa_id} | sections={len(summary['interactive']['sections'])}")
+            return result
+        # No structured products (catalogue PDFs are no longer imported into
+        # the products table). Brochure requests were handled tenant-safely above.
+
+    # ── CATALOGUE PDF FOLLOW-UP ────────────────────────────────────────────
+    # Plain-text "PDF" / "catalogue pdf" / "send pdf" reply: send the catalogue
+    # PDF document if one is registered. Used after the product list footer
+    # prompt "Reply *PDF* for the full catalogue document."
+    if not is_btn_reply and _wants_catalogue_pdf(user_text):
+        enabled, tid = _tenant_feature_enabled(wa_id or "", "brochure_pdf", tenant_id)
+        if not enabled:
+            result["answer"] = "Brochure sharing isn't available right now. Please contact our team for help."
+            result["query_type"] = "brochure_unavailable"
+            return result
+        try:
+            from backend.services.brochure_service import send_relevant_brochure
+            sent = send_relevant_brochure(wa_id, user_text, tenant_id=tid)
+            result["answer"] = "📄 Sending you the relevant brochure…"
+            result["query_type"] = "catalog_pdf"
+            result["whatsapp_sent"] = bool(sent)
+        except Exception as exc:
+            logger.exception("PDF brochure request failed for tenant %s: %s", tid, exc)
+            # Fallback to original
+            try:
+                from kb.services.whatsapp import send_catalogue_pdf
+                sent = send_catalogue_pdf(wa_id, tenant_id=tid)
+                result["answer"] = "📄 Sending you the catalogue PDF…"
+            except Exception as e:
+                logger.debug(f"send_catalogue_pdf import/failed: {e}")
+                sent = False
+                result["answer"] = "Sorry, the brochure isn't available right now. Please contact our team."
+            result["query_type"] = "catalog_pdf"
+            result["whatsapp_sent"] = bool(sent)
+            logger.info(f"CATALOG_PDF_SENT | {wa_id} | sent={sent}")
+            return result
+
+    # ── TENANT SERVICE ENQUIRIES ──────────────────────────────────────────
+    # Service questions must be answered from this tenant's active offerings,
+    # never from an unrelated FAQ/LLM response.
+    try:
+        from backend.services import service_answers
+        service_enabled, _ = _tenant_feature_enabled(wa_id or "", "offerings", tenant_id)
+        from backend.services.service_answers import is_service_query
+        if not service_enabled and is_service_query(user_text):
+            result["answer"] = "Service information isn't available right now. Please contact our team for help."
+            result["query_type"] = "service_unavailable"
+            return result
+        service_reply = service_answers.answer_for_text(
+            wa_id or "", user_text, tenant_id=tenant_id
+        )
+        if service_reply:
+            from faq.service import synthesize_intent_answer
+            result["answer"] = await synthesize_intent_answer(
+                raw_content=service_reply,
+                intent_name="Services",
+                user_query=user_text,
+                tenant_id=tenant_id,
+            )
+            result["query_type"] = "service_enquiry"
+            return result
+    except Exception as e:
+        logger.warning("Service enquiry lookup failed: %s", e)
+
+    # ── PROFILE-DEFINED INFORMATIONAL INTENTS ─────────────────────────────
+    # A typed query that clearly names an answered panel (technologies,
+    # projects, careers, benefits...) replies from the tenant's own profile
+    # text — synthesized cleanly via LLM. Falls through untouched when the
+    # tenant configured no answer for the matched intent.
+    try:
+        from backend.services import intent_answers
+        intent_reply = intent_answers.answer_for_text(
+            wa_id, user_text, tenant_id=tenant_id
+        )
+        if intent_reply:
+            from faq.service import synthesize_intent_answer
+            result["answer"] = await synthesize_intent_answer(
+                raw_content=intent_reply,
+                intent_name=user_text,
+                user_query=user_text,
+                tenant_id=tenant_id,
+            )
+            result["query_type"] = "intent"
+            logger.info(f"INTENT_REPLY | {wa_id} | matched informational intent")
+            return result
+    except Exception as e:
+        logger.debug(f"Intent answer lookup failed (continuing): {e}")
+
+    data = await forward_to_bot(
+        query_type, user_text, wa_id, raw_message, tenant_id=tenant_id
+    )
+
+    skip_fallback = query_type == "kb" and any(kw in user_text.lower() for kw in NO_FALLBACK_KB_QUERIES)
+
+    if not skip_fallback and (not data.get("answer") or is_uncertain_answer(data.get("answer"))):
+        fallback_type = "kb" if query_type == "faq" else "faq"
+        logger.info(f"Falling back to {fallback_type} bot: primary returned empty/uncertain answer")
+        data = await forward_to_bot(
+            fallback_type, user_text, wa_id, raw_message, tenant_id=tenant_id
+        )
+
+    answer = data.get("answer", "")
+    if not answer or is_uncertain_answer(answer):
+        try:
+            from database import record_unanswered_query
+            record_unanswered_query(
+                tenant_id=tenant_id or "default",
+                query=user_text,
+                wa_id=wa_id,
+                reason="uncertain_fallback",
+                confidence_score=0.0,
+            )
+        except Exception:
+            logger.exception("UNANSWERED_QUERY_RECORD_FAILED | wa=%s tenant=%s", wa_id, tenant_id)
+        # Mirror B2C unrelated-query policy: IT → meeting invite text;
+        # other verticals → support phone/email/website.
+        try:
+            from bots.customer_b2c.workflows import (
+                _is_it_tenant,
+                _support_details_text,
+            )
+            if _is_it_tenant(wa_id or "", tenant_id):
+                # Start meeting collection quietly; do not narrate the miss.
+                try:
+                    try:
+                        from services import flow_runner
+                    except ImportError:
+                        from backend.services import flow_runner
+                    outcome = flow_runner.start_flow(
+                        wa_id or "", "book_callback", tenant_id=tenant_id,
+                    )
+                    msgs = outcome.get("messages") or [] if outcome.get("handled") else []
+                    parts = []
+                    for m in msgs:
+                        if isinstance(m, str) and m.strip():
+                            parts.append(m.strip())
+                        elif isinstance(m, dict) and (m.get("text") or "").strip():
+                            parts.append(m["text"].strip())
+                    answer = "\n\n".join(parts) if parts else (
+                        "Sure — leave your details and we'll schedule a callback "
+                        "with a Google Meeting.Type exit to exit the flow"
+                    )
+                except Exception:
+                    answer = (
+                        "Sure — leave your details and we'll schedule a callback "
+                        "with a Google Meeting.Type exit to exit the flow"
+                    )
+            else:
+                answer = _support_details_text(wa_id or "", tenant_id)
+        except Exception:
+            answer = (
+                ""
+            )
+        data = {}
+
+    result["answer"] = answer
+    result["media_url"] = data.get("media_url")
+    result["media_type"] = data.get("media_type")
+    result["whatsapp_sent"] = bool(data.get("whatsapp_sent"))
+    result["interactive"] = data.get("interactive")
+
+    if not is_btn_reply:
+        existing = result["interactive"]
+        if existing and existing.get("type") == "button":
+            buttons = list(existing.get("buttons") or [])
+        elif existing is None:
+            buttons = list(get_buttons_for_query(user_text) or [])
+        else:
+            buttons = None
+
+        if buttons is not None:
+            # When document media will be sent with the reply, drop the redundant
+            # "View Document" button so the customer is not asked to tap twice.
+            if result.get("media_url") and _media_is_document(result.get("media_type")):
+                buttons = [
+                    b for b in buttons
+                    if (b.get("reply") or {}).get("id") != DOCUMENT_BUTTON_ID
+                ]
+            # WhatsApp allows max 3 buttons.
+            if len(buttons) > 3:
+                buttons = buttons[:3]
+            result["interactive"] = {"type": "button", "buttons": buttons} if buttons else None
+
+    return result
