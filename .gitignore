@@ -69,3 +69,11 @@ chroma_db_temp/
 
 *.db-shm
 *.db-wal
+
+# ---- Runtime uploads outside backend/ (added in local mvc completion, 2026-11-06) ----
+# Runtime user uploads belong in external storage (see UPLOAD_DIR in routing/.env.example);
+# these patterns cover stray in-repo upload locations so originals are never committed.
+backend/backend/uploaded_files/
+backend/extracted/
+extracted/
+/uploaded_files/

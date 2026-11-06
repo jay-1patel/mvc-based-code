@@ -24,4 +24,4 @@ ENV PYTHONUNBUFFERED=1
 
 EXPOSE 9000
 
-CMD ["python", "run.py"]
+CMD ["python", "backend/main.py"]
