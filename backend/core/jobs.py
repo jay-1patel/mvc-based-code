@@ -9,6 +9,7 @@ import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
+from typing import Optional
 
 from fastapi import FastAPI
 
@@ -172,35 +173,24 @@ async def crawl_scheduler_monitor(stop_event: asyncio.Event = None) -> None:
     up twice, and the crawl itself runs in a worker thread because every
     step in execute_onboarding is blocking (httpx, LLM calls, image writes).
     """
-    def _run_crawl(schedule: dict) -> dict:
-        from services.url_scraper import UrlAutoOnboarder
-        onboarder = UrlAutoOnboarder(
-            tenant_id=schedule["tenant_id"],
-            actor={"username": "crawl_scheduler", "role": "system", "tenant_id": schedule["tenant_id"]},
-        )
-        return onboarder.execute_onboarding(
-            url=schedule["url"],
-            target_tenant_id=schedule["tenant_id"],
-            auto_publish=schedule["auto_publish"],
-            max_pages=schedule["max_pages"],
-        )
+    def _run_crawl(schedule: dict) -> Optional[int]:
+        # Gated pipeline: stages results for approval — never auto-publishes.
+        from services.crawl_pipeline import enqueue_scheduled_crawl
+        return enqueue_scheduled_crawl(schedule)
 
     while not (stop_event and stop_event.is_set()):
         try:
-            from database import list_due_crawl_schedules, mark_crawl_finished, mark_crawl_started
+            from database import list_due_crawl_schedules, mark_crawl_finished
             due = await asyncio.to_thread(list_due_crawl_schedules)
             for schedule in due:
                 tenant_id = schedule["tenant_id"]
                 try:
-                    mark_crawl_started(tenant_id)
-                    result = await asyncio.to_thread(_run_crawl, schedule)
+                    run_id = await asyncio.to_thread(_run_crawl, schedule)
                     logger.info(
-                        "CRAWL_SCHEDULE_DONE | tenant=%s | pages=%s | offerings=%s",
+                        "CRAWL_SCHEDULE_DONE | tenant=%s | run_id=%s",
                         tenant_id,
-                        len(result.get("pages_crawled", [])),
-                        result.get("offerings_created"),
+                        run_id,
                     )
-                    mark_crawl_finished(tenant_id, "success")
                 except Exception as exc:
                     logger.error("CRAWL_SCHEDULE_FAIL | tenant=%s | %s", tenant_id, exc, exc_info=True)
                     mark_crawl_finished(tenant_id, "failed", str(exc)[:500])

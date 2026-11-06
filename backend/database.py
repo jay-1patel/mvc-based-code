@@ -66,7 +66,12 @@ try:  # backend/ on sys.path (the normal import mode)
         add_faq_from_gap, get_knowledge_gaps_summary, list_unanswered_queries, record_unanswered_query, resolve_unanswered_query,
     )
     from db.crawl import (  # noqa: F401
-        _crawl_schedule_row, delete_crawl_schedule, get_crawl_schedule, list_due_crawl_schedules, mark_crawl_finished, mark_crawl_started, upsert_crawl_schedule,
+        _crawl_schedule_row, create_crawl_run, decide_crawl_staged, delete_crawl_schedule,
+        find_crawl_image_by_sha, find_crawl_image_by_source_url, get_crawl_run, get_crawl_schedule,
+        get_crawl_staged, get_running_crawl, insert_crawl_image, insert_crawl_page,
+        list_crawl_images, list_crawl_pages, list_crawl_runs, list_due_crawl_schedules,
+        mark_crawl_finished, mark_crawl_started, save_crawl_staged, update_crawl_run,
+        upsert_crawl_schedule,
     )
     from db.customers import (  # noqa: F401
         touch_customer, update_customer_profile,
@@ -121,7 +126,12 @@ except ImportError:  # imported as part of the `backend` package
         add_faq_from_gap, get_knowledge_gaps_summary, list_unanswered_queries, record_unanswered_query, resolve_unanswered_query,
     )
     from backend.db.crawl import (  # noqa: F401
-        _crawl_schedule_row, delete_crawl_schedule, get_crawl_schedule, list_due_crawl_schedules, mark_crawl_finished, mark_crawl_started, upsert_crawl_schedule,
+        _crawl_schedule_row, create_crawl_run, decide_crawl_staged, delete_crawl_schedule,
+        find_crawl_image_by_sha, find_crawl_image_by_source_url, get_crawl_run, get_crawl_schedule,
+        get_crawl_staged, get_running_crawl, insert_crawl_image, insert_crawl_page,
+        list_crawl_images, list_crawl_pages, list_crawl_runs, list_due_crawl_schedules,
+        mark_crawl_finished, mark_crawl_started, save_crawl_staged, update_crawl_run,
+        upsert_crawl_schedule,
     )
     from backend.db.customers import (  # noqa: F401
         touch_customer, update_customer_profile,

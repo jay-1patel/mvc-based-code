@@ -170,9 +170,10 @@ class UrlAutoOnboardRequest(BaseModel):
 
 class CrawlScheduleIn(BaseModel):
     url: str
-    interval_hours: int = Field(default=24, ge=1, le=24 * 30)
-    max_pages: int = Field(default=8, ge=1, le=25)
-    auto_publish: bool = True
+    interval_hours: int = Field(default=168, ge=1, le=24 * 30)
+    max_pages: int = Field(default=50, ge=1, le=100)
+    # Kept for API compat; forced off — scheduled crawls use the gated pipeline.
+    auto_publish: bool = False
     is_enabled: bool = True
 
 
@@ -841,23 +842,17 @@ def scrape_website_for_tenant(
 # A schedule stores the tenant's source URL and a refresh interval; the
 # background scheduler in main.py re-runs UrlAutoOnboarder when it is due.
 
-def _run_scheduled_crawl(tenant_id: str, url: str, auto_publish: bool, max_pages: int = 8) -> None:
-    """Blocking crawl run — invoked from a background task's threadpool."""
+def _run_scheduled_crawl(tenant_id: str, url: str, auto_publish: bool = False, max_pages: int = 50) -> None:
+    """Blocking crawl run — gated staging pipeline (never auto-publishes)."""
     try:
-        mark_crawl_started(tenant_id)
-        from services.url_scraper import UrlAutoOnboarder
+        from services.crawl_pipeline import enqueue_scheduled_crawl
 
-        onboarder = UrlAutoOnboarder(
-            tenant_id=tenant_id,
-            actor={"username": "crawl_schedule", "role": "system", "tenant_id": tenant_id},
-        )
-        onboarder.execute_onboarding(
-            url=url,
-            target_tenant_id=tenant_id,
-            auto_publish=auto_publish,
-            max_pages=max_pages,
-        )
-        mark_crawl_finished(tenant_id, "success")
+        enqueue_scheduled_crawl({
+            "tenant_id": tenant_id,
+            "url": url,
+            "max_pages": max_pages,
+            "auto_publish": False,
+        })
     except Exception as exc:
         logger.error("Scheduled crawl failed for tenant %s: %s", tenant_id, exc, exc_info=True)
         mark_crawl_finished(tenant_id, "failed", str(exc)[:500])
@@ -885,7 +880,7 @@ def set_tenant_crawl_schedule(
         url=url,
         interval_hours=body.interval_hours,
         max_pages=body.max_pages,
-        auto_publish=body.auto_publish,
+        auto_publish=False,  # gated pipeline — never auto-publish
         is_enabled=body.is_enabled,
     )
     with get_db_context() as conn:
@@ -927,17 +922,22 @@ def run_tenant_crawl_now(
     background_tasks: BackgroundTasks,
     principal: dict = Depends(require_tenant_access()),
 ):
-    """Trigger the tenant's scheduled crawl immediately, in the background."""
+    """Trigger the tenant's scheduled crawl immediately, in the background.
+
+    Uses the gated crawl-v2 pipeline (staging only — never auto-publishes).
+    """
+    from database import get_running_crawl
+
     schedule = get_crawl_schedule(tenant_id)
     if not schedule:
         raise HTTPException(status_code=404, detail="Save a crawl schedule first")
-    if schedule.get("last_status") == "running":
+    if schedule.get("last_status") == "running" or get_running_crawl(tenant_id):
         raise HTTPException(status_code=409, detail="A crawl is already running for this tenant")
     background_tasks.add_task(
         _run_scheduled_crawl,
         tenant_id,
         schedule["url"],
-        schedule["auto_publish"],
+        False,  # auto_publish forced off
         schedule["max_pages"],
     )
     return {"ok": True, "status": "queued", "url": schedule["url"]}

@@ -1,0 +1,548 @@
+"""Crawl image collector — download, filter, dedupe, store under UPLOAD_DIR.
+
+Stores under ``<UPLOAD_DIR>/crawl_images/<tenant_id>/<run_id>/`` and writes a
+row per candidate into ``tenant_crawl_images``. SVG excluded; max 10MB/file;
+max 100 images/crawl; skip <2KB or dimensions <24px; dedupe by source URL and
+SHA-256 (duplicate rows marked, bytes stored once).
+"""
+from __future__ import annotations
+
+import hashlib
+import io
+import logging
+import mimetypes
+import os
+import urllib.parse
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Set, Tuple
+
+import httpx
+from bs4 import BeautifulSoup
+
+from services.url_scraper import USER_AGENT, extract_best_image_url, slugify
+
+logger = logging.getLogger("crawl_images")
+
+MAX_IMAGES_PER_CRAWL = 100
+MAX_BYTES = 10 * 1024 * 1024  # 10 MB
+MIN_BYTES = 2048  # 2 KB
+MIN_DIM = 24
+ALLOWED_CONTENT_TYPES = {
+    "image/jpeg",
+    "image/jpg",
+    "image/png",
+    "image/gif",
+    "image/webp",
+    "image/bmp",
+    "image/x-png",
+    "image/pjpeg",
+}
+
+
+def upload_dir() -> Path:
+    env = (os.environ.get("UPLOAD_DIR") or "").strip()
+    if env:
+        return Path(env)
+    # Fallback mirrors extract.py / admin routes when env unset
+    return Path(__file__).resolve().parent.parent / "uploaded_files"
+
+
+def product_images_dir() -> Path:
+    """Served product-images directory (approve copies staged files here)."""
+    base = upload_dir()
+    path = base / "product_images"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def crawl_images_dir(tenant_id: str, run_id: int) -> Path:
+    path = upload_dir() / "crawl_images" / str(tenant_id) / str(run_id)
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _guess_ext(content_type: str, source_url: str) -> str:
+    ext = mimetypes.guess_extension((content_type or "").split(";")[0].strip()) or ""
+    if ext in {".jpe", ".jpeg"}:
+        ext = ".jpg"
+    if not ext:
+        path = urllib.parse.urlparse(source_url).path
+        suffix = Path(path).suffix.lower()
+        if suffix in {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"}:
+            ext = ".jpg" if suffix == ".jpeg" else suffix
+        else:
+            ext = ".jpg"
+    return ext
+
+
+def _image_dimensions(content: bytes) -> Tuple[Optional[int], Optional[int]]:
+    try:
+        from PIL import Image
+        with Image.open(io.BytesIO(content)) as img:
+            return img.size[0], img.size[1]
+    except Exception:
+        return None, None
+
+
+def collect_image_candidates(pages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Harvest image URLs from crawled page payloads (html + structured fields)."""
+    candidates: List[Dict[str, Any]] = []
+    seen: Set[str] = set()
+
+    def _add(
+        url: Optional[str],
+        *,
+        kind: str,
+        source_page: str,
+        alt: str = "",
+        offering_name: str = "",
+    ) -> None:
+        if not url:
+            return
+        url = url.strip()
+        if not (url.startswith("http://") or url.startswith("https://")):
+            return
+        lower = url.lower()
+        if ".svg" in lower.split("?")[0]:
+            return
+        if url in seen:
+            # Still record as a candidate for offering linkage if new offering
+            if offering_name:
+                candidates.append({
+                    "source_url": url,
+                    "kind": kind,
+                    "source_page_url": source_page,
+                    "alt_text": alt or "",
+                    "offering_name": offering_name,
+                    "already_seen": True,
+                })
+            return
+        seen.add(url)
+        candidates.append({
+            "source_url": url,
+            "kind": kind,
+            "source_page_url": source_page,
+            "alt_text": alt or "",
+            "offering_name": offering_name or "",
+            "already_seen": False,
+        })
+
+    for page in pages or []:
+        page_url = page.get("url") or ""
+        _add(page.get("logo_url"), kind="logo", source_page=page_url)
+        _add(page.get("og_image"), kind="og", source_page=page_url)
+        _add(page.get("twitter_image"), kind="twitter", source_page=page_url)
+
+        for item in page.get("json_ld_offerings") or []:
+            _add(
+                item.get("media_url"),
+                kind="product",
+                source_page=page_url,
+                offering_name=str(item.get("name") or ""),
+            )
+
+        for card in page.get("visual_cards") or []:
+            _add(
+                card.get("media_url"),
+                kind="product",
+                source_page=page_url,
+                offering_name=str(card.get("name") or ""),
+            )
+
+        # JSON-LD image fields (Organization logo, Product image arrays, etc.)
+        for blob in page.get("json_ld_raw") or []:
+            _walk_json_ld_images(blob, page_url, _add)
+
+        html = page.get("html") or ""
+        if html:
+            soup = BeautifulSoup(html, "html.parser")
+            for img in soup.find_all("img"):
+                # Prefer raw src resolution so tiny tracking pixels reach the
+                # download stage (where <2KB / <24px skips are applied). The
+                # legacy extract_best_image_url helper drops "pixel"/"1x1" URLs.
+                alt = (img.get("alt") or "").strip()
+                kind = "logo" if "logo" in (alt + " " + " ".join(img.get("class") or [])).lower() else "image"
+                raw = (
+                    img.get("src")
+                    or img.get("data-src")
+                    or img.get("data-lazy-src")
+                    or ""
+                ).strip()
+                if raw and not raw.startswith("data:"):
+                    _add(urllib.parse.urljoin(page_url, raw), kind=kind, source_page=page_url, alt=alt)
+                else:
+                    best = extract_best_image_url(img, page_url)
+                    _add(best, kind=kind, source_page=page_url, alt=alt)
+            # srcset-only picture sources
+            for source in soup.find_all("source", srcset=True):
+                srcset = source.get("srcset") or ""
+                for part in srcset.split(","):
+                    tokens = part.strip().split()
+                    if tokens:
+                        resolved = urllib.parse.urljoin(page_url, tokens[0])
+                        _add(resolved, kind="image", source_page=page_url)
+
+    return candidates
+
+
+def _walk_json_ld_images(node: Any, page_url: str, add_fn) -> None:
+    if isinstance(node, list):
+        for item in node:
+            _walk_json_ld_images(item, page_url, add_fn)
+        return
+    if not isinstance(node, dict):
+        return
+    if "@graph" in node:
+        _walk_json_ld_images(node["@graph"], page_url, add_fn)
+    schema_type = str(node.get("@type", "")).lower()
+    kind = "logo" if "organization" in schema_type or "brand" in schema_type else "product"
+    for key in ("image", "logo", "photo", "thumbnailUrl"):
+        val = node.get(key)
+        if not val:
+            continue
+        urls: List[str] = []
+        if isinstance(val, str):
+            urls = [val]
+        elif isinstance(val, list):
+            for v in val:
+                if isinstance(v, str):
+                    urls.append(v)
+                elif isinstance(v, dict) and v.get("url"):
+                    urls.append(str(v["url"]))
+        elif isinstance(val, dict) and val.get("url"):
+            urls = [str(val["url"])]
+        offering = str(node.get("name") or "") if kind == "product" else ""
+        for u in urls:
+            resolved = urllib.parse.urljoin(page_url, u)
+            add_fn(
+                resolved,
+                kind=kind if key != "logo" else "logo",
+                source_page=page_url,
+                offering_name=offering,
+            )
+    for v in node.values():
+        if isinstance(v, (dict, list)):
+            _walk_json_ld_images(v, page_url, add_fn)
+
+
+def download_and_store_crawl_images(
+    *,
+    tenant_id: str,
+    run_id: int,
+    pages: List[Dict[str, Any]],
+    timeout: float = 12.0,
+) -> List[Dict[str, Any]]:
+    """Download eligible images, persist DB rows, return image records."""
+    from database import (
+        find_crawl_image_by_sha,
+        find_crawl_image_by_source_url,
+        insert_crawl_image,
+    )
+
+    candidates = collect_image_candidates(pages)
+    dest_root = crawl_images_dir(tenant_id, run_id)
+    stored_count = 0
+    results: List[Dict[str, Any]] = []
+    url_to_id: Dict[str, int] = {}
+
+    with httpx.Client(timeout=timeout, follow_redirects=True) as client:
+        for cand in candidates:
+            source_url = cand["source_url"]
+            kind = cand.get("kind") or "image"
+            offering_name = cand.get("offering_name") or ""
+            alt = cand.get("alt_text") or ""
+            source_page = cand.get("source_page_url") or ""
+
+            # Cap stored (non-skipped, non-duplicate-new-bytes) images
+            if stored_count >= MAX_IMAGES_PER_CRAWL:
+                row_id = insert_crawl_image({
+                    "run_id": run_id,
+                    "tenant_id": tenant_id,
+                    "source_url": source_url,
+                    "kind": kind,
+                    "alt_text": alt,
+                    "source_page_url": source_page,
+                    "offering_name": offering_name,
+                    "skipped": True,
+                    "skip_reason": "max_images",
+                })
+                results.append({"id": row_id, "source_url": source_url, "skipped": True, "skip_reason": "max_images"})
+                continue
+
+            # Dedupe by source URL within this run
+            existing = find_crawl_image_by_source_url(run_id, source_url)
+            if existing:
+                row_id = insert_crawl_image({
+                    "run_id": run_id,
+                    "tenant_id": tenant_id,
+                    "source_url": source_url,
+                    "local_path": existing.get("local_path"),
+                    "served_url": existing.get("served_url"),
+                    "sha256": existing.get("sha256"),
+                    "kind": kind,
+                    "alt_text": alt,
+                    "source_page_url": source_page,
+                    "offering_name": offering_name,
+                    "is_duplicate": True,
+                    "duplicate_of": existing["id"],
+                    "skipped": existing.get("skipped", False),
+                    "skip_reason": "duplicate_url" if not existing.get("skipped") else existing.get("skip_reason"),
+                })
+                results.append({
+                    "id": row_id, "source_url": source_url, "is_duplicate": True,
+                    "duplicate_of": existing["id"], "kind": kind,
+                    "offering_name": offering_name,
+                    "local_path": existing.get("local_path"),
+                    "served_url": existing.get("served_url"),
+                })
+                continue
+
+            try:
+                resp = client.get(source_url, headers={"User-Agent": USER_AGENT})
+            except Exception as exc:
+                row_id = insert_crawl_image({
+                    "run_id": run_id,
+                    "tenant_id": tenant_id,
+                    "source_url": source_url,
+                    "kind": kind,
+                    "alt_text": alt,
+                    "source_page_url": source_page,
+                    "offering_name": offering_name,
+                    "skipped": True,
+                    "skip_reason": f"fetch_error:{str(exc)[:120]}",
+                })
+                results.append({"id": row_id, "skipped": True, "skip_reason": "fetch_error"})
+                continue
+
+            if resp.status_code != 200:
+                row_id = insert_crawl_image({
+                    "run_id": run_id,
+                    "tenant_id": tenant_id,
+                    "source_url": source_url,
+                    "kind": kind,
+                    "alt_text": alt,
+                    "source_page_url": source_page,
+                    "offering_name": offering_name,
+                    "skipped": True,
+                    "skip_reason": f"http_{resp.status_code}",
+                })
+                results.append({"id": row_id, "skipped": True})
+                continue
+
+            content_type = (resp.headers.get("content-type") or "").split(";")[0].strip().lower()
+            if content_type == "image/svg+xml" or content_type not in ALLOWED_CONTENT_TYPES:
+                # Also reject if URL path ends with .svg even with wrong content-type
+                if ".svg" in urllib.parse.urlparse(source_url).path.lower() or content_type == "image/svg+xml":
+                    skip_reason = "svg_excluded"
+                elif not content_type.startswith("image/"):
+                    skip_reason = f"non_image:{content_type or 'unknown'}"
+                else:
+                    skip_reason = f"content_type:{content_type}"
+                row_id = insert_crawl_image({
+                    "run_id": run_id,
+                    "tenant_id": tenant_id,
+                    "source_url": source_url,
+                    "content_type": content_type,
+                    "kind": kind,
+                    "alt_text": alt,
+                    "source_page_url": source_page,
+                    "offering_name": offering_name,
+                    "skipped": True,
+                    "skip_reason": skip_reason,
+                })
+                results.append({"id": row_id, "skipped": True, "skip_reason": skip_reason})
+                continue
+
+            content = resp.content or b""
+            byte_size = len(content)
+            if byte_size > MAX_BYTES:
+                row_id = insert_crawl_image({
+                    "run_id": run_id,
+                    "tenant_id": tenant_id,
+                    "source_url": source_url,
+                    "content_type": content_type,
+                    "byte_size": byte_size,
+                    "kind": kind,
+                    "alt_text": alt,
+                    "source_page_url": source_page,
+                    "offering_name": offering_name,
+                    "skipped": True,
+                    "skip_reason": "too_large",
+                })
+                results.append({"id": row_id, "skipped": True, "skip_reason": "too_large"})
+                continue
+
+            if byte_size < MIN_BYTES:
+                row_id = insert_crawl_image({
+                    "run_id": run_id,
+                    "tenant_id": tenant_id,
+                    "source_url": source_url,
+                    "content_type": content_type,
+                    "byte_size": byte_size,
+                    "kind": kind,
+                    "alt_text": alt,
+                    "source_page_url": source_page,
+                    "offering_name": offering_name,
+                    "skipped": True,
+                    "skip_reason": "too_small_bytes",
+                })
+                results.append({"id": row_id, "skipped": True, "skip_reason": "too_small_bytes"})
+                continue
+
+            width, height = _image_dimensions(content)
+            if width is not None and height is not None and (width < MIN_DIM or height < MIN_DIM):
+                row_id = insert_crawl_image({
+                    "run_id": run_id,
+                    "tenant_id": tenant_id,
+                    "source_url": source_url,
+                    "content_type": content_type,
+                    "byte_size": byte_size,
+                    "width": width,
+                    "height": height,
+                    "kind": kind,
+                    "alt_text": alt,
+                    "source_page_url": source_page,
+                    "offering_name": offering_name,
+                    "skipped": True,
+                    "skip_reason": "too_small_dims",
+                })
+                results.append({"id": row_id, "skipped": True, "skip_reason": "too_small_dims"})
+                continue
+
+            sha = hashlib.sha256(content).hexdigest()
+            prior = find_crawl_image_by_sha(run_id, sha)
+            if prior:
+                row_id = insert_crawl_image({
+                    "run_id": run_id,
+                    "tenant_id": tenant_id,
+                    "source_url": source_url,
+                    "local_path": prior.get("local_path"),
+                    "served_url": prior.get("served_url"),
+                    "content_type": content_type,
+                    "sha256": sha,
+                    "byte_size": byte_size,
+                    "width": width,
+                    "height": height,
+                    "kind": kind,
+                    "alt_text": alt,
+                    "source_page_url": source_page,
+                    "offering_name": offering_name,
+                    "is_duplicate": True,
+                    "duplicate_of": prior["id"],
+                })
+                results.append({
+                    "id": row_id, "source_url": source_url, "is_duplicate": True,
+                    "duplicate_of": prior["id"], "sha256": sha, "kind": kind,
+                    "offering_name": offering_name,
+                    "local_path": prior.get("local_path"),
+                    "served_url": prior.get("served_url"),
+                })
+                continue
+
+            ext = _guess_ext(content_type, source_url)
+            label = slugify(offering_name or kind or "img")[:40]
+            filename = f"{label}_{sha[:12]}{ext}"
+            local_path = dest_root / filename
+            with open(local_path, "wb") as fh:
+                fh.write(content)
+
+            # Staging-relative URL (not yet the served product-images path)
+            served_url = f"/crawl_images/{tenant_id}/{run_id}/{filename}"
+            row_id = insert_crawl_image({
+                "run_id": run_id,
+                "tenant_id": tenant_id,
+                "source_url": source_url,
+                "local_path": str(local_path),
+                "served_url": served_url,
+                "content_type": content_type,
+                "sha256": sha,
+                "byte_size": byte_size,
+                "width": width,
+                "height": height,
+                "kind": kind,
+                "alt_text": alt,
+                "source_page_url": source_page,
+                "offering_name": offering_name,
+            })
+            stored_count += 1
+            url_to_id[source_url] = row_id
+            results.append({
+                "id": row_id,
+                "source_url": source_url,
+                "local_path": str(local_path),
+                "served_url": served_url,
+                "sha256": sha,
+                "kind": kind,
+                "offering_name": offering_name,
+                "width": width,
+                "height": height,
+                "byte_size": byte_size,
+            })
+            logger.info(
+                "CRAWL_IMAGE_STORED | tenant=%s run=%s file=%s kind=%s",
+                tenant_id, run_id, filename, kind,
+            )
+
+    return results
+
+
+def delete_staged_image_files(tenant_id: str, run_id: int) -> int:
+    """Remove the staged crawl_images directory for a run. Returns files deleted."""
+    root = upload_dir() / "crawl_images" / str(tenant_id) / str(run_id)
+    if not root.exists():
+        return 0
+    deleted = 0
+    for path in root.rglob("*"):
+        if path.is_file():
+            try:
+                path.unlink()
+                deleted += 1
+            except OSError as exc:
+                logger.warning("Failed deleting staged image %s: %s", path, exc)
+    try:
+        # remove empty dirs bottom-up
+        for path in sorted(root.rglob("*"), reverse=True):
+            if path.is_dir():
+                path.rmdir()
+        root.rmdir()
+    except OSError:
+        pass
+    return deleted
+
+
+def promote_images_to_product_dir(
+    tenant_id: str,
+    run_id: int,
+    images: List[Dict[str, Any]],
+) -> Dict[str, str]:
+    """Copy non-duplicate stored images into product_images; return source_url→served_url map."""
+    import shutil
+
+    dest = product_images_dir()
+    mapping: Dict[str, str] = {}
+    seen_sha: Dict[str, str] = {}
+
+    for img in images:
+        if img.get("skipped") or not img.get("local_path"):
+            continue
+        src = Path(img["local_path"])
+        if not src.is_file():
+            continue
+        sha = img.get("sha256") or ""
+        if sha and sha in seen_sha:
+            mapping[img["source_url"]] = seen_sha[sha]
+            continue
+        ext = src.suffix or ".jpg"
+        label = slugify(img.get("offering_name") or img.get("kind") or "img")[:30]
+        filename = f"{tenant_id}_{label}_{(sha or hashlib.md5(img['source_url'].encode()).hexdigest())[:10]}{ext}"
+        target = dest / filename
+        if not target.exists():
+            shutil.copy2(src, target)
+        served = f"/uploaded_files/product_images/{filename}"
+        mapping[img["source_url"]] = served
+        if sha:
+            seen_sha[sha] = served
+        # Also map by staging served_url if present
+        if img.get("served_url"):
+            mapping[img["served_url"]] = served
+    return mapping
