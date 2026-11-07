@@ -13,6 +13,37 @@ from typing import Any, Dict, List, Optional
 logger = logging.getLogger("crawl_pipeline")
 
 
+def _bifurcation_timeout_seconds() -> float:
+    try:
+        return float(os.environ.get("CRAWL_BIFURCATION_TIMEOUT_SECONDS", "180"))
+    except (TypeError, ValueError):
+        return 180.0
+
+
+def _extract_bifurcation_with_deadline(onboarder, crawl_res_for_ai, run_id: int):
+    """Run LLM bifurcation under an overall deadline (D9).
+
+    On timeout the LLM result is discarded and the heuristic extraction is
+    used instead, marked ``bifurcation_source = "heuristic_timeout"``.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+    from concurrent.futures import TimeoutError as FuturesTimeoutError
+
+    timeout = _bifurcation_timeout_seconds()
+    executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="crawl-bifurcation")
+    future = executor.submit(onboarder.extract_bifurcation, crawl_res_for_ai)
+    try:
+        result = future.result(timeout=timeout)
+        executor.shutdown(wait=False)
+        return result
+    except FuturesTimeoutError:
+        logger.warning("CRAWL_BIFURCATION_TIMEOUT | run=%s", run_id)
+        executor.shutdown(wait=False)
+        result = onboarder.extract_bifurcation(crawl_res_for_ai, allow_llm=False)
+        result["bifurcation_source"] = "heuristic_timeout"
+        return result
+
+
 def _actor_name(actor: Optional[dict]) -> str:
     if not actor:
         return "system"
@@ -110,13 +141,14 @@ def run_crawl_pipeline(
         crawl_res_for_ai["pages"] = slim_pages
 
         onboarder = UrlAutoOnboarder(tenant_id=tenant_id, actor=actor)
-        bifurcation = onboarder.extract_bifurcation(crawl_res_for_ai)
+        bifurcation = _extract_bifurcation_with_deadline(onboarder, crawl_res_for_ai, run_id)
 
         # Link stored image URLs into bifurcation media fields where possible
         _apply_image_links(bifurcation, image_records)
 
         payload = {
             "bifurcation": bifurcation,
+            "bifurcation_source": bifurcation.get("bifurcation_source", "heuristic"),
             "crawl": {
                 "root_url": crawl_res.get("root_url"),
                 "domain": crawl_res.get("domain"),
@@ -167,6 +199,7 @@ def run_crawl_pipeline(
                         "offerings": len((bifurcation or {}).get("offerings") or []),
                         "faqs": len((bifurcation or {}).get("faqs") or []),
                         "images_stored": payload["images_summary"]["stored"],
+                        "bifurcation_source": payload["bifurcation_source"],
                         "trigger": trigger,
                         "url": url[:200],
                     },
@@ -286,6 +319,27 @@ def approve_crawl_run(
     bifurcation = dict(payload.get("bifurcation") or {})
     images = list_crawl_images(run_id, tenant_id=tenant_id)
 
+    # ── D8: snapshot the tenant's live vertical + profile website ──
+    # Approving a crawl must NEVER change either field. The staged guesses
+    # are dropped below and recorded in skipped_fields.
+    tenant_row = tenancy_store.get_tenant(tenant_id) or {}
+    staged_vertical_raw = bifurcation.get("vertical")
+    current_vertical = (tenant_row.get("vertical") or "").strip()
+    if current_vertical not in tenancy_schemas.VERTICALS:
+        # No live vertical on record — fall back to the staged value,
+        # normalised exactly as the old code did.
+        current_vertical = (
+            staged_vertical_raw
+            if staged_vertical_raw in tenancy_schemas.VERTICALS
+            else "generic"
+        )
+    try:
+        from shared.tenancy.loader import get_tenant_profile
+        current_website = (get_tenant_profile(tenant_id).brand.website or "").strip()
+    except Exception:
+        logger.warning("D8_WEBSITE_SNAPSHOT_FAILED | tenant=%s", tenant_id, exc_info=True)
+        current_website = ""
+
     # Promote staged files → served product-images; rewrite media URLs
     url_map = promote_images_to_product_dir(tenant_id, run_id, images)
     brand = bifurcation.get("brand") or {}
@@ -306,9 +360,23 @@ def approve_crawl_run(
         if src and src in url_map:
             off["media_url"] = url_map[src]
 
-    vertical = bifurcation.get("vertical", "generic")
-    if vertical not in tenancy_schemas.VERTICALS:
-        vertical = "generic"
+    # ── D8: force the live vertical + website over the staged guesses ──
+    staged_website = (brand.get("website") or "").strip()
+    skipped_fields: Dict[str, Any] = {}
+    if staged_vertical_raw and staged_vertical_raw != current_vertical:
+        skipped_fields["vertical"] = staged_vertical_raw
+    if staged_website and staged_website != current_website:
+        skipped_fields["website"] = staged_website
+    if skipped_fields:
+        logger.info(
+            "CRAWL_APPROVE_SKIPPED_FIELDS | tenant=%s run=%s | %s",
+            tenant_id, run_id, skipped_fields,
+        )
+
+    vertical = current_vertical
+    brand["website"] = current_website
+    bifurcation["brand"] = brand
+    bifurcation["vertical"] = vertical
 
     extracted_name = (brand.get("name") or tenant_id).strip()
     tenancy_store.ensure_tenant(
@@ -354,6 +422,48 @@ def approve_crawl_run(
     except Exception as faq_err:
         logger.warning("Could not rebuild FAQ index after approve: %s", faq_err)
 
+    # ── D8 belt-and-braces: verify live vertical + website survived ──
+    # publishing (apply_bifurcation can fabricate a website default);
+    # restore the snapshot if either drifted.
+    try:
+        after_row = tenancy_store.get_tenant(tenant_id) or {}
+        if (after_row.get("vertical") or "") != current_vertical:
+            logger.warning(
+                "D8_VERTICAL_RESTORE | tenant=%s | %s -> %s",
+                tenant_id, after_row.get("vertical"), current_vertical,
+            )
+            tenancy_store.ensure_tenant(
+                tenant_id=tenant_id,
+                slug=tenant_id,
+                vertical=current_vertical,
+                display_name=(after_row.get("display_name") or ""),
+                status=(after_row.get("status") or "active"),
+            )
+    except Exception:
+        logger.warning("D8_VERTICAL_VERIFY_FAILED | tenant=%s", tenant_id, exc_info=True)
+    try:
+        from shared.tenancy.loader import get_tenant_profile as _get_profile
+        after_website = (_get_profile(tenant_id).brand.website or "").strip()
+        if after_website != current_website:
+            logger.warning(
+                "D8_WEBSITE_RESTORE | tenant=%s | %s -> %s",
+                tenant_id, after_website, current_website,
+            )
+            current_payload = tenancy_store.get_current_payload(tenant_id)
+            if current_payload is not None:
+                p_brand = dict(current_payload.get("brand") or {})
+                p_brand["website"] = current_website
+                current_payload["brand"] = p_brand
+                tenancy_store.save_draft(
+                    tenant_id, current_payload, updated_by=_actor_name(actor)
+                )
+                tenancy_store.publish_version(
+                    tenant_id, current_payload, published_by=_actor_name(actor)
+                )
+                tenancy_store.invalidate(tenant_id)
+    except Exception:
+        logger.warning("D8_WEBSITE_VERIFY_FAILED | tenant=%s", tenant_id, exc_info=True)
+
     decide_crawl_staged(
         run_id, tenant_id, "published", decided_by=_actor_name(actor)
     )
@@ -371,6 +481,7 @@ def approve_crawl_run(
                     "offerings_created": summary.get("offerings_created"),
                     "faqs_created": faqs_created,
                     "images_promoted": len(url_map),
+                    "skipped_fields": skipped_fields,
                 },
             )
     except Exception:
@@ -383,6 +494,7 @@ def approve_crawl_run(
         "status": "published",
         "products_live": len(products),
         "images_promoted": len(url_map),
+        "skipped_fields": skipped_fields,
     })
     return summary
 

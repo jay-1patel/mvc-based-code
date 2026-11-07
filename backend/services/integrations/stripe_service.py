@@ -22,7 +22,7 @@ class StripeService:
             "Authorization": f"Bearer {api_key.strip()}",
         }
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
+            async with httpx.AsyncClient(trust_env=False, timeout=10.0) as client:
                 resp = await client.get(f"{STRIPE_API_BASE}/balance", headers=headers)
                 if resp.status_code == 200:
                     data = resp.json()
@@ -78,7 +78,7 @@ class StripeService:
             data["customer_email"] = customer_email
 
         try:
-            async with httpx.AsyncClient(timeout=15.0) as client:
+            async with httpx.AsyncClient(trust_env=False, timeout=15.0) as client:
                 resp = await client.post(f"{STRIPE_API_BASE}/checkout/sessions", headers=headers, data=data)
                 if resp.status_code in (200, 201):
                     session = resp.json()

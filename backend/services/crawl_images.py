@@ -19,9 +19,35 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 import httpx
 from bs4 import BeautifulSoup
 
+from services.site_crawler import BlockedUrlError, assert_public_url
 from services.url_scraper import USER_AGENT, extract_best_image_url, slugify
 
 logger = logging.getLogger("crawl_images")
+
+_REDIRECT_STATUSES = (301, 302, 303, 307, 308)
+
+
+def _get_image_guarded(client: httpx.Client, url: str) -> httpx.Response:
+    """GET an image with SSRF validation of the URL and each redirect hop.
+
+    Image URLs come from crawled-page content, so a hostile site must not be
+    able to make the server probe internal addresses (M2).
+    """
+    current = url
+    resp: Optional[httpx.Response] = None
+    for _hop in range(6):
+        assert_public_url(current)
+        resp = client.get(
+            current, headers={"User-Agent": USER_AGENT}, follow_redirects=False
+        )
+        if resp.status_code not in _REDIRECT_STATUSES:
+            return resp
+        location = resp.headers.get("location")
+        if not location:
+            return resp
+        current = urllib.parse.urljoin(current, location)
+    assert resp is not None
+    return resp
 
 MAX_IMAGES_PER_CRAWL = 100
 MAX_BYTES = 10 * 1024 * 1024  # 10 MB
@@ -245,7 +271,7 @@ def download_and_store_crawl_images(
     results: List[Dict[str, Any]] = []
     url_to_id: Dict[str, int] = {}
 
-    with httpx.Client(timeout=timeout, follow_redirects=True) as client:
+    with httpx.Client(trust_env=False, timeout=timeout, follow_redirects=True) as client:
         for cand in candidates:
             source_url = cand["source_url"]
             kind = cand.get("kind") or "image"
@@ -298,7 +324,22 @@ def download_and_store_crawl_images(
                 continue
 
             try:
-                resp = client.get(source_url, headers={"User-Agent": USER_AGENT})
+                resp = _get_image_guarded(client, source_url)
+            except BlockedUrlError:
+                # M2: non-public image target — record the skip, never fetch.
+                row_id = insert_crawl_image({
+                    "run_id": run_id,
+                    "tenant_id": tenant_id,
+                    "source_url": source_url,
+                    "kind": kind,
+                    "alt_text": alt,
+                    "source_page_url": source_page,
+                    "offering_name": offering_name,
+                    "skipped": True,
+                    "skip_reason": "blocked: non-public address",
+                })
+                results.append({"id": row_id, "skipped": True, "skip_reason": "blocked: non-public address"})
+                continue
             except Exception as exc:
                 row_id = insert_crawl_image({
                     "run_id": run_id,

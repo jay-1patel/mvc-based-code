@@ -55,7 +55,7 @@ class Send2CallbackNotificationService:
         """Make HTTP request to Send2 Digital API."""
         url = f"{self.base_url}{endpoint}"
         
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(trust_env=False, timeout=30.0) as client:
             try:
                 headers = self._get_headers()
                 response = await client.request(

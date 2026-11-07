@@ -26,7 +26,9 @@ from fastapi.concurrency import run_in_threadpool
 logger = logging.getLogger("chiki_webhook")
 router = APIRouter(prefix="/api/admin")
 
-UPLOAD_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "uploaded_files"))
+# D5: single source of truth — routing.config.UPLOAD_DIR honours the
+# UPLOAD_DIR env var (external storage); the repo tree is only the default.
+from routing.config import UPLOAD_DIR
 SUPPORTED = (".pdf", ".docx", ".doc", ".txt", ".xlsx", ".xls", ".md", ".csv")
 #: Knowledge-base / FAQ uploads (the Uploads screen and the live inbox share it).
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
@@ -616,7 +618,7 @@ def download_remote_file(
         raise HTTPException(status_code=400, detail="Invalid URL")
     name = filename or url.split("/")[-1].split("?")[0] or "download"
     try:
-        with httpx.Client(follow_redirects=True, timeout=60) as client:
+        with httpx.Client(trust_env=False, follow_redirects=True, timeout=60) as client:
             resp = client.get(url)
         resp.raise_for_status()
     except Exception as e:

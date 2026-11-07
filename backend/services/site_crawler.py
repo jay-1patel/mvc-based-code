@@ -6,8 +6,11 @@ url_scraper. No Playwright hard dependency (optional guarded import only).
 """
 from __future__ import annotations
 
+import ipaddress
 import logging
+import os
 import re
+import socket
 import time
 import urllib.parse
 import xml.etree.ElementTree as ET
@@ -29,6 +32,100 @@ from services.url_scraper import (
 )
 
 logger = logging.getLogger("site_crawler")
+
+
+# ─────────────────────────────────────────────
+# M2: SSRF guard — crawl/image targets must be public addresses
+# ─────────────────────────────────────────────
+class BlockedUrlError(ValueError):
+    """Raised when a URL fails the SSRF guard (non-public target)."""
+
+
+def _crawl_allowlist() -> Set[str]:
+    """Hosts/IPs exempt from the SSRF guard (dev fixtures only).
+
+    Read from CRAWL_URL_ALLOWLIST (comma-separated, empty by default).
+    Must never be set in production.
+    """
+    raw = os.environ.get("CRAWL_URL_ALLOWLIST", "")
+    return {part.strip().lower() for part in raw.split(",") if part.strip()}
+
+
+def assert_public_url(url: str) -> None:
+    """Raise BlockedUrlError unless ``url`` is http(s) and resolves public.
+
+    Every resolved IP is checked: any private / loopback / link-local /
+    reserved / multicast / unspecified address rejects the URL. Hosts (or
+    fully-allowlisted resolutions) in CRAWL_URL_ALLOWLIST skip the check.
+    """
+    parsed = urllib.parse.urlparse(url or "")
+    if parsed.scheme not in ("http", "https"):
+        raise BlockedUrlError(f"blocked: unsupported scheme {parsed.scheme!r}")
+    host = (parsed.hostname or "").strip()
+    if not host:
+        raise BlockedUrlError("blocked: missing host")
+    allowlist = _crawl_allowlist()
+    if host.lower() in allowlist:
+        return
+    try:
+        infos = socket.getaddrinfo(host, None, proto=socket.IPPROTO_TCP)
+    except Exception as exc:
+        raise BlockedUrlError(f"blocked: cannot resolve host {host}: {exc}") from exc
+    ips = {info[4][0] for info in infos}
+    if not ips:
+        raise BlockedUrlError(f"blocked: cannot resolve host {host}")
+    if all(ip.lower() in allowlist for ip in ips):
+        return
+    for ip in ips:
+        try:
+            addr = ipaddress.ip_address(ip)
+        except ValueError:
+            continue
+        if (
+            addr.is_private
+            or addr.is_loopback
+            or addr.is_link_local
+            or addr.is_reserved
+            or addr.is_multicast
+            or addr.is_unspecified
+        ):
+            raise BlockedUrlError(
+                f"blocked: non-public address {ip} for host {host}"
+            )
+
+
+_REDIRECT_STATUSES = (301, 302, 303, 307, 308)
+MAX_REDIRECT_HOPS = 5
+
+
+def _get_guarded(
+    client: httpx.Client,
+    url: str,
+    *,
+    headers: Optional[Dict[str, str]] = None,
+    timeout: Optional[float] = None,
+) -> httpx.Response:
+    """GET ``url`` with SSRF validation of the URL and every redirect hop.
+
+    Redirects are followed manually (max 5 hops); each Location target is
+    re-validated with assert_public_url before it is fetched.
+    """
+    current = url
+    kwargs: Dict[str, Any] = {"headers": headers, "follow_redirects": False}
+    if timeout is not None:
+        kwargs["timeout"] = timeout
+    resp: Optional[httpx.Response] = None
+    for _hop in range(MAX_REDIRECT_HOPS + 1):
+        assert_public_url(current)
+        resp = client.get(current, **kwargs)
+        if resp.status_code not in _REDIRECT_STATUSES:
+            return resp
+        location = resp.headers.get("location")
+        if not location:
+            return resp
+        current = urllib.parse.urljoin(current, location)
+    assert resp is not None
+    return resp
 
 NON_HTML_EXTENSIONS = re.compile(
     r"\.(pdf|png|jpe?g|gif|webp|svg|ico|css|js|mjs|map|zip|rar|gz|tgz|mp[34]|wav|"
@@ -160,7 +257,7 @@ class SiteCrawler:
         )
         try:
             self._polite_delay()
-            resp = client.get(robots_url, headers={"User-Agent": USER_AGENT})
+            resp = _get_guarded(client, robots_url, headers={"User-Agent": USER_AGENT})
             self._last_fetch_ts = time.monotonic()
             if resp.status_code == 200:
                 for line in resp.text.splitlines():
@@ -194,12 +291,13 @@ class SiteCrawler:
         while queue and len(seen_sitemaps) <= max_sitemaps:
             sm_url = queue.pop(0)
             try:
+                assert_public_url(sm_url)
                 self._polite_delay()
-                resp = client.get(
+                resp = _get_guarded(
+                    client,
                     sm_url,
                     headers={"User-Agent": USER_AGENT, "Accept": "application/xml,text/xml,*/*"},
                     timeout=self.page_timeout,
-                    follow_redirects=True,
                 )
                 self._last_fetch_ts = time.monotonic()
                 if resp.status_code != 200:
@@ -258,7 +356,8 @@ class SiteCrawler:
         """Return (html, http_status, final_url, error)."""
         self._polite_delay()
         try:
-            resp = client.get(
+            resp = _get_guarded(
+                client,
                 url,
                 headers={
                     "User-Agent": USER_AGENT,
@@ -266,18 +365,17 @@ class SiteCrawler:
                     "Accept-Language": "en-US,en;q=0.9",
                 },
                 timeout=self.page_timeout,
-                follow_redirects=True,
             )
             self._last_fetch_ts = time.monotonic()
             if resp.status_code in (429, 503):
                 retry_after = resp.headers.get("Retry-After", "")
                 backoff = float(retry_after) if retry_after.replace(".", "", 1).isdigit() else 5.0
                 time.sleep(min(backoff, 30.0))
-                resp = client.get(
+                resp = _get_guarded(
+                    client,
                     url,
                     headers={"User-Agent": USER_AGENT, "Accept-Language": "en-US,en;q=0.9"},
                     timeout=self.page_timeout,
-                    follow_redirects=True,
                 )
                 self._last_fetch_ts = time.monotonic()
 
@@ -414,7 +512,27 @@ class SiteCrawler:
         # queue entries: (url, source, depth)
         queue: List[Tuple[str, str, int]] = []
 
-        with httpx.Client(timeout=self.page_timeout, follow_redirects=True) as client:
+        with httpx.Client(trust_env=False, timeout=self.page_timeout, follow_redirects=True) as client:
+            # M2: the root target itself must be a public address.
+            try:
+                assert_public_url(self.root_url)
+            except BlockedUrlError:
+                self._record(
+                    self.root_url, source="link", success=False,
+                    error="blocked: non-public address", http_status=None,
+                )
+                return {
+                    "root_url": self.root_url,
+                    "domain": self.domain,
+                    "pages_found": 1,
+                    "pages_crawled_count": 0,
+                    "pages": [],
+                    "inventory": self.inventory,
+                    "js_rendered_urls": self.js_rendered_urls,
+                    "blocked_by_robots": False,
+                    "blocked_non_public": True,
+                }
+
             self._load_robots(client)
 
             if self.respect_robots and self.robots and not self.robots.can_fetch(self.root_url):
@@ -457,6 +575,16 @@ class SiteCrawler:
                 if curr_url in visited:
                     continue
                 visited.add(curr_url)
+
+                # M2: never fetch a non-public address mid-crawl either.
+                try:
+                    assert_public_url(curr_url)
+                except BlockedUrlError:
+                    self._record(
+                        curr_url, source=source, success=False,
+                        error="blocked: non-public address", depth=depth,
+                    )
+                    continue
 
                 if self.respect_robots and self.robots and not self.robots.can_fetch(curr_url):
                     self._record(

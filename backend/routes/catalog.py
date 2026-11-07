@@ -352,7 +352,8 @@ async def add_new_arrival(
         if ext not in ALLOWED_IMAGE_EXT:
             raise HTTPException(status_code=400, detail=f"Image must be one of {ALLOWED_IMAGE_EXT}")
         stored_name = f"{uuid.uuid4().hex}{ext}"
-        upload_dir = os.path.join(os.path.dirname(__file__), "..", "uploaded_files", "products")
+        from routing.config import UPLOAD_DIR
+        upload_dir = os.path.join(UPLOAD_DIR, "products")
         os.makedirs(upload_dir, exist_ok=True)
         file_path = os.path.join(upload_dir, stored_name)
         size = 0

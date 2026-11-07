@@ -81,7 +81,7 @@ export function AppShell({ route, children }: { route: RouteMatch; children: Rea
 
       <aside
         className={cn(
-          'fixed inset-y-0 left-0 z-50 flex w-64 shrink-0 flex-col border-r border-surface-line bg-white transition-transform duration-200 ease-out',
+          'fixed inset-y-0 left-0 z-50 flex w-64 shrink-0 flex-col border-r border-surface-line bg-surface-panel transition-transform duration-200 ease-out',
           navOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full',
           'lg:static lg:z-auto lg:translate-x-0 lg:shadow-none',
         )}
@@ -419,7 +419,7 @@ export function AppShell({ route, children }: { route: RouteMatch; children: Rea
         )}
       >
         {/* Small / medium: a sticky top bar with the hamburger and the brand. */}
-        <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-3 border-b border-surface-line bg-white px-4 lg:hidden">
+        <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-3 border-b border-surface-line bg-surface-panel px-4 lg:hidden">
           <button
             type="button"
             onClick={() => setNavOpen(true)}

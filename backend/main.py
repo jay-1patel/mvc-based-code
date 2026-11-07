@@ -200,9 +200,13 @@ IMAGES_DIR = os.path.join(os.path.dirname(__file__), "images")
 if os.path.isdir(IMAGES_DIR):
     app.mount("/images", StaticFiles(directory=IMAGES_DIR), name="images")
 
-UPLOADED_DIR = os.path.join(os.path.dirname(__file__), "uploaded_files")
-if os.path.isdir(UPLOADED_DIR):
-    app.mount("/uploaded_files", StaticFiles(directory=UPLOADED_DIR), name="uploaded-files")
+# D5: serve the RESOLVED uploads root (routing.config.UPLOAD_DIR honours the
+# UPLOAD_DIR env var) so files stored externally stay reachable at the same
+# /uploaded_files/... URLs.
+from routing.config import UPLOAD_DIR as _RESOLVED_UPLOAD_DIR
+UPLOADED_DIR = _RESOLVED_UPLOAD_DIR
+os.makedirs(UPLOADED_DIR, exist_ok=True)
+app.mount("/uploaded_files", StaticFiles(directory=UPLOADED_DIR), name="uploaded-files")
 
 # Company logos live on disk and are served under /api so the Vite dev proxy
 # (which only forwards /api) reaches them; no third-party host or key needed.

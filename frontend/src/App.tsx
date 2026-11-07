@@ -3,6 +3,7 @@ import { TenantProvider, useTenants } from '@/lib/tenants'
 import { isOnboardingLocked, usePermissions } from '@/lib/permissions'
 import { parseRoute, useRoute } from '@/lib/router'
 import { ToastProvider } from '@/components/ui/toast'
+import { ConfirmProvider } from '@/components/ui/confirm'
 import { LoginView } from '@/components/auth/login-view'
 import { AppShell } from '@/components/layout/app-shell'
 import { PageHeader } from '@/components/layout/page-header'
@@ -157,9 +158,6 @@ function Router() {
       {route.view === 'distributors' && <DistributorsPanel tenantId={route.tenantId} />}
       {route.view === 'offerings' && <OfferingsPanel tenantId={route.tenantId} />}
       {route.view === 'projects' && <InfoPagePanel tenantId={route.tenantId} page="projects" />}
-      {route.view === 'technologies' && <InfoPagePanel tenantId={route.tenantId} page="technologies" />}
-      {route.view === 'careers' && <InfoPagePanel tenantId={route.tenantId} page="careers" />}
-      {route.view === 'benefits' && <InfoPagePanel tenantId={route.tenantId} page="benefits" />}
       {route.view === 'chat-history' && <ChatHistoryPanel tenantId={route.tenantId} />}
       {route.view === 'inbox' && <LiveInboxPanel tenantId={route.tenantId} />}
       {route.view === 'complaints' && <ComplaintsPanel tenantId={route.tenantId} />}
@@ -184,11 +182,18 @@ function Router() {
  * Views the sidebar advertises before their screens are built. Keeping them
  * listed (rather than hidden) is deliberate: the navigation is the contract,
  * and a dead link with an honest label beats a silently missing capability.
- * Every info page now has its panel — this stays empty until the next one.
+ * Of the IT company-info pages only Projects has its panel; Technologies,
+ * Careers, Benefits and Portfolio are still to come. The standalone
+ * callback-detail route is also not built — the Callbacks panel handles
+ * detail inline.
  */
-// The standalone callback-detail route is not built; the Callbacks panel
-// handles detail inline.
-const PENDING_VIEWS = new Set<string>(['callback'])
+const PENDING_VIEWS = new Set<string>([
+  'callback',
+  'portfolio',
+  'technologies',
+  'careers',
+  'benefits',
+])
 
 const KNOWN_VIEWS = [
   'overview',
@@ -204,6 +209,7 @@ const KNOWN_VIEWS = [
   'campaigns',
   'distributors',
   'projects',
+  'portfolio',
   'technologies',
   'careers',
   'benefits',
@@ -303,13 +309,15 @@ function AuthedApp() {
 export default function App() {
   return (
     <ToastProvider>
-      <AuthProvider>
-        <TenantProvider>
-          <div className="h-full">
-            <AuthedApp />
-          </div>
-        </TenantProvider>
-      </AuthProvider>
+      <ConfirmProvider>
+        <AuthProvider>
+          <TenantProvider>
+            <div className="h-full">
+              <AuthedApp />
+            </div>
+          </TenantProvider>
+        </AuthProvider>
+      </ConfirmProvider>
     </ToastProvider>
   )
 }

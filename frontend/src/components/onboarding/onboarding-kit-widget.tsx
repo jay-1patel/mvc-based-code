@@ -16,6 +16,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardBody } from '@/components/ui/card'
+import { Alert } from '@/components/ui/feedback'
 import { useToast } from '@/components/ui/toast'
 import { OnboardingReviewModal } from './onboarding-review-modal'
 
@@ -43,6 +44,8 @@ export function OnboardingKitWidget({
   const [templates, setTemplates] = useState<OnboardingTemplate[]>([])
   const [selectedVertical, setSelectedVertical] = useState<string>('real_estate')
   const [loadingTemplates, setLoadingTemplates] = useState(false)
+  const [templatesError, setTemplatesError] = useState<string | null>(null)
+  const [templatesAttempt, setTemplatesAttempt] = useState(0)
   const [parsing, setParsing] = useState(false)
   const [parsingLane, setParsingLane] = useState<UploadLane | null>(null)
   const [stagedDraft, setStagedDraft] = useState<StagedOnboardingDraft | null>(null)
@@ -52,6 +55,7 @@ export function OnboardingKitWidget({
   useEffect(() => {
     let active = true
     setLoadingTemplates(true)
+    setTemplatesError(null)
     onboardingKitsApi
       .list()
       .then((res) => {
@@ -59,6 +63,11 @@ export function OnboardingKitWidget({
       })
       .catch((err) => {
         console.warn('Failed loading onboarding kits:', err)
+        if (active) {
+          setTemplatesError(
+            err instanceof Error ? err.message : 'The industry kit list could not be loaded.',
+          )
+        }
       })
       .finally(() => {
         if (active) setLoadingTemplates(false)
@@ -66,7 +75,7 @@ export function OnboardingKitWidget({
     return () => {
       active = false
     }
-  }, [])
+  }, [templatesAttempt])
 
   const currentTemplate = templates.find((t) => t.vertical === selectedVertical) || templates[0]
 
@@ -152,7 +161,7 @@ export function OnboardingKitWidget({
                     <Files className="h-4 w-4" />
                   </span>
                   <h3 className="text-sm font-semibold text-surface-fg">Option A — Any document</h3>
-                  <Badge variant="outline" className="border-sky-500/40 text-sky-700 bg-sky-500/10">
+                  <Badge tone="neutral" className="border-sky-500/40 text-sky-700 bg-sky-500/10">
                     Universal extract
                   </Badge>
                 </div>
@@ -208,7 +217,7 @@ export function OnboardingKitWidget({
                     <Sparkles className="h-4 w-4" />
                   </span>
                   <h3 className="text-sm font-semibold text-surface-fg">Option B — Filled industry kit</h3>
-                  <Badge variant="outline" className="border-teal-500/40 text-teal-700 bg-teal-500/10">
+                  <Badge tone="neutral" className="border-teal-500/40 text-teal-700 bg-teal-500/10">
                     Structured sections
                   </Badge>
                 </div>
@@ -216,6 +225,22 @@ export function OnboardingKitWidget({
                   Download a template, keep <code className="text-2xs">[SECTION: …]</code> headers (Brand, WhatsApp,
                   Catalog, FAQs, Bot Persona). Incomplete kits fall back to general extraction with a warning.
                 </p>
+
+                {templatesError && (
+                  <Alert tone="danger" title="Industry kits failed to load" className="max-w-xl">
+                    {templatesError}
+                    <div className="mt-2">
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        loading={loadingTemplates}
+                        onClick={() => setTemplatesAttempt((n) => n + 1)}
+                      >
+                        Retry
+                      </Button>
+                    </div>
+                  </Alert>
+                )}
 
                 <div className="flex flex-wrap items-center gap-2 pt-1">
                   <div className="relative">
@@ -253,7 +278,7 @@ export function OnboardingKitWidget({
                     )}
                   </div>
                   <Button
-                    variant="outline"
+                    variant="secondary"
                     size="sm"
                     onClick={() => handleDownload('docx')}
                     icon={<Download className="h-3.5 w-3.5 text-blue-600" />}
@@ -261,7 +286,7 @@ export function OnboardingKitWidget({
                     Word (.docx)
                   </Button>
                   <Button
-                    variant="outline"
+                    variant="secondary"
                     size="sm"
                     onClick={() => handleDownload('pdf')}
                     icon={<FileText className="h-3.5 w-3.5 text-rose-600" />}

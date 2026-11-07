@@ -322,7 +322,7 @@ async def call_llm_json(system_prompt: str, user_prompt: str) -> List[Dict[str, 
 
     raw_text = ""
     try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
+        async with httpx.AsyncClient(trust_env=False, timeout=timeout) as client:
             resp = await client.post(api_url, json=payload, headers=headers)
             resp.raise_for_status()
             message = resp.json().get("message") or {}

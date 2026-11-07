@@ -435,7 +435,7 @@ async def poll_incoming_messages(stop_event: asyncio.Event = None) -> None:
                 "to_date": to_date,
             }
 
-            async with httpx.AsyncClient(timeout=HTTP_TIMEOUT_SECONDS) as client:
+            async with httpx.AsyncClient(trust_env=False, timeout=HTTP_TIMEOUT_SECONDS) as client:
                 response = await client.post(SEND2_INCOMING_URL, json=payload)
 
                 # Any HTTP response means the API is reachable — clear backoff.

@@ -70,6 +70,14 @@ def start_crawl(
     if not url:
         raise HTTPException(status_code=400, detail="Website URL is required")
 
+    # M2 (SSRF): reject non-public crawl targets before any run is created.
+    from services.site_crawler import BlockedUrlError, assert_public_url
+    from services.url_scraper import normalize_url
+    try:
+        assert_public_url(normalize_url(url) or url)
+    except BlockedUrlError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
     running = get_running_crawl(tenant_id)
     if running:
         raise HTTPException(

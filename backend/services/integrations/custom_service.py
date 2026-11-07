@@ -28,7 +28,7 @@ class CustomIntegrationService:
             headers["Authorization"] = f"Bearer {api_key.strip()}"
 
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
+            async with httpx.AsyncClient(trust_env=False, timeout=10.0) as client:
                 # Try GET or POST ping
                 resp = await client.get(endpoint_url, headers=headers)
                 if resp.status_code in (200, 201, 202, 204, 400, 404, 405):
@@ -69,7 +69,7 @@ class CustomIntegrationService:
         }
 
         try:
-            async with httpx.AsyncClient(timeout=15.0) as client:
+            async with httpx.AsyncClient(trust_env=False, timeout=15.0) as client:
                 resp = await client.post(endpoint_url, headers=headers, json=payload)
                 if resp.status_code in (200, 201):
                     data = resp.json()
@@ -116,7 +116,7 @@ class CustomIntegrationService:
 
         awb = f"CUST-{uuid.uuid4().hex[:8].upper()}"
         try:
-            async with httpx.AsyncClient(timeout=15.0) as client:
+            async with httpx.AsyncClient(trust_env=False, timeout=15.0) as client:
                 resp = await client.post(endpoint_url, headers=headers, json=payload)
                 if resp.status_code in (200, 201):
                     data = resp.json()

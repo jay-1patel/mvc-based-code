@@ -1242,7 +1242,7 @@ def _log_gpu_stats():
 
 async def _call_llm_provider(name, url, model, api_key, api_type, system_prompt, user_query) -> str:
     client_timeout = httpx.Timeout(connect=3.0, read=30.0, write=10.0, pool=3.0)
-    async with httpx.AsyncClient(timeout=client_timeout) as client:
+    async with httpx.AsyncClient(trust_env=False, timeout=client_timeout) as client:
         if api_type == "ollama":
             _log_gpu_stats()
             payload = {

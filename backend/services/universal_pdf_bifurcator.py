@@ -325,7 +325,7 @@ def _parse_json_payload(raw_text: str) -> Optional[Dict[str, Any]]:
 async def call_bifurcation_llm(system_prompt: str, user_prompt: str) -> Dict[str, Any]:
     import httpx
 
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(trust_env=False) as client:
         for spec in _provider_specs(system_prompt, user_prompt):
             try:
                 resp = await client.post(

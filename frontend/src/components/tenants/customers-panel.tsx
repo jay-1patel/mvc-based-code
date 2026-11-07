@@ -9,12 +9,14 @@ import { Card, CardBody } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Alert, EmptyState, LoadingBlock } from '@/components/ui/feedback'
 import { PageHeader } from '@/components/layout/page-header'
+import { useToast } from '@/components/ui/toast'
 
 /**
  * Everyone the bot has sold to, taken a ticket from or chatted with,
  * aggregated by WhatsApp ID. Read-only; seeing it needs `view_customers`.
  */
 export function CustomersPanel({ tenantId }: { tenantId: string }) {
+  const toast = useToast()
   const [search, setSearch] = useState('')
   const [exporting, setExporting] = useState<'csv' | 'xlsx' | null>(null)
 
@@ -23,7 +25,7 @@ export function CustomersPanel({ tenantId }: { tenantId: string }) {
     try {
       await downloadCustomerExport(tenantId, format)
     } catch (err) {
-      window.alert(err instanceof Error ? err.message : 'Export failed')
+      toast.push(err instanceof Error ? err.message : 'Export failed', 'error')
     } finally {
       setExporting(null)
     }

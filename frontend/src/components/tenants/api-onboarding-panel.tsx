@@ -369,7 +369,7 @@ export function ApiOnboardingPanel() {
 
           {/* CREDENTIALS CONFIGURATION MODAL / DRAWER */}
           {configuringProvider && (
-            <Card className="border-indigo-500/50 bg-slate-900/90 shadow-xl">
+            <Card className="border-accent-300 bg-surface-card shadow-xl">
               <CardHeader
                 title={`Configure & Connect ${configuringProvider.toUpperCase()}`}
                 description="Set your API keys, credentials, and webhook secrets. Test connectivity live before saving."
@@ -614,7 +614,7 @@ export function ApiOnboardingPanel() {
                     </span>
                     <Badge tone="success">Active</Badge>
                   </div>
-                  <div className="text-xs text-slate-300 font-mono break-all bg-slate-900/80 p-2 rounded">
+                  <div className="text-xs text-slate-300 font-mono break-all bg-surface-panel ring-1 ring-inset ring-surface-line p-2 rounded">
                     {demoPaymentResult.payment_url || 'No URL returned'}
                   </div>
                   {demoPaymentResult.payment_url && (
@@ -697,9 +697,9 @@ export function ApiOnboardingPanel() {
               )}
 
               {trackResult && (
-                <div className="rounded-lg border border-slate-800 bg-slate-900/80 p-3 space-y-1 text-xs">
+                <div className="rounded-lg border border-surface-line bg-surface-panel p-3 space-y-1 text-xs">
                   <div className="font-semibold text-slate-200">
-                    Carrier: {trackResult.carrier} · Status: <span className="text-emerald-400">{trackResult.status}</span>
+                    Carrier: {trackResult.carrier} · Status: <span className="text-emerald-700">{trackResult.status}</span>
                   </div>
                   <div className="text-slate-400">AWB: {trackResult.awb}</div>
                 </div>
@@ -836,7 +836,7 @@ function ProviderConfigCard({
   const isError = integration?.status === 'error'
 
   return (
-    <Card className={`border transition-all ${isVerified ? 'border-emerald-500/50 bg-emerald-950/10' : 'border-slate-800 bg-slate-900/40'}`}>
+    <Card className={`border transition-all ${isVerified ? 'border-emerald-200 bg-emerald-50' : 'border-surface-line bg-surface-card'}`}>
       <CardBody className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="text-2xl">{icon}</span>

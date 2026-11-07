@@ -35,7 +35,7 @@ class BlueDartService:
             "format": "json",
         }
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
+            async with httpx.AsyncClient(trust_env=False, timeout=10.0) as client:
                 resp = await client.get(url, params=params)
                 # Blue Dart API returns status 200 with XML/JSON response or auth message
                 if resp.status_code == 200:
@@ -85,7 +85,7 @@ class BlueDartService:
         }
 
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
+            async with httpx.AsyncClient(trust_env=False, timeout=10.0) as client:
                 resp = await client.get(url, params=params)
                 if resp.status_code == 200:
                     return {

@@ -461,6 +461,10 @@ UNCERTAIN_PHRASES = [
     "unable to find", "couldn't find", "could not find", "no answer found",
     "not able to help", "beyond my knowledge", "no relevant information",
     "nothing in the context", "not in the context",
+    # D6: the LLM trouble-template family (kb brain + faq service defaults)
+    # is a refusal too — it must be recognised so the message is logged as
+    # an unanswered query instead of passing as a normal answer.
+    "having trouble generating", "trouble generating a response",
 ]
 
 
@@ -469,6 +473,26 @@ def is_uncertain_answer(answer: str) -> bool:
         return False
     lower = answer.lower()
     return any(phrase in lower for phrase in UNCERTAIN_PHRASES)
+
+
+def _record_unanswered(tenant_id, user_text, wa_id, reason: str) -> None:
+    """Single recording entry point for refusal/fallback outcomes (D6).
+
+    The writer (database.record_unanswered_query) throttles the same
+    tenant+query within 10 minutes, so several paths recording the same
+    question still yield exactly one row.
+    """
+    try:
+        from database import record_unanswered_query
+        record_unanswered_query(
+            tenant_id=tenant_id or "default",
+            query=user_text,
+            wa_id=wa_id,
+            reason=reason,
+            confidence_score=0.0,
+        )
+    except Exception:
+        logger.exception("UNANSWERED_QUERY_RECORD_FAILED | wa=%s tenant=%s", wa_id, tenant_id)
 
 
 def get_greeting_response(text: str) -> str:
@@ -598,6 +622,7 @@ async def process_message(user_text: str, wa_id: str = None, raw_message: dict =
         if not allowed:
             result["answer"] = "That menu option is no longer available. Please ask our team for help."
             result["query_type"] = "menu_unavailable"
+            _record_unanswered(tid or tenant_id, user_text, wa_id, "menu_unavailable")
             return result
         try:
             # Use the new brochure service with button_id to find relevant brochure
@@ -621,6 +646,7 @@ async def process_message(user_text: str, wa_id: str = None, raw_message: dict =
         if not allowed:
             result["answer"] = "That menu option is no longer available. Please ask our team for help."
             result["query_type"] = "menu_unavailable"
+            _record_unanswered(tid or tenant_id, user_text, wa_id, "menu_unavailable")
             return result
         from backend.services import service_answers
         answer = service_answers.answer_for_text(wa_id or "", "our services", tenant_id=tid)
@@ -703,6 +729,7 @@ async def process_message(user_text: str, wa_id: str = None, raw_message: dict =
         if not enabled:
             result["answer"] = "Brochure sharing isn't available right now. Please contact our team for help."
             result["query_type"] = "brochure_unavailable"
+            _record_unanswered(tid or tenant_id, user_text, wa_id, "brochure_unavailable")
             return result
         try:
             # Use the new brochure service to find the most relevant brochure
@@ -767,6 +794,7 @@ async def process_message(user_text: str, wa_id: str = None, raw_message: dict =
         if not enabled:
             result["answer"] = "Brochure sharing isn't available right now. Please contact our team for help."
             result["query_type"] = "brochure_unavailable"
+            _record_unanswered(tid or tenant_id, user_text, wa_id, "brochure_unavailable")
             return result
         try:
             from backend.services.brochure_service import send_relevant_brochure
@@ -800,6 +828,7 @@ async def process_message(user_text: str, wa_id: str = None, raw_message: dict =
         if not service_enabled and is_service_query(user_text):
             result["answer"] = "Service information isn't available right now. Please contact our team for help."
             result["query_type"] = "service_unavailable"
+            _record_unanswered(tenant_id, user_text, wa_id, "service_unavailable")
             return result
         service_reply = service_answers.answer_for_text(
             wa_id or "", user_text, tenant_id=tenant_id
@@ -856,17 +885,7 @@ async def process_message(user_text: str, wa_id: str = None, raw_message: dict =
 
     answer = data.get("answer", "")
     if not answer or is_uncertain_answer(answer):
-        try:
-            from database import record_unanswered_query
-            record_unanswered_query(
-                tenant_id=tenant_id or "default",
-                query=user_text,
-                wa_id=wa_id,
-                reason="uncertain_fallback",
-                confidence_score=0.0,
-            )
-        except Exception:
-            logger.exception("UNANSWERED_QUERY_RECORD_FAILED | wa=%s tenant=%s", wa_id, tenant_id)
+        _record_unanswered(tenant_id, user_text, wa_id, "uncertain_fallback")
         # Mirror B2C unrelated-query policy: IT → meeting invite text;
         # other verticals → support phone/email/website.
         try:

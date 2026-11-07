@@ -18,6 +18,7 @@ import { Input, Textarea } from '@/components/ui/input'
 import { Alert, EmptyState, LoadingBlock } from '@/components/ui/feedback'
 import { PageHeader } from '@/components/layout/page-header'
 import { useToast } from '@/components/ui/toast'
+import { useConfirm } from '@/components/ui/confirm'
 
 const FILTERS = ['all', ...CALLBACK_STATUSES]
 
@@ -62,6 +63,7 @@ const OPEN = new Set(['pending', 'confirmed', 'scheduled', 'in_progress'])
  */
 export function CallbacksPanel({ tenantId }: { tenantId: string }) {
   const toast = useToast()
+  const confirmDialog = useConfirm()
   const action = useAction()
   const createAction = useAction()
 
@@ -112,7 +114,13 @@ export function CallbacksPanel({ tenantId }: { tenantId: string }) {
 
   const cancel = async () => {
     if (!active) return
-    if (!window.confirm(`Cancel the callback from ${active.customer_name}? The customer can be notified.`)) return
+    if (
+      !(await confirmDialog({
+        message: `Cancel the callback from ${active.customer_name}? The customer can be notified.`,
+        confirmLabel: 'Cancel callback',
+      }))
+    )
+      return
     const result = await action.run(() => callbacksApi.cancel(tenantId, active.id), 'Callback cancelled')
     if (result) refresh()
   }

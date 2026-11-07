@@ -124,7 +124,7 @@ class RobotsTxtPolicy:
         parsed = urllib.parse.urlparse(normalize_url(base_url))
         robots_url = urllib.parse.urlunparse((parsed.scheme, parsed.netloc, "/robots.txt", "", "", ""))
         try:
-            with httpx.Client(timeout=timeout, follow_redirects=True) as client:
+            with httpx.Client(trust_env=False, timeout=timeout, follow_redirects=True) as client:
                 resp = client.get(robots_url, headers={"User-Agent": USER_AGENT})
             if resp.status_code != 200:
                 return
@@ -259,7 +259,7 @@ def download_and_store_image(
         return None
 
     try:
-        with httpx.Client(timeout=timeout, follow_redirects=True) as client:
+        with httpx.Client(trust_env=False, timeout=timeout, follow_redirects=True) as client:
             resp = client.get(image_url, headers={"User-Agent": USER_AGENT})
             if resp.status_code != 200:
                 return image_url
@@ -665,7 +665,7 @@ class WebScraperCrawler:
         crawled_pages: List[Dict[str, Any]] = []
         to_crawl: List[Tuple[str, str]] = [(self.root_url, "home")]
 
-        with httpx.Client(timeout=self.timeout) as client:
+        with httpx.Client(trust_env=False, timeout=self.timeout) as client:
             if self.respect_robots:
                 self.robots = RobotsTxtPolicy(self.root_url, timeout=self.timeout)
                 if not self.robots.can_fetch(self.root_url):
@@ -910,8 +910,14 @@ class UrlAutoOnboarder:
             ],
         }
 
-    def extract_bifurcation(self, crawl_res: Dict[str, Any]) -> Dict[str, Any]:
-        """Analyze website with LLM and multimodal extraction."""
+    def extract_bifurcation(self, crawl_res: Dict[str, Any], allow_llm: bool = True) -> Dict[str, Any]:
+        """Analyze website with LLM and multimodal extraction.
+
+        ``allow_llm=False`` skips the LLM call entirely and returns the
+        heuristic extraction (used by the crawl pipeline when the overall
+        bifurcation deadline expires). The returned dict carries a
+        ``bifurcation_source`` key: "llm" or "heuristic".
+        """
         pages = crawl_res.get("pages", [])
         domain = crawl_res.get("domain", "business")
 
@@ -1019,10 +1025,16 @@ CRITICAL INSTRUCTIONS:
             f"Crawled Website Content for domain '{domain}':\n\n{corpus_text}"
         )
 
-        extracted = self._call_llm(system_prompt, user_prompt)
+        if allow_llm:
+            extracted = self._call_llm(system_prompt, user_prompt)
+        else:
+            extracted = None
         if not extracted or not isinstance(extracted, dict) or "brand" not in extracted:
             logger.info("Using universal heuristic extraction for %s", domain)
             extracted = self._heuristic_extraction(crawl_res, domain)
+            extracted["bifurcation_source"] = "heuristic"
+        else:
+            extracted["bifurcation_source"] = "llm"
 
         # Merge pre-extracted card images into offerings if LLM missed any image
         extracted_offerings = extracted.get("offerings", [])
