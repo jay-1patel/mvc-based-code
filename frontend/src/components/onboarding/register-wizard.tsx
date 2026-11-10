@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useMemo, useState } from 'react'
 import {
   ArrowLeft,
   ArrowRight,
@@ -6,7 +6,6 @@ import {
   Building2,
   CalendarClock,
   Check,
-  ImageIcon,
   MessageSquareText,
   Rocket,
   ShieldAlert,
@@ -30,8 +29,6 @@ import { useAction } from '@/lib/hooks'
 import { useAuth } from '@/lib/auth'
 import { tenantsApi, useTenants } from '@/lib/tenants'
 import { tenantApprovalsApi } from '@/lib/tenant-approvals'
-import { onboardingKitsApi, uploadImage, type StagedOnboardingDraft } from '@/lib/uploads'
-import { OnboardingKitWidget } from './onboarding-kit-widget'
 import { navigate } from '@/lib/router'
 import { VERTICAL_CATALOG, getVertical } from '@/lib/verticals'
 import type { FeatureFlag, ResolvedProfile, Tenant } from '@/lib/types'
@@ -150,24 +147,6 @@ export function RegisterWizard({ onSubmitted }: { onSubmitted?: () => void } = {
       const saved = await action.run(() => tenantsApi.saveDraft(id, draftToSnapshot(draft)))
       if (!saved) return
 
-      if (draft.stagedUpload) {
-        try {
-          const published = await onboardingKitsApi.publishTenant(id, {
-            ...draft.stagedUpload!,
-            tenant_id: id,
-            vertical: draft.vertical || draft.stagedUpload!.vertical,
-          })
-          toast.push(
-            `Registered + applied upload (${published.summary?.offerings_created ?? 0} offerings, intents updated).`,
-          )
-        } catch (err) {
-          toast.push(
-            `${(err as Error).message || 'Document import failed'}. Tenant was registered — re-upload from Uploads.`,
-            'error',
-          )
-        }
-      }
-
       toast.push(`${draft.companyName} registered. An admin can now complete it from WhatsApp onwards.`)
       reload()
       navigate(`/tenants/${encodeURIComponent(id)}/overview`)
@@ -187,58 +166,12 @@ export function RegisterWizard({ onSubmitted }: { onSubmitted?: () => void } = {
       toast.push('Draft has validation warnings — review them before submitting.', 'error')
       return
     }
-    if (draft.stagedUpload) {
-      try {
-        const published = await onboardingKitsApi.publishTenant(id, {
-          ...draft.stagedUpload!,
-          tenant_id: id,
-          vertical: draft.vertical || draft.stagedUpload!.vertical,
-        })
-        toast.push(
-          `Applied upload (${published.summary?.offerings_created ?? 0} offerings, intents updated).`,
-        )
-      } catch (err) {
-        toast.push(
-          `${(err as Error).message || 'Document import failed'}. Fix the upload before submitting for approval.`,
-          'error',
-        )
-        return
-      }
-    }
     const submitted = await action.run(() => tenantApprovalsApi.submitPublish(id))
     if (!submitted) return
     toast.push(`${draft.companyName} submitted — a super admin must approve it before it goes live.`)
     reload()
     if (onSubmitted) onSubmitted()
     else navigate('/tenant-requests')
-  }
-
-  const onStagedFromDoc = (staged: StagedOnboardingDraft) => {
-    const neverLines = staged.guardrails?.never_state
-    setDraft((prev) => ({
-      ...prev,
-      companyName: staged.brand?.name || prev.companyName,
-      tenantId:
-        staged.tenant_id && staged.tenant_id !== 'draft_tenant'
-          ? staged.tenant_id
-          : slugify(staged.brand?.name || prev.tenantId),
-      displayName: staged.brand?.name || prev.displayName,
-      vertical: staged.vertical || prev.vertical,
-      botName: staged.brand?.bot_name || prev.botName,
-      tagline: staged.brand?.tagline || prev.tagline,
-      supportEmail: staged.brand?.support_email || prev.supportEmail,
-      supportPhone: staged.brand?.support_phone || prev.supportPhone,
-      website: staged.brand?.website || prev.website,
-      openTime: staged.business_hours?.open || prev.openTime,
-      closeTime: staged.business_hours?.close || prev.closeTime,
-      tone: staged.guardrails?.tone || prev.tone,
-      neverState: Array.isArray(neverLines) ? neverLines.join('\n') : prev.neverState,
-      // Carry full bifurcation so offerings / intents / menu / FAQ publish with the tenant
-      stagedUpload: { ...staged, tenant_id: staged.tenant_id || prev.tenantId || 'draft_tenant' },
-    }))
-    toast.push(
-      `Imported ${staged.brand?.name || 'company'} — brand, menu, ${staged.offerings?.length || 0} offerings, ${staged.intents?.length || 0} intents ready to apply on register.`,
-    )
   }
 
   return (
@@ -251,10 +184,6 @@ export function RegisterWizard({ onSubmitted }: { onSubmitted?: () => void } = {
             : 'Pick a tenant the super admin registered, then complete it from WhatsApp onwards. Your submission goes to a super admin for approval before anything goes live.'
         }
       />
-
-      <div className="mb-6">
-        <OnboardingKitWidget onStagedDraft={onStagedFromDoc} />
-      </div>
 
       <ol className="mb-7 flex flex-wrap gap-1.5">
         {steps.map((s, index) => {
@@ -432,72 +361,6 @@ function StepShell({
   )
 }
 
-/**
- * Company logo uploader for the registration wizard. The image is stored by the
- * backend and its URL is written to the profile's `brand.logo_url`, which the
- * console header then shows instead of the generic product mark. PNG only.
- */
-function LogoField({ logoUrl, onChange }: { logoUrl: string; onChange: (url: string) => void }) {
-  const action = useAction()
-  const toast = useToast()
-  const inputRef = useRef<HTMLInputElement>(null)
-
-  const pick = async (file: File | undefined) => {
-    if (!file) return
-    if (file.type !== 'image/png') {
-      toast.push('Choose a PNG image.', 'error')
-      return
-    }
-    const url = await action.run(() => uploadImage(file))
-    if (url) {
-      onChange(url)
-      toast.push('Logo uploaded.')
-    }
-  }
-
-  return (
-    <div>
-      <p className="field-label">Company logo</p>
-      <div className="mt-1.5 flex items-center gap-4">
-        <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-surface-panel ring-1 ring-inset ring-surface-line">
-          {logoUrl ? (
-            <img src={logoUrl} alt="Company logo" className="h-full w-full object-contain" />
-          ) : (
-            <ImageIcon className="h-6 w-6 text-slate-500" />
-          )}
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <input
-            ref={inputRef}
-            type="file"
-            accept="image/png,.png"
-            className="hidden"
-            onChange={(event) => {
-              void pick(event.target.files?.[0])
-              event.target.value = ''
-            }}
-          />
-          <Button
-            size="sm"
-            variant="secondary"
-            loading={action.busy}
-            onClick={() => inputRef.current?.click()}
-          >
-            {logoUrl ? 'Replace logo' : 'Upload logo'}
-          </Button>
-          {logoUrl && (
-            <Button size="sm" variant="ghost" onClick={() => onChange('')}>
-              Remove
-            </Button>
-          )}
-        </div>
-      </div>
-      <p className="hint mt-1.5">PNG only, up to 5 MB. Shown in your console header once approved.</p>
-      {action.error && <p className="hint mt-1.5 text-rose-400">{action.error}</p>}
-    </div>
-  )
-}
-
 function CompanyStep({ draft, patch }: StepProps) {
   return (
     <StepShell
@@ -672,8 +535,6 @@ function BrandStep({ draft, patch }: StepProps) {
       description="How the bot introduces itself and how it talks. These strings are used verbatim in menus and prompts."
       icon={<MessageSquareText className="h-4 w-4" />}
     >
-      <LogoField logoUrl={draft.logoUrl} onChange={(logoUrl) => patch({ logoUrl })} />
-
       <div className="grid gap-4 sm:grid-cols-2">
         <Input
         label="Bot name *"
@@ -954,15 +815,6 @@ function ReviewStep({
     { label: 'Tenant id', value: draft.tenantId || '—', step: 0 },
     { label: 'Field', value: v.label, step: 0 },
     { label: 'Website', value: draft.website || '—', step: 0 },
-    {
-      label: 'Logo',
-      value: draft.logoUrl ? (
-        <img src={draft.logoUrl} alt="Logo" className="h-10 w-10 rounded object-contain" />
-      ) : (
-        'not uploaded'
-      ),
-      step: companyEditable ? 0 : 2,
-    },
     { label: 'Phone number id', value: draft.wabaPhoneId || 'not bound', step: 1 },
     {
       label: 'Working hours',
