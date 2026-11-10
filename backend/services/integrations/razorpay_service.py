@@ -28,7 +28,7 @@ class RazorpayService:
 
         headers = cls._get_auth_header(key_id, key_secret)
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
+            async with httpx.AsyncClient(trust_env=False, timeout=10.0) as client:
                 resp = await client.get(f"{RAZORPAY_API_BASE}/payments?count=1", headers=headers)
                 if resp.status_code == 200:
                     data = resp.json()
@@ -67,7 +67,7 @@ class RazorpayService:
         }
 
         try:
-            async with httpx.AsyncClient(timeout=15.0) as client:
+            async with httpx.AsyncClient(trust_env=False, timeout=15.0) as client:
                 resp = await client.post(f"{RAZORPAY_API_BASE}/orders", headers=headers, json=payload)
                 if resp.status_code in (200, 201):
                     order = resp.json()
@@ -123,7 +123,7 @@ class RazorpayService:
             payload["customer"] = customer
 
         try:
-            async with httpx.AsyncClient(timeout=15.0) as client:
+            async with httpx.AsyncClient(trust_env=False, timeout=15.0) as client:
                 resp = await client.post(f"{RAZORPAY_API_BASE}/payment_links", headers=headers, json=payload)
                 if resp.status_code in (200, 201):
                     link = resp.json()

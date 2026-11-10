@@ -14,12 +14,14 @@ import { TagInput } from '@/components/ui/tags'
 import { Alert, LoadingBlock } from '@/components/ui/feedback'
 import { PageHeader } from '@/components/layout/page-header'
 import { useToast } from '@/components/ui/toast'
+import { useConfirm } from '@/components/ui/confirm'
 import { useTenantDetail } from '@/components/tenants/hooks'
 
 export function IntentsEditor({ tenantId }: { tenantId: string }) {
   const { data, loading, error, reload } = useTenantDetail(tenantId)
   const action = useAction()
   const toast = useToast()
+  const confirmDialog = useConfirm()
   const [draft, setDraft] = useState<IntentSpec | null>(null)
   const [editing, setEditing] = useState(false)
   const [validation, setValidation] = useState<string[]>([])
@@ -67,7 +69,14 @@ export function IntentsEditor({ tenantId }: { tenantId: string }) {
   }
 
   const remove = async (name: string) => {
-    if (!confirm(`Delete intent "${name}"?`)) return
+    if (
+      !(await confirmDialog({
+        message: `Delete intent "${name}"?`,
+        confirmLabel: 'Delete',
+        danger: true,
+      }))
+    )
+      return
     const body: any = { __remove__: true }
     const saved = await action.run(() => tenantsApi.saveIntent(tenantId, name, body))
     if (!saved) return

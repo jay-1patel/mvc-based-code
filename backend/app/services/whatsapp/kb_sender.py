@@ -87,7 +87,7 @@ async def _send_post_request(url: str, payload: dict, timeout: int = 30) -> dict
 
     logger.info(f"API_REQUEST | url={url} | timeout={timeout} | payload_preview={str(payload)[:200]}")
 
-    async with httpx.AsyncClient(timeout=timeout) as client:
+    async with httpx.AsyncClient(trust_env=False, timeout=timeout) as client:
         try:
             response = await client.post(url, json=payload)
             response.raise_for_status()
@@ -255,7 +255,7 @@ async def send_text_message(contact_no: str, text: str) -> bool:
         try:
             logger.info(f"API_REQUEST | url={SESSION_MSG_URL} | timeout=30 | payload_preview={str(payload)[:200]}")
 
-            async with httpx.AsyncClient(timeout=30) as client:
+            async with httpx.AsyncClient(trust_env=False, timeout=30) as client:
                 response = await client.post(SESSION_MSG_URL, json=payload)
                 logger.info(f"API_RESPONSE | status={response.status_code} | body={response.text[:300]}")
                 try:
@@ -446,7 +446,7 @@ async def send_button_message(
     }
     try:
         logger.info(f"API_REQUEST | url={SESSION_MSG_URL} (cloud interactive)")
-        async with httpx.AsyncClient(timeout=60) as client:
+        async with httpx.AsyncClient(trust_env=False, timeout=60) as client:
             response = await client.post(SESSION_MSG_URL, json=cloud_payload)
         logger.info(f"API_RESPONSE | status={response.status_code} | body={response.text[:300]}")
         low = response.text.lower()
@@ -491,7 +491,7 @@ async def send_button_message(
     try:
         logger.info(f"API_REQUEST | url={QUICK_BUTTON_URL} | timeout=30 | payload_preview={str(payload)[:200]}")
 
-        async with httpx.AsyncClient(timeout=30) as client:
+        async with httpx.AsyncClient(trust_env=False, timeout=30) as client:
             response = await client.post(QUICK_BUTTON_URL, json=payload)
             logger.info(f"API_RESPONSE | status={response.status_code} | body={response.text[:300]}")
 
@@ -602,7 +602,7 @@ async def send_list_menu(
         logger.info(f"API_REQUEST | url={LIST_MENU_URL} | timeout=30 | payload_preview={str(payload)[:200]}")
         logger.debug(f"FULL LIST_MENU_PAYLOAD: {json.dumps(payload, indent=2)}")  # DEBUG: Log full payload
 
-        async with httpx.AsyncClient(timeout=30) as client:
+        async with httpx.AsyncClient(trust_env=False, timeout=30) as client:
             response = await client.post(LIST_MENU_URL, json=payload)
             logger.info(f"API_RESPONSE | status={response.status_code} | body={response.text[:300]}")
 
@@ -693,7 +693,7 @@ async def send_quick_button_message(
         logger.info(f"API_REQUEST | url={QUICK_BUTTON_URL} | timeout=30 | payload_preview={str(payload)[:200]}")
         logger.debug(f"FULL BUTTON_PAYLOAD: {json.dumps(payload, indent=2)}")
 
-        async with httpx.AsyncClient(timeout=30) as client:
+        async with httpx.AsyncClient(trust_env=False, timeout=30) as client:
             response = await client.post(QUICK_BUTTON_URL, json=payload)
             logger.info(f"API_RESPONSE | status={response.status_code} | body={response.text[:300]}")
 

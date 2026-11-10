@@ -698,25 +698,123 @@ def init_db():
         # ── Scheduled website re-crawling ──────────────────────────────────────
         # One row per tenant: the URL to re-scrape, how often, and the outcome of
         # the last run. The background scheduler in main.py polls for due rows.
+        # Defaults are weekly (168h) with max_pages=50; auto_publish is forced off
+        # so scheduled crawls land in the gated staging pipeline.
         conn.execute(
             """CREATE TABLE IF NOT EXISTS tenant_crawl_schedules (
                 id              INTEGER PRIMARY KEY AUTOINCREMENT,
                 tenant_id       TEXT NOT NULL UNIQUE,
                 url             TEXT NOT NULL,
-                interval_hours  INTEGER DEFAULT 24,
-                max_pages       INTEGER DEFAULT 8,
-                auto_publish    INTEGER DEFAULT 1,
+                interval_hours  INTEGER DEFAULT 168,
+                max_pages       INTEGER DEFAULT 50,
+                auto_publish    INTEGER DEFAULT 0,
                 is_enabled      INTEGER DEFAULT 1,
                 last_crawled_at TIMESTAMP,
                 last_status     TEXT,
                 last_error      TEXT,
+                last_pages_found INTEGER,
                 created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )"""
         )
+        _ensure_columns(conn, "tenant_crawl_schedules", [
+            ("last_pages_found", "INTEGER"),
+        ])
         conn.execute(
             "CREATE INDEX IF NOT EXISTS ix_crawl_schedules_due ON tenant_crawl_schedules(is_enabled, last_crawled_at)"
         )
+
+        # ── Crawl v2 run inventory / staging / images ─────────────────────────
+        conn.execute(
+            """CREATE TABLE IF NOT EXISTS tenant_crawl_runs (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                tenant_id       TEXT NOT NULL,
+                source_url      TEXT NOT NULL,
+                trigger         TEXT NOT NULL DEFAULT 'manual',
+                status          TEXT NOT NULL DEFAULT 'queued',
+                started_at      TIMESTAMP,
+                finished_at     TIMESTAMP,
+                pages_found     INTEGER DEFAULT 0,
+                pages_scraped   INTEGER DEFAULT 0,
+                error           TEXT,
+                created_by      TEXT,
+                created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )"""
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS ix_crawl_runs_tenant ON tenant_crawl_runs(tenant_id, created_at DESC)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS ix_crawl_runs_status ON tenant_crawl_runs(tenant_id, status)"
+        )
+        conn.execute(
+            """CREATE TABLE IF NOT EXISTS tenant_crawl_pages (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id          INTEGER NOT NULL,
+                url             TEXT NOT NULL,
+                source          TEXT,
+                status          TEXT,
+                http_status     INTEGER,
+                word_count      INTEGER DEFAULT 0,
+                error           TEXT,
+                FOREIGN KEY (run_id) REFERENCES tenant_crawl_runs(id)
+            )"""
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS ix_crawl_pages_run ON tenant_crawl_pages(run_id)"
+        )
+        conn.execute(
+            """CREATE TABLE IF NOT EXISTS tenant_crawl_staged (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id          INTEGER NOT NULL UNIQUE,
+                tenant_id       TEXT NOT NULL,
+                payload_json    TEXT NOT NULL,
+                status          TEXT NOT NULL DEFAULT 'staged',
+                decided_by      TEXT,
+                decided_at      TIMESTAMP,
+                created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (run_id) REFERENCES tenant_crawl_runs(id)
+            )"""
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS ix_crawl_staged_tenant ON tenant_crawl_staged(tenant_id, status)"
+        )
+        conn.execute(
+            """CREATE TABLE IF NOT EXISTS tenant_crawl_images (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id          INTEGER NOT NULL,
+                tenant_id       TEXT NOT NULL,
+                source_url      TEXT NOT NULL,
+                local_path      TEXT,
+                served_url      TEXT,
+                content_type    TEXT,
+                sha256          TEXT,
+                byte_size       INTEGER,
+                width           INTEGER,
+                height          INTEGER,
+                alt_text        TEXT,
+                source_page_url TEXT,
+                offering_name   TEXT,
+                kind            TEXT DEFAULT 'image',
+                is_duplicate    INTEGER DEFAULT 0,
+                duplicate_of    INTEGER,
+                skipped         INTEGER DEFAULT 0,
+                skip_reason     TEXT,
+                created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (run_id) REFERENCES tenant_crawl_runs(id)
+            )"""
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS ix_crawl_images_run ON tenant_crawl_images(run_id)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS ix_crawl_images_sha ON tenant_crawl_images(run_id, sha256)"
+        )
+
+        # Guarded: older DBs may lack faq_dataset.created_at (FAQ ingest stamps it).
+        _ensure_columns(conn, "faq_dataset", [
+            ("created_at", "TIMESTAMP"),
+        ])
 
         # ── Admin-editable WhatsApp menus ────────────────────────────────────
         # Item IDs are load-bearing: FSM workflows dispatch on exact ids.

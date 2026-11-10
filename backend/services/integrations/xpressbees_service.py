@@ -31,7 +31,7 @@ class XpressbeesService:
             return {"ok": False, "error": "Xpressbees Email and Password (or API Token) are required"}
 
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
+            async with httpx.AsyncClient(trust_env=False, timeout=10.0) as client:
                 payload = {"email": email.strip(), "password": password.strip()}
                 resp = await client.post(f"{XPRESSBEES_API_BASE}/users/login", json=payload)
                 if resp.status_code == 200:
@@ -70,7 +70,7 @@ class XpressbeesService:
             headers["Authorization"] = f"Bearer {token.strip()}"
 
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
+            async with httpx.AsyncClient(trust_env=False, timeout=10.0) as client:
                 resp = await client.get(
                     f"{XPRESSBEES_API_BASE}/shipments2/trackWithAwb/{awb_number.strip()}",
                     headers=headers,

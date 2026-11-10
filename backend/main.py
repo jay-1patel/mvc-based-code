@@ -61,6 +61,7 @@ from routes.dynamic_config import router as dynamic_config_router
 from routes.orders import router as orders_router
 from routes.complaints import router as complaints_router
 from routes.tenants import router as tenants_router
+from routes.crawl import router as crawl_router
 from routes.offerings import router as offerings_router
 from routes.conversations import router as conversations_router
 from routes.tenant_files import router as tenant_files_router
@@ -177,6 +178,7 @@ app.include_router(dynamic_config_router, tags=["dynamic-config"])
 app.include_router(orders_router, tags=["orders"])
 app.include_router(complaints_router, tags=["complaints"])
 app.include_router(tenants_router, tags=["tenants"])
+app.include_router(crawl_router, tags=["crawl"])
 app.include_router(offerings_router, tags=["offerings"])
 app.include_router(conversations_router, tags=["conversations"])
 app.include_router(tenant_files_router, tags=["tenant-files"])
@@ -198,9 +200,13 @@ IMAGES_DIR = os.path.join(os.path.dirname(__file__), "images")
 if os.path.isdir(IMAGES_DIR):
     app.mount("/images", StaticFiles(directory=IMAGES_DIR), name="images")
 
-UPLOADED_DIR = os.path.join(os.path.dirname(__file__), "uploaded_files")
-if os.path.isdir(UPLOADED_DIR):
-    app.mount("/uploaded_files", StaticFiles(directory=UPLOADED_DIR), name="uploaded-files")
+# D5: serve the RESOLVED uploads root (routing.config.UPLOAD_DIR honours the
+# UPLOAD_DIR env var) so files stored externally stay reachable at the same
+# /uploaded_files/... URLs.
+from routing.config import UPLOAD_DIR as _RESOLVED_UPLOAD_DIR
+UPLOADED_DIR = _RESOLVED_UPLOAD_DIR
+os.makedirs(UPLOADED_DIR, exist_ok=True)
+app.mount("/uploaded_files", StaticFiles(directory=UPLOADED_DIR), name="uploaded-files")
 
 # Company logos live on disk and are served under /api so the Vite dev proxy
 # (which only forwards /api) reaches them; no third-party host or key needed.

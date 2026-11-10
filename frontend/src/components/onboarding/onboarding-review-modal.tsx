@@ -1,13 +1,10 @@
 import { useState } from 'react'
 import {
   Building2,
-  CheckCircle2,
-  FileText,
   HelpCircle,
   Layers,
   MessageSquare,
   Package,
-  Plus,
   Rocket,
   ShieldAlert,
   Sparkles,
@@ -17,9 +14,8 @@ import {
 import type { StagedOnboardingDraft } from '@/lib/uploads'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Card, CardBody, CardHeader } from '@/components/ui/card'
-import { Input, Textarea } from '@/components/ui/input'
-import { Alert } from '@/components/ui/feedback'
+import { Input } from '@/components/ui/input'
+import { Modal } from '@/components/ui/modal'
 import { useToast } from '@/components/ui/toast'
 
 interface OnboardingReviewModalProps {
@@ -152,8 +148,11 @@ export function OnboardingReviewModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-sm">
-      <div className="relative flex max-h-[92vh] w-full max-w-5xl flex-col rounded-xl border border-surface-line bg-surface-card shadow-2xl">
+    <Modal
+      onClose={onClose}
+      persistent={publishing}
+      className="relative flex max-h-[92vh] w-full max-w-5xl flex-col rounded-xl border border-surface-line bg-surface-card shadow-2xl"
+    >
         {/* Header */}
         <div className="flex items-center justify-between border-b border-surface-line px-6 py-4">
           <div className="flex items-center gap-3">
@@ -165,11 +164,11 @@ export function OnboardingReviewModal({
                 <h3 className="text-base font-semibold text-surface-fg">
                   Review & Confirm Bifurcated Onboarding Data
                 </h3>
-                <Badge variant="outline" className="uppercase tracking-wider">
+                <Badge tone="neutral" className="uppercase tracking-wider">
                   {draft.vertical.replace('_', ' ')}
                 </Badge>
                 <Badge
-                  variant="outline"
+                  tone="neutral"
                   className={
                     draft.extraction_mode === 'kit'
                       ? 'border-teal-500/40 text-teal-700 bg-teal-500/10'
@@ -731,8 +730,7 @@ export function OnboardingReviewModal({
             </Button>
           </div>
         </div>
-      </div>
-    </div>
+    </Modal>
   )
 }
 

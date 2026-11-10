@@ -1050,6 +1050,15 @@ async def _fallback_to_rag(
                 brand = _brand_context(tid)
                 sys_prompt = _render_prompt(SYSTEM_PROMPT_TEMPLATE, brand)
                 combined_context = "\n\n---\n\n".join(kb_chunks)
+                # D10: ground product prices in this synthesis path too —
+                # KB chunks never contain products-table prices.
+                try:
+                    from faq.service import _catalogue_product_context, _CATALOGUE_HEADING
+                    _cat = _catalogue_product_context(message, tid)
+                    if _cat:
+                        combined_context += f"\n\n{_CATALOGUE_HEADING}\n{_cat}"
+                except Exception:
+                    logger.debug("CATALOGUE_GROUNDING_SKIPPED | tenant=%s", tid, exc_info=True)
                 history_turns = []
                 try:
                     from database import get_recent_history
@@ -1062,6 +1071,16 @@ async def _fallback_to_rag(
                     llm_res = await _generate_ollama_dynamic_response(
                         sys_prompt, message, combined_context, tenant_id=tid, conversation_history=history_turns
                     )
+                    if llm_res and llm_res.get("answer"):
+                        # D10 post-check: reject prices absent from context.
+                        from faq.service import _prices_grounded
+                        _grounded, _offending = _prices_grounded(llm_res["answer"], combined_context)
+                        if not _grounded:
+                            logger.warning(
+                                "PRICE_GROUNDING_REJECT | tenant=%s | amount=%s | query=%r",
+                                tid, _offending, message,
+                            )
+                            llm_res = None
                     if llm_res and llm_res.get("answer"):
                         answer = _append_signature(llm_res["answer"], tid)
                         interactive = llm_res.get("interactive")

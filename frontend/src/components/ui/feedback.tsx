@@ -106,5 +106,7 @@ export function Toast({
 }
 
 export function Skeleton({ className }: { className?: string }) {
-    return <div className={cn('animate-pulse rounded-md bg-surface-panel', className)} />
+    // Deeper than the panel tint: bg-surface-panel on a surface page was
+    // nearly invisible, so loading blocks read as blank space.
+    return <div className={cn('animate-pulse rounded-md bg-slate-700/60', className)} />
   }

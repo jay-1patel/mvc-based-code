@@ -12,6 +12,7 @@ import { Input, Textarea } from '@/components/ui/input'
 import { Alert, EmptyState, LoadingBlock } from '@/components/ui/feedback'
 import { PageHeader } from '@/components/layout/page-header'
 import { useToast } from '@/components/ui/toast'
+import { useConfirm } from '@/components/ui/confirm'
 
 const FILTERS = ['all', ...COMPLAINT_STATUSES]
 
@@ -41,6 +42,7 @@ const PRIORITY_TONE: Record<string, 'neutral' | 'accent' | 'success' | 'warning'
 export function ComplaintsPanel({ tenantId }: { tenantId: string }) {
   const { can } = useAuth()
   const toast = useToast()
+  const confirmDialog = useConfirm()
   const action = useAction()
 
   const [status, setStatus] = useState('all')
@@ -68,7 +70,14 @@ export function ComplaintsPanel({ tenantId }: { tenantId: string }) {
 
   const remove = async () => {
     if (!active) return
-    if (!window.confirm(`Delete complaint ${active.ticket_id}? This cannot be undone.`)) return
+    if (
+      !(await confirmDialog({
+        message: `Delete complaint ${active.ticket_id}? This cannot be undone.`,
+        confirmLabel: 'Delete',
+        danger: true,
+      }))
+    )
+      return
     const result = await action.run(() => conversationsApi.deleteComplaint(tenantId, active.ticket_id))
     if (result) {
       toast.push('Complaint deleted')

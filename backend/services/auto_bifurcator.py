@@ -1847,7 +1847,8 @@ class AutoBifurcator:
                 continue
             ext = Path(filename).suffix.lstrip(".") or "bin"
             module = "kb"
-            upload_dir = os.path.join("backend", "uploaded_files", module)
+            from routing.config import UPLOAD_DIR as _UPLOAD_DIR
+            upload_dir = os.path.join(_UPLOAD_DIR, module)
             os.makedirs(upload_dir, exist_ok=True)
             filepath = os.path.join(upload_dir, filename)
             public_url = None
@@ -2727,7 +2728,8 @@ class AutoBifurcator:
             # auto-sent as WhatsApp brochures. Option B also uses stage_files(lane=kit)
             # which always persists as kb via _persist_option_b_as_kb.
             module = "kb"
-            upload_dir = os.path.join("backend", "uploaded_files", module)
+            from routing.config import UPLOAD_DIR as _UPLOAD_DIR
+            upload_dir = os.path.join(_UPLOAD_DIR, module)
             os.makedirs(upload_dir, exist_ok=True)
             filepath = os.path.join(upload_dir, filename)
             public_url = None

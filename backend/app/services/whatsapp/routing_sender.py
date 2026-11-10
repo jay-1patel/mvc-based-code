@@ -354,7 +354,7 @@ def send_whatsapp_list_menu(to, header_text, body_text, button_text, sections, f
     }
     try:
         logger.info(f"LIST_MENU_REQUEST | to={to} | sections={len(api_sections)} | rows={sum(len(s.get('rows', [])) for s in api_sections)}")
-        with httpx.Client(timeout=30) as client:
+        with httpx.Client(trust_env=False, timeout=30) as client:
             resp = client.post(SEND2_LIST_MENU_URL, json=payload)
         logger.info(f"LIST_MENU_RESPONSE | to={to} | status={resp.status_code} | body={resp.text[:300]}")
         from routing.hookdeck import tee_outbound
@@ -450,7 +450,7 @@ def send_whatsapp_cta_url(
             "CTA_URL_REQUEST | to=%s | has_image=%s | display=%r | url=%s",
             to, "header" in interactive, label, url[:120],
         )
-        with httpx.Client(timeout=timeout) as client:
+        with httpx.Client(trust_env=False, timeout=timeout) as client:
             resp = client.post(SEND2_SESSION_SEND_URL, json=payload)
         logger.info(
             "CTA_URL_RESPONSE | to=%s | status=%s | body=%s",

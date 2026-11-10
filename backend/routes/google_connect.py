@@ -132,7 +132,7 @@ async def google_oauth_callback(
         base = str(request.base_url).rstrip("/")
         redirect_uri = f"{base}/api/tenants/google-connect/callback"
 
-    async with httpx.AsyncClient(timeout=15.0) as client:
+    async with httpx.AsyncClient(trust_env=False, timeout=15.0) as client:
         token_resp = await client.post(
             GOOGLE_OAUTH_TOKEN_URL,
             data={

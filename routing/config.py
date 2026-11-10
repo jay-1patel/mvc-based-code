@@ -134,7 +134,9 @@ ADMIN_RECOVERY_KEY = os.getenv("ADMIN_RECOVERY_KEY")
 OTP_EXPIRY_MINUTES = _int_env("OTP_EXPIRY_MINUTES", 10)
 
 # ── Storage / uploads ─────────────────────────────────────────────────────
-UPLOAD_DIR = str(BACKEND_DIR / "uploaded_files")
+# Single source of truth for ALL runtime uploads (D5): the UPLOAD_DIR env
+# var wins; the repo tree is only the fallback default.
+UPLOAD_DIR = os.getenv("UPLOAD_DIR") or str(BACKEND_DIR / "uploaded_files")
 IMGHIPPO_API_KEY = os.getenv("IMGHIPPO_API_KEY", "ih_live_cb94f243b9804ac94df84a9c94ad7f8bc11062deeb406a6c")
 
 # ── Email / SMTP (for OTP delivery) ──────────────────────────────────────

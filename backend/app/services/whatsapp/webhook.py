@@ -215,7 +215,7 @@ def _find_doc_by_source(source_stem: str):
     import os
     if not source_stem:
         return None
-    upload_root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "backend", "uploaded_files")
+    upload_root = config.UPLOAD_DIR
     for sub in ("faq", "kb", ""):
         folder = os.path.normpath(os.path.join(upload_root, sub))
         if not os.path.isdir(folder):
@@ -331,6 +331,10 @@ async def _process_and_reply(wa_id, sender_name, user_text, msg_type, message, m
         logger.warning("No active tenant for inbound message from %s; dropping message", wa_id)
         return
     set_request_tenant(tenant_id)
+    # D7: exactly ONE incoming-entry log per inbound message, here at the
+    # top. receive_webhook's dedupe checks run before dispatch, so every
+    # call into _process_and_reply is a genuine, non-duplicate message.
+    await log_incoming_message(wa_id, user_text, msg_type)
     try:
         from backend.services import state_manager as sm
         sm.set_tenant(wa_id, tenant_id)
@@ -429,7 +433,6 @@ async def _process_and_reply(wa_id, sender_name, user_text, msg_type, message, m
                             send_whatsapp_message(wa_id, flow_runner.message_to_text(msg))
                     reply_text = flow_runner.messages_text(outcome.get("messages", []))
                     save_chat(wa_id, sender_name, user_text, reply_text, "flow")
-                    await log_incoming_message(wa_id, user_text, msg_type)
                     await log_outgoing_message(wa_id, reply_text, "text")
                     logger.info(f"FLOW_REPLY | {wa_id} | flow={outcome.get('flow')} | "
                                 f"finished={outcome.get('finished')}")
@@ -455,8 +458,7 @@ async def _process_and_reply(wa_id, sender_name, user_text, msg_type, message, m
         except Exception as e:
             logger.error(f"Profile flow reply handling failed (continuing): {e}")
 
-        # Log incoming message to company API
-        await log_incoming_message(wa_id, user_text, msg_type)
+        # (incoming-entry logging happens once, at the top of this function — D7)
 
         if _is_doc_button_reply(message):
             # Document delivery is disabled — never send files to customers.
@@ -597,8 +599,7 @@ async def _process_and_reply(wa_id, sender_name, user_text, msg_type, message, m
                 }), 200, f"Button {button_id} handled", response_time_ms=response_time_ms, wa_id=wa_id, tenant_id=tenant_id, message_id=msg_id)
                 return
 
-        # Log incoming message to company API
-        await log_incoming_message(wa_id, user_text, msg_type)
+        # (incoming-entry logging happens once, at the top of this function — D7)
 
         # ── FLOW TRIGGER BY TEXT OR BUTTON (Complaints, Callbacks, Quotes) ────
         try:

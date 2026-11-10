@@ -83,7 +83,11 @@ BUTTONS: dict[str, str] = {
     "menu_appointment": "📅 Book Appointment",
     "menu_offerings": "📋 Offerings",
     # Banking
-    "menu_products": "🏦 Banking Products",
+    # D4: menu_products is picked cross-vertical (banking AND ecommerce
+    # branches) — its flat default must be neutral, never banking jargon.
+    # A banking tenant still sees "Banking Products" via its OWN menu title
+    # (tenant titles win in get_tenant_action_registry).
+    "menu_products": "🛍️ View Products",
     "menu_cards": "💳 Cards",
     "menu_loans": "🏠 Loans",
     "menu_eligibility": "✅ Check Eligibility",
@@ -531,7 +535,9 @@ def get_tenant_action_registry(tenant_id: str | None = None) -> dict[str, dict]:
     registry = {}
     for b in profile.menu.buttons:
         if b.enabled and (not b.requires_feature or profile.features.is_on(b.requires_feature)):
-            title = BUTTONS.get(b.id) or b.title[:20]
+            # D4: the tenant's OWN menu title wins; the flat BUTTONS dict is
+            # only a fallback when the tenant gave no title.
+            title = (b.title or "").strip()[:20] or BUTTONS.get(b.id) or b.id
             registry[b.id] = {"id": b.id, "title": title}
 
     # Ensure main_menu is always available
@@ -775,6 +781,13 @@ def get_contextual_buttons(
                 picked_ids.append("menu_callback")
         picked_ids.extend(["menu_offerings", "menu_callback", "main_menu"])
 
+    # The tenant registry (D4: tenant menu titles win there) supplies both
+    # the allowed ids and the preferred titles for picked buttons.
+    try:
+        tenant_registry = get_tenant_action_registry(tid)
+    except Exception:
+        tenant_registry = None
+
     # Filter to unique, valid buttons matching enabled features
     result = []
     seen = set()
@@ -785,16 +798,15 @@ def get_contextual_buttons(
                 continue
             seen.add(bid)
             title = BUTTONS[bid]
+            if tenant_registry and bid in tenant_registry:
+                title = tenant_registry[bid].get("title") or title
             result.append({"id": bid[:50], "title": title[:20]})
             if len(result) >= limit:
                 break
 
     # Honor the tenant's actual menu: a suggestion the tenant has tombstoned,
     # disabled, or gated off (e.g. a removed "Get a Quote" row) must not surface.
-    try:
-        allowed_ids = set(get_tenant_action_registry(tid).keys())
-    except Exception:
-        allowed_ids = None
+    allowed_ids = set(tenant_registry.keys()) if tenant_registry is not None else None
     if allowed_ids is not None:
         result = [b for b in result if b["id"] in allowed_ids]
 

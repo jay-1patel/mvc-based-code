@@ -49,6 +49,8 @@ import { Input, Textarea } from '@/components/ui/input'
 import { Alert, EmptyState, LoadingBlock } from '@/components/ui/feedback'
 import { PageHeader } from '@/components/layout/page-header'
 import { useToast } from '@/components/ui/toast'
+import { Modal } from '@/components/ui/modal'
+import { useConfirm } from '@/components/ui/confirm'
 import { OnboardingKitWidget } from '@/components/onboarding/onboarding-kit-widget'
 
 /**
@@ -63,6 +65,7 @@ import { OnboardingKitWidget } from '@/components/onboarding/onboarding-kit-widg
 export function UploadsPanel({ tenantId }: { tenantId: string }) {
   const { can } = useAuth()
   const toast = useToast()
+  const confirmDialog = useConfirm()
   const action = useAction()
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -108,28 +111,27 @@ export function UploadsPanel({ tenantId }: { tenantId: string }) {
       if (f.status !== 'ready') return false
       return isBifurcationError(parseBifurcationStats(f.bifurcation_stats))
     })
+    // Report the whole batch in ONE completion toast. This used to push a
+    // separate toast per outcome, so a single upload could stack three
+    // contradictory toasts at once (failed + auto-config + published).
+    const problems: string[] = []
     if (failed.length) {
-      toast.push(
-        `${failed.length} file(s) failed: ${failed.map((f) => f.name).join(', ')}`,
-        'error',
-      )
+      problems.push(`${failed.length} file(s) failed: ${failed.map((f) => f.name).join(', ')}`)
     }
     if (timedOut || stillProcessing.length) {
-      toast.push(
+      problems.push(
         timedOut
           ? `Still processing after timeout: ${stillProcessing.map((f) => f.name).join(', ') || filenames.join(', ')}. Refresh later.`
           : `${stillProcessing.length} file(s) still processing.`,
-        'error',
       )
+      toast.push(problems.join(' '), 'error')
       return
     }
     if (bifErrors.length) {
-      toast.push(
-        `Indexed, but auto-config failed for: ${bifErrors.map((f) => f.name).join(', ')}`,
-        'error',
-      )
+      problems.push(`Indexed, but auto-config failed for: ${bifErrors.map((f) => f.name).join(', ')}`)
     }
     const aggregated = aggregateBifurcationStats(readyFiles, filenames)
+    let summary = ''
     if (aggregated) {
       setBifurcationResult(aggregated)
       const bits = [
@@ -137,14 +139,14 @@ export function UploadsPanel({ tenantId }: { tenantId: string }) {
         aggregated.faqs_saved ? `${aggregated.faqs_saved} FAQs` : null,
         aggregated.kb_chunks_indexed ? `${aggregated.kb_chunks_indexed} KB chunks` : null,
       ].filter(Boolean)
-      toast.push(
-        bits.length
-          ? `Published live: ${bits.join(', ')}`
-          : 'Upload complete — content indexed (no new catalog items detected).',
-      )
+      summary = bits.length
+        ? `Published live: ${bits.join(', ')}`
+        : 'Upload complete — content indexed (no new catalog items detected).'
     } else if (!failed.length && !bifErrors.length) {
-      toast.push('Upload complete — content indexed.')
+      summary = 'Upload complete — content indexed.'
     }
+    const message = [summary, ...problems].filter(Boolean).join(' ')
+    if (message) toast.push(message, problems.length ? 'error' : 'success')
   }
 
   const onUploadFiles = async (fileList: FileList | null) => {
@@ -246,7 +248,14 @@ export function UploadsPanel({ tenantId }: { tenantId: string }) {
   }
 
   const remove = async (item: AdminFile) => {
-    if (!window.confirm(`Delete ${item.name}? Its indexed content is removed too.`)) return
+    if (
+      !(await confirmDialog({
+        message: `Delete ${item.name}? Its indexed content is removed too.`,
+        confirmLabel: 'Delete',
+        danger: true,
+      }))
+    )
+      return
     const result = await action.run(() => uploadsApi.remove(tenantId, item.name))
     if (result) {
       toast.push(`${item.name} deleted`)
@@ -754,8 +763,10 @@ export function UploadsPanel({ tenantId }: { tenantId: string }) {
 
       {/* ── 1-Click FAQ Creation Modal ───────────────────────────────────── */}
       {gapModalItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-[2px] p-4">
-          <div className="w-full max-w-lg rounded-xl border border-surface-line bg-surface-panel p-5 shadow-2xl">
+        <Modal
+          onClose={() => setGapModalItem(null)}
+          className="w-full max-w-lg rounded-xl border border-surface-line bg-surface-panel p-5 shadow-2xl"
+        >
             <div className="flex items-center justify-between pb-3 border-b border-surface-line">
               <div className="flex items-center gap-2 text-sm font-semibold text-slate-100">
                 <Sparkles className="h-4 w-4 text-accent-400" />
@@ -815,8 +826,7 @@ export function UploadsPanel({ tenantId }: { tenantId: string }) {
                 Save & Index FAQ
               </Button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
     </div>
   )

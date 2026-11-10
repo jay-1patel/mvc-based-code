@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react'
-import { CheckCircle2, X } from 'lucide-react'
+import { CheckCircle2, X, XCircle } from 'lucide-react'
 
 interface Toast {
   id: number
@@ -35,7 +35,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                 : 'bg-rose-50 text-rose-900 ring-rose-200'
             }`}
           >
-            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+            {toast.tone === 'success' ? (
+              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+            ) : (
+              <XCircle className="mt-0.5 h-4 w-4 shrink-0" />
+            )}
             <span className="min-w-0 flex-1 leading-relaxed">{toast.message}</span>
             <button
               type="button"

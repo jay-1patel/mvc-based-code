@@ -30,6 +30,15 @@ export default {
           overlay: '#fbfaff', // menus, popovers
           panel: '#f7f6fc', // sidebar, sunken blocks
           line: '#e2dfef', // borders
+          // Aliases the markup was authored against (onboarding components
+          // especially). Text steps come from the ink scale, background
+          // steps from the surface scale above — same hues, no new colours.
+          fg: '#1a1626', // primary text on a surface (= ink / slate-100)
+          muted: '#564c6d', // secondary text on a surface (= ink-soft / slate-400)
+          bg: '#f1f0f7', // page canvas (= DEFAULT)
+          base: '#f7f6fc', // sunken blocks, banner bodies (= panel)
+          card: '#fbfaff', // card bodies, dropdowns (= raised)
+          elevated: '#f6f3ff', // hover step above a card (= accent-50)
         },
         ink: {
           DEFAULT: '#1a1626',

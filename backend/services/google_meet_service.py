@@ -69,7 +69,7 @@ def refresh_access_token_sync(tenant_id: str, refresh_token: str) -> Optional[st
         return None
 
     try:
-        with httpx.Client(timeout=10.0) as client:
+        with httpx.Client(trust_env=False, timeout=10.0) as client:
             resp = client.post(
                 GOOGLE_OAUTH_TOKEN_URL,
                 data={
@@ -117,7 +117,7 @@ async def refresh_access_token_async(tenant_id: str, refresh_token: str) -> Opti
         return None
 
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(trust_env=False, timeout=10.0) as client:
             resp = await client.post(
                 GOOGLE_OAUTH_TOKEN_URL,
                 data={
@@ -322,7 +322,7 @@ def create_meeting_sync(
         url = f"{GOOGLE_CALENDAR_API_BASE}/calendars/{calendar_id}/events?conferenceDataVersion=1"
 
         try:
-            with httpx.Client(timeout=15.0) as client:
+            with httpx.Client(trust_env=False, timeout=15.0) as client:
                 resp = client.post(url, headers=headers, json=event_payload)
                 if resp.status_code in (200, 201):
                     event = resp.json()
@@ -425,7 +425,7 @@ async def create_meeting(
         url = f"{GOOGLE_CALENDAR_API_BASE}/calendars/{calendar_id}/events?conferenceDataVersion=1"
 
         try:
-            async with httpx.AsyncClient(timeout=15.0) as client:
+            async with httpx.AsyncClient(trust_env=False, timeout=15.0) as client:
                 resp = await client.post(url, headers=headers, json=event_payload)
                 if resp.status_code in (200, 201):
                     event = resp.json()
@@ -506,7 +506,7 @@ def delete_event_sync(event_id: str, tenant_id: Optional[str] = None, calendar_i
     try:
         url = f"{GOOGLE_CALENDAR_API_BASE}/calendars/{calendar_id}/events/{event_id}"
         headers = {"Authorization": f"Bearer {access_token}"}
-        with httpx.Client(timeout=10.0) as client:
+        with httpx.Client(trust_env=False, timeout=10.0) as client:
             resp = client.delete(url, headers=headers)
             return resp.status_code in (200, 204)
     except Exception as exc:
@@ -522,7 +522,7 @@ async def delete_event(event_id: str, tenant_id: Optional[str] = None, calendar_
     try:
         url = f"{GOOGLE_CALENDAR_API_BASE}/calendars/{calendar_id}/events/{event_id}"
         headers = {"Authorization": f"Bearer {access_token}"}
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(trust_env=False, timeout=10.0) as client:
             resp = await client.delete(url, headers=headers)
             return resp.status_code in (200, 204)
     except Exception as exc:

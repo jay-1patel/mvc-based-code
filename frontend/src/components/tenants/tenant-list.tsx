@@ -78,17 +78,17 @@ export function TenantList() {
       />
 
       {/* Single-Number WhatsApp Testing Mode Banner */}
-      <Card className="mb-6 p-5 border-emerald-500/30 bg-emerald-950/20">
+      <Card className="mb-6 p-5 border-emerald-200 bg-emerald-50">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-start gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-400 ring-1 ring-inset ring-emerald-500/20">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700 ring-1 ring-inset ring-emerald-200">
               <FlaskConical className="h-5 w-5" />
             </div>
             <div>
               <div className="flex flex-wrap items-center gap-2">
                 <h3 className="text-sm font-semibold text-slate-100">Single-Number WhatsApp Testing Mode</h3>
                 {activeTestTenant ? (
-                  <Badge tone="success" className="bg-emerald-500/20 text-emerald-300 ring-1 ring-emerald-500/40">
+                  <Badge tone="success" >
                     🟢 Active: {activeTestTenant}
                   </Badge>
                 ) : (
@@ -96,8 +96,8 @@ export function TenantList() {
                 )}
               </div>
               <p className="mt-1 text-xs text-slate-400">
-                Keep one tenant <span className="text-emerald-300">Active Test Bot</span> below — every WhatsApp message on your single number goes to that tenant until you switch.
-                Do not leave this empty (messages will not route). You can also switch in chat with <code className="rounded bg-slate-800 px-1 py-0.5 text-emerald-300 font-mono">#tenants</code> or <code className="rounded bg-slate-800 px-1 py-0.5 text-emerald-300 font-mono">#tenant &lt;name&gt;</code>.
+                Keep one tenant <span className="font-medium text-emerald-700">Active Test Bot</span> below — every WhatsApp message on your single number goes to that tenant until you switch.
+                Do not leave this empty (messages will not route). You can also switch in chat with <code className="rounded bg-emerald-100 px-1 py-0.5 text-emerald-800 font-mono">#tenants</code> or <code className="rounded bg-emerald-100 px-1 py-0.5 text-emerald-800 font-mono">#tenant &lt;name&gt;</code>.
               </p>
             </div>
           </div>
@@ -177,7 +177,7 @@ export function TenantList() {
                         <Badge tone="danger">{tenant.status}</Badge>
                       )}
                       {isTestActive && (
-                        <Badge tone="success" className="bg-emerald-500/20 text-emerald-300 ring-1 ring-emerald-500/40">
+                        <Badge tone="success" >
                           🟢 Active Test Bot
                         </Badge>
                       )}

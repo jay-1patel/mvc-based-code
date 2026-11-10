@@ -126,7 +126,7 @@ describe('complaints page', () => {
 describe('uploads page', () => {
   it('lists uploaded files', async () => {
     await renderView(`#/tenants/${T}/uploads`)
-    await expectHeading('Uploads')
+    await expectHeading('Uploads & Auto-Configurator')
     expect(await screen.findByText('faq.pdf')).toBeInTheDocument()
   })
 })

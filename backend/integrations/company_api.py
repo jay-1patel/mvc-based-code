@@ -67,7 +67,7 @@ async def log_message(wa_id, content, msg_type="text", direction="incoming"):
         "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     }
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
+        async with httpx.AsyncClient(trust_env=False, timeout=15) as client:
             resp = await client.post(_INCOMING_ENTRY_URL, json=payload)
         ok = resp.status_code == 200
         logger.info(f"INCOMING_ENTRY | to={wa_id} | status={resp.status_code} | body={resp.text[:200]}")

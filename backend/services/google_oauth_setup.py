@@ -191,7 +191,7 @@ class GoogleOAuthService:
             token = jwt.encode(payload, service_account["private_key"], algorithm="RS256")
             
             # Exchange JWT for access token
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(trust_env=False) as client:
                 response = await client.post(
                     GOOGLE_OAUTH_TOKEN_URL,
                     data={
@@ -230,7 +230,7 @@ class GoogleOAuthService:
         if not self.oauth_config or not self.oauth_config.refresh_token:
             raise Exception("No refresh token available")
         
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(trust_env=False) as client:
             response = await client.post(
                 GOOGLE_OAUTH_TOKEN_URL,
                 data={
@@ -290,7 +290,7 @@ class GoogleOAuthService:
         if not self.oauth_config:
             raise Exception("OAuth configuration not available")
         
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(trust_env=False) as client:
             response = await client.post(
                 GOOGLE_OAUTH_TOKEN_URL,
                 data={
@@ -327,7 +327,7 @@ class GoogleOAuthService:
             return True
         
         try:
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(trust_env=False) as client:
                 response = await client.post(
                     GOOGLE_OAUTH_REVOKE_URL,
                     params={"token": self.access_token}
@@ -383,7 +383,7 @@ class EnhancedGoogleMeetService:
         """Get list of available calendars."""
         try:
             headers = await self._get_auth_headers()
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(trust_env=False) as client:
                 response = await client.get(
                     f"{self.GOOGLE_API_BASE}/users/me/calendarList",
                     headers=headers
@@ -446,7 +446,7 @@ class EnhancedGoogleMeetService:
                 }
             }
             
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(trust_env=False) as client:
                 response = await client.post(
                     f"{self.GOOGLE_API_BASE}/calendars/{calendar_id}/events",
                     headers=headers,
@@ -495,7 +495,7 @@ class EnhancedGoogleMeetService:
         """Get a calendar event by ID."""
         try:
             headers = await self._get_auth_headers()
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(trust_env=False) as client:
                 response = await client.get(
                     f"{self.GOOGLE_API_BASE}/calendars/{calendar_id}/events/{event_id}",
                     headers=headers
@@ -519,7 +519,7 @@ class EnhancedGoogleMeetService:
         """Update a calendar event."""
         try:
             headers = await self._get_auth_headers()
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(trust_env=False) as client:
                 response = await client.put(
                     f"{self.GOOGLE_API_BASE}/calendars/{calendar_id}/events/{event_id}",
                     headers=headers,
@@ -535,7 +535,7 @@ class EnhancedGoogleMeetService:
         """Delete a calendar event."""
         try:
             headers = await self._get_auth_headers()
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(trust_env=False) as client:
                 response = await client.delete(
                     f"{self.GOOGLE_API_BASE}/calendars/{calendar_id}/events/{event_id}",
                     headers=headers
@@ -563,7 +563,7 @@ class EnhancedGoogleMeetService:
                 "timeMax": end_date
             }
             
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(trust_env=False) as client:
                 response = await client.get(
                     f"{self.GOOGLE_API_BASE}/calendars/{calendar_id}/events",
                     headers=headers,

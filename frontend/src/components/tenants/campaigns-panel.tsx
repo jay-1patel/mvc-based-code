@@ -20,6 +20,7 @@ import { Select } from '@/components/ui/select'
 import { Alert, EmptyState, LoadingBlock } from '@/components/ui/feedback'
 import { PageHeader } from '@/components/layout/page-header'
 import { useToast } from '@/components/ui/toast'
+import { useConfirm } from '@/components/ui/confirm'
 
 /** The full engine-owned lifecycle; tones apply to list, table and form. */
 const STATUS_TONE: Record<string, 'neutral' | 'accent' | 'success' | 'warning' | 'danger' | 'muted'> = {
@@ -137,6 +138,7 @@ function toShape(campaign?: Campaign | null): CampaignFormShape {
 export function CampaignsPanel({ tenantId }: { tenantId: string }) {
   const { can } = useAuth()
   const toast = useToast()
+  const confirmDialog = useConfirm()
   const action = useAction()
   const canManage = can('manage_campaigns')
 
@@ -204,7 +206,7 @@ export function CampaignsPanel({ tenantId }: { tenantId: string }) {
       setRecipients(data.recipients)
       setPicked(new Set(data.recipients.filter((r) => !r.opted_out).map((r) => r.wa_id)))
     } catch (err) {
-      window.alert(err instanceof Error ? err.message : 'Sync failed')
+      toast.push(err instanceof Error ? err.message : 'Sync failed', 'error')
     } finally {
       setSyncing(false)
     }
@@ -222,7 +224,13 @@ export function CampaignsPanel({ tenantId }: { tenantId: string }) {
   /** Fire the campaign at the currently picked recipients. */
   const sendToSelection = async (campaign: { id: number; name: string }) => {
     if (!picked.size) return
-    if (!window.confirm(`Send "${campaign.name}" to ${picked.size} selected recipients?`)) return
+    if (
+      !(await confirmDialog({
+        message: `Send "${campaign.name}" to ${picked.size} selected recipients?`,
+        confirmLabel: 'Send',
+      }))
+    )
+      return
     setSendingTo(campaign.id)
     try {
       const result = await operationsApi.sendCampaignSelection(tenantId, campaign.id, [...picked])
@@ -233,7 +241,7 @@ export function CampaignsPanel({ tenantId }: { tenantId: string }) {
       )
       state.reload()
     } catch (err) {
-      window.alert(err instanceof Error ? err.message : 'Send failed')
+      toast.push(err instanceof Error ? err.message : 'Send failed', 'error')
     } finally {
       setSendingTo(null)
     }
@@ -241,7 +249,14 @@ export function CampaignsPanel({ tenantId }: { tenantId: string }) {
 
   /** Send the campaign to its entire selected audience. */
   const sendToAudience = async (campaign: { id: number; name: string; audience_type: string }) => {
-    if (!window.confirm(`Send "${campaign.name}" to EVERYONE in the ${campaign.audience_type} audience?`)) return
+    if (
+      !(await confirmDialog({
+        message: `Send "${campaign.name}" to EVERYONE in the ${campaign.audience_type} audience?`,
+        confirmLabel: 'Send to everyone',
+        danger: true,
+      }))
+    )
+      return
     setSendingTo(campaign.id)
     try {
       const result = await operationsApi.sendCampaign(tenantId, campaign.id)
@@ -252,7 +267,7 @@ export function CampaignsPanel({ tenantId }: { tenantId: string }) {
       )
       state.reload()
     } catch (err) {
-      window.alert(err instanceof Error ? err.message : 'Send failed')
+      toast.push(err instanceof Error ? err.message : 'Send failed', 'error')
     } finally {
       setSendingTo(null)
     }
@@ -469,7 +484,10 @@ export function CampaignsPanel({ tenantId }: { tenantId: string }) {
                       </td>
                       {canManage && (
                         <td className="px-4 py-2.5">
-                          <div className="flex items-center justify-end gap-1">
+                          {/* Buttons keep their natural width (no shrink, no
+                              wrapped labels) — the table wrapper scrolls
+                              horizontally instead of clipping Delete. */}
+                          <div className="flex items-center justify-end gap-1 [&_button]:shrink-0 [&_button]:whitespace-nowrap">
                             <Button
                               size="sm"
                               variant="subtle"
