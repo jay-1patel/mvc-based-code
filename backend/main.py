@@ -86,6 +86,7 @@ from core.middleware import (
     get_request_id,
     http_exception_handler,
     request_id_middleware,
+    super_admin_view_only_middleware,
     unhandled_exception_handler,
 )
 from routes.root import build_admin_router
@@ -121,6 +122,7 @@ import database as _audit_database
 install_writer_context(_audit_database)
 
 
+app.middleware("http")(super_admin_view_only_middleware)
 app.middleware("http")(audit_request_context)
 app.middleware("http")(audit_mutations_middleware)
 app.middleware("http")(request_id_middleware)
