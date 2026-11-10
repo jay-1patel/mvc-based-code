@@ -23,21 +23,25 @@ describe('sidebar navigation', () => {
 })
 
 describe('versions page interactions', () => {
-  it('publishes a draft and toasts the new version', async () => {
+  // The test identity is a super admin, who is VIEW-ONLY inside a tenant
+  // (role-panels rule): publishing and rollback belong to the tenant admin,
+  // so no Publish draft button is offered here at all.
+  it('shows no publish action to a view-only super admin', async () => {
     await renderView(`#/tenants/${T}/versions`)
-    const user = userEvent.setup()
-    await user.click(await screen.findByRole('button', { name: 'Publish draft' }))
-    await waitFor(() => expect(screen.getByText(/Published version 3/)).toBeInTheDocument())
+    expect((await screen.findAllByText(/View-only/)).length).toBeGreaterThan(0)
+    expect(screen.queryByRole('button', { name: 'Publish draft' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Roll back/ })).not.toBeInTheDocument()
   })
 })
 
 describe('tokens page interactions', () => {
-  it('mints a token and shows it once', async () => {
+  // Super admin is view-only inside a tenant: the mint form is hidden and
+  // the issued-token list stays readable.
+  it('hides the mint form from a view-only super admin', async () => {
     await renderView(`#/tenants/${T}/tokens`)
-    const user = userEvent.setup()
-    await user.type(await screen.findByLabelText('Label'), 'ci')
-    await user.click(screen.getByRole('button', { name: 'Mint token' }))
-    expect(await screen.findByText('tk_new_token')).toBeInTheDocument()
+    expect((await screen.findAllByText(/View-only/)).length).toBeGreaterThan(0)
+    expect(screen.queryByLabelText('Label')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Mint token' })).not.toBeInTheDocument()
   })
 })
 
