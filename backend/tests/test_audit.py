@@ -118,9 +118,16 @@ class AuditHistoryTests(unittest.TestCase):
         self.assertEqual(conn.execute("SELECT COUNT(*) FROM audit_test_mutations").fetchone()[0], 0)
         conn.close()
 
-    def test_audit_endpoint_is_superadmin_only(self):
+    def test_audit_endpoint_roles(self):
+        # Sub admins are refused. A tenant admin is allowed but scoped to
+        # their own tenant (role-panels item 12); super admins see all.
+        self.current_admin = {"id": 2, "username": "staff", "role": "sub_admin", "tenant_id": "tenant-a"}
+        response = self.client.get("/api/admin/audit-history")
+        self.assertEqual(response.status_code, 403)
         self.current_admin = {"id": 2, "username": "staff", "role": "admin", "tenant_id": "tenant-a"}
         response = self.client.get("/api/admin/audit-history")
+        self.assertEqual(response.status_code, 200)
+        response = self.client.get("/api/admin/audit-history", params={"tenant_id": "tenant-b"})
         self.assertEqual(response.status_code, 403)
 
     def test_filters_and_pagination_return_safe_event_fields(self):
@@ -210,7 +217,10 @@ class AuditHistoryTests(unittest.TestCase):
         self.assertEqual(token_response.status_code, 503)
         self.assertIn("ADMIN_SECRET_KEY", token_response.json()["detail"])
 
-    def test_admin_role_change_records_before_after_and_changed_fields(self):
+    def test_admin_update_records_changed_fields_and_role_change_is_refused(self):
+        # Roles are fixed at account creation (role-panels item 10): a PATCH
+        # that tries to change the role is refused and changes nothing,
+        # while a permissions edit still applies and is audited.
         target = {
             "id": 2,
             "username": "staff",
@@ -220,18 +230,22 @@ class AuditHistoryTests(unittest.TestCase):
             "email": None,
         }
         with patch.object(auth, "get_admin_record", return_value=target):
-            response = self.client.patch("/api/auth/admins/staff", json={"role": "admin"})
+            refused = self.client.patch("/api/auth/admins/staff", json={"role": "admin"})
+            response = self.client.patch(
+                "/api/auth/admins/staff", json={"permissions": {"view_customers": True}}
+            )
+        self.assertEqual(refused.status_code, 403)
         self.assertEqual(response.status_code, 200)
         conn = self._connect()
         row = conn.execute("SELECT action, details_json FROM admin_audit_events ORDER BY id DESC LIMIT 1").fetchone()
         updated = conn.execute("SELECT role FROM admins WHERE username = 'staff'").fetchone()
         conn.close()
-        self.assertEqual(updated["role"], "admin")
+        self.assertEqual(updated["role"], "sub_admin")
         self.assertEqual(row["action"], "admin_updated")
         details = json.loads(row["details_json"])
         self.assertEqual(details["role_before"], "sub_admin")
-        self.assertEqual(details["role_after"], "admin")
-        self.assertIn("role", details["changed_fields"])
+        self.assertEqual(details["role_after"], "sub_admin")
+        self.assertIn("permissions", details["changed_fields"])
 
     def test_login_history_is_available_through_superadmin_endpoint(self):
         self._insert(action="login", outcome="failure")
