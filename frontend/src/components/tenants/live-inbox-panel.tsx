@@ -11,6 +11,7 @@ import {
 } from 'lucide-react'
 import { useAction, useAsync } from '@/lib/hooks'
 import { useAuth } from '@/lib/auth'
+import { usePermissions } from '@/lib/permissions'
 import { attachmentsApi, ATTACHMENT_ACCEPT, ATTACHMENT_TYPES_LABEL, MAX_ATTACHMENT_LABEL, type Attachment } from '@/lib/attachments'
 import { conversationsApi, stripRoute } from '@/lib/conversations'
 import { relativeTime } from '@/lib/format'
@@ -35,6 +36,10 @@ const POLL_MS = 12_000
  */
 export function LiveInboxPanel({ tenantId }: { tenantId: string }) {
   const { can } = useAuth()
+  // Replying, taking over, resolving and assigning are tenant-data writes:
+  // hidden for a view-only super admin (they can still read everything).
+  const { canWriteTenant } = usePermissions()
+  const canWrite = canWriteTenant('view_inbox')
   const toast = useToast()
   const action = useAction()
   const canInbox = can('view_inbox')
@@ -223,7 +228,7 @@ export function LiveInboxPanel({ tenantId }: { tenantId: string }) {
                 description={`${current.wa_id} · ${current.turns} turns · last activity ${relativeTime(current.last_message_at)}`}
                 icon={current.handover_mode === 'human' ? <UserRound className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
                 actions={
-                  <>
+                  canWrite ? (<>
                     {current.handover_mode === 'human' ? (
                       <Button size="sm" variant="secondary" onClick={() => setMode('bot')} loading={action.busy}>
                         Return to bot
@@ -236,7 +241,7 @@ export function LiveInboxPanel({ tenantId }: { tenantId: string }) {
                     <Button size="sm" variant="ghost" icon={<CheckCheck className="h-4 w-4" />} onClick={resolve} loading={action.busy}>
                       Resolve
                     </Button>
-                  </>
+                  </>) : undefined
                 }
               />
 
@@ -286,6 +291,7 @@ export function LiveInboxPanel({ tenantId }: { tenantId: string }) {
                 )}
               </CardBody>
 
+              {canWrite && (
               <Composer
                 busy={action.busy}
                 onUpload={(file) => attachmentsApi.upload(tenantId, file, 'inbox')}
@@ -301,12 +307,13 @@ export function LiveInboxPanel({ tenantId }: { tenantId: string }) {
                   return false
                 }}
               />
+              )}
             </>
           )}
         </Card>
       </div>
 
-      {selected && (
+      {selected && canWrite && (
         <div className="mt-4 flex shrink-0 flex-wrap items-center gap-3">
           <label className="flex items-center gap-2 text-xs text-slate-400">
             <Users className="h-3.5 w-3.5" />

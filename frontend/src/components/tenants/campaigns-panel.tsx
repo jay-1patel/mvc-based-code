@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Pencil, Plus, RefreshCw, Send, Trash2 } from 'lucide-react'
 import { useAction, useAsync } from '@/lib/hooks'
-import { useAuth } from '@/lib/auth'
+import { usePermissions } from '@/lib/permissions'
 import {
   operationsApi,
   type Campaign,
@@ -136,11 +136,11 @@ function toShape(campaign?: Campaign | null): CampaignFormShape {
  * `view_campaigns`; creating, editing and deleting needs `manage_campaigns`.
  */
 export function CampaignsPanel({ tenantId }: { tenantId: string }) {
-  const { can } = useAuth()
+  const { canWriteTenant } = usePermissions()
   const toast = useToast()
   const confirmDialog = useConfirm()
   const action = useAction()
-  const canManage = can('manage_campaigns')
+  const canManage = canWriteTenant('manage_campaigns')
 
   const [editing, setEditing] = useState<Campaign | null>(null)
   const [creating, setCreating] = useState(false)
