@@ -44,10 +44,11 @@ export function ProfileEditor({ tenantId }: { tenantId: string }) {
   const detail = useTenantDetail(tenantId)
   const { identity } = useAuth()
   const isSuperAdmin = identity?.role === 'super_admin'
-  // Company admins and sub admins never edit the profile here: it is a
-  // read-only mirror of what was entered under "Register a tenant". Only the
-  // super admin edits the data layer directly.
-  const readOnly = !isSuperAdmin
+  // Decided role rule (flipped from the old model): the tenant's own admin
+  // edits the profile here — saving writes a draft and publishing routes
+  // through super-admin approval for non-menu changes. The super admin is
+  // VIEW-ONLY inside a tenant, so for them this page is a read-only mirror.
+  const readOnly = isSuperAdmin
   const action = useAction()
   const toast = useToast()
   const [form, setForm] = useState<EditorForm | null>(null)
@@ -137,8 +138,8 @@ export function ProfileEditor({ tenantId }: { tenantId: string }) {
         title="Profile"
         description={
           isSuperAdmin
-            ? "This form is the tenant's data layer. Saving writes a draft; publishing validates it, versions it and swaps the live profile. Publishing is the only thing the bot ever sees."
-            : 'Read-only. This shows exactly what was entered under "Register a tenant". To change it, submit a new registration or profile change there for super admin approval.'
+            ? "View-only. This is the tenant's data layer as their admin maintains it — changes come from the tenant's admin and are approved by you."
+            : 'This form is your data layer. Saving writes a draft; publishing validates it and swaps the live profile (profile-wide changes go to a super admin for approval first). Publishing is the only thing the bot ever sees.'
         }
         actions={
           readOnly ? undefined : editing ? (
@@ -214,7 +215,7 @@ export function ProfileEditor({ tenantId }: { tenantId: string }) {
           <>
             <span className={`text-xs ${dirty ? 'text-amber-700' : 'text-slate-500'}`}>
               {readOnly
-                ? 'Read-only — managed from Register a tenant'
+                ? 'View-only — changes come from the tenant\'s admin'
                 : !editing
                   ? 'Read-only — click Edit profile to make changes'
                   : dirty
