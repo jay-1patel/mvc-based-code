@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 import secrets
 import uuid
 import hashlib
@@ -152,9 +153,11 @@ def has_permission(admin: dict, perm: str) -> bool:
 
 
 def require_permission(perm: str):
-    def dependency(current_admin: dict = Depends(get_current_admin)):
+    def dependency(request: Request = None, current_admin: dict = Depends(get_current_admin)):
         if not has_permission(current_admin, perm):
             raise HTTPException(status_code=403, detail="You do not have permission to perform this action")
+        if request is not None:
+            ensure_super_admin_view_only(current_admin, request.method, request.url.path)
         return current_admin
     return dependency
 
@@ -162,10 +165,12 @@ def require_permission(perm: str):
 def require_tenant_admin_permission(perm: str):
     """Tenant-scoped guard. A super admin sees every tenant; anyone else must
     be assigned to this exact tenant and hold `perm`."""
-    def dependency(tenant_id: str, current_admin: dict = Depends(get_current_admin)) -> dict:
+    def dependency(tenant_id: str, request: Request = None, current_admin: dict = Depends(get_current_admin)) -> dict:
         if not current_admin:
             raise HTTPException(status_code=403, detail="You do not have access to this tenant")
         if current_admin.get("role") == "super_admin":
+            if request is not None:
+                ensure_super_admin_view_only(current_admin, request.method, request.url.path)
             return current_admin
         if current_admin.get("tenant_id") != tenant_id:
             raise HTTPException(status_code=403, detail="You do not have access to this tenant")
@@ -182,6 +187,99 @@ def require_super_admin_permission(perm: str):
             raise HTTPException(status_code=403, detail="Super admin access required")
         return current_admin
     return dependency
+
+
+# ── Super-admin view-only guard (role-panels design, Phase 6 core) ─────────
+# Decided rule: a super admin has system powers only — tenants, people,
+# approvals, audit — and is VIEW-ONLY inside a tenant. They must never write
+# a tenant's own data: no uploads, content edits, publishes, campaign sends,
+# inbox replies, token mint/revoke or version rollbacks. Hiding the buttons
+# in the console is not enforcement, so the check lives here, in the central
+# permission helpers, plus a middleware twin in core/middleware.py for the
+# routers that do not pass through these helpers.
+#
+# A super admin KEEPS (allowlist below): auth/people management, tenant
+# creation and permanent tenant deletion, the active-test-tenant switch,
+# approval decisions (tenant change requests + API access requests), and
+# platform maintenance (log clearing, index rebuild). Everything else that
+# writes tenant data is refused with 403 for a super-admin principal.
+# Tenant-scoped API tokens are NOT admin principals and are unaffected:
+# a tenant's own token keeps its publish/read capability for its tenant.
+
+WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+
+SUPER_ADMIN_ALLOWED_WRITE_PATTERNS = (
+    re.compile(r"^/api/auth(?:/.*)?$"),  # people management, own password, OTP
+    re.compile(r"^/api/admin/tenants$"),  # POST: create a tenant
+    re.compile(r"^/api/admin/tenants/active-test-tenant$"),
+    re.compile(r"^/api/admin/tenants/[^/]+$"),  # DELETE only (checked below)
+    re.compile(r"^/api/admin/tenant-change-requests/[^/]+/decision$"),
+    re.compile(r"^/api/admin/integration-requests/[^/]+/decision$"),
+    re.compile(r"^/api/admin/logs$"),  # platform maintenance
+    re.compile(r"^/api/admin/rebuild-index$"),
+)
+
+# Path prefixes whose writes mutate a tenant's own data (tenant-scoped paths
+# plus the legacy global single-tenant surfaces for the same data).
+TENANT_DATA_WRITE_PREFIXES = (
+    "/api/admin/tenants/",
+    "/api/tenants/",
+    "/api/admin/files",
+    "/api/admin/products",
+    "/api/admin/menus",
+    "/api/admin/brochures",
+    "/api/admin/upload",
+    "/api/admin/analytics",
+    "/api/admin/dynamic",
+    "/api/admin/onboarding",
+    "/api/admin/chat",
+    "/api/complaints",
+    "/api/inbox",
+    "/api/orders",
+    "/api/leads",
+    "/catalog",
+    "/api/test-simulator",
+    "/faq/admin",
+)
+
+
+def is_super_admin_allowed_write(method: str, path: str) -> bool:
+    """System-power writes a super admin keeps, per the decided design."""
+    method = (method or "").upper()
+    if method not in WRITE_METHODS:
+        return True
+    for pattern in SUPER_ADMIN_ALLOWED_WRITE_PATTERNS:
+        if pattern.match(path or ""):
+            # The bare /api/admin/tenants/{id} pattern is the DELETE-tenant
+            # system power only; a POST/PUT there is not a defined route.
+            if pattern.pattern == r"^/api/admin/tenants/[^/]+$" and method != "DELETE":
+                continue
+            return True
+    return False
+
+
+def is_tenant_data_write(method: str, path: str) -> bool:
+    """True when this request writes tenant data (vs a system power)."""
+    method = (method or "").upper()
+    if method not in WRITE_METHODS:
+        return False
+    if is_super_admin_allowed_write(method, path):
+        return False
+    return any((path or "").startswith(prefix) for prefix in TENANT_DATA_WRITE_PREFIXES)
+
+
+def ensure_super_admin_view_only(admin: dict | None, method: str, path: str) -> None:
+    """Refuse a tenant-data write attempted by a super-admin principal."""
+    if not admin or admin.get("role") != "super_admin":
+        return
+    if is_tenant_data_write(method, path):
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "Super admins are view-only inside tenants: this change must "
+                "come from the tenant's admin (and is approved by you)."
+            ),
+        )
 
 
 # ---------- helpers ----------
@@ -377,6 +475,10 @@ def require_tenant_access():
             }
 
         admin = get_current_admin(request, credentials)
+        # Super admins are view-only inside tenants (decided rule): refuse
+        # tenant-data writes here, at the choke point every tenant-scoped
+        # route passes through. Reads pass; system powers are allowlisted.
+        ensure_super_admin_view_only(admin, request.method, request.url.path)
         try:
             from backend.services.audit_context import set_audit_actor
             set_audit_actor(admin)
@@ -682,7 +784,15 @@ def list_admins(current_admin: dict = Depends(require_permission("manage_admins"
 
 @router.patch("/admins/{username}")
 def update_admin(username: str, body: UpdateAdminRequest, current_admin: dict = Depends(get_current_admin)):
-    """Update an admin's role and/or permissions. Requires the manage_admins permission."""
+    """Update an admin's permissions, email or tenant scope.
+
+    A role is fixed at account creation and can NEVER be changed through
+    this endpoint (decided rule, 2026-11-10): to give someone a different
+    role, delete the account and create a new one with the correct role.
+    A ``role`` value that differs from the account's current role is
+    refused with 403; the same value is treated as a no-op.
+    Requires the manage_admins permission.
+    """
     if not has_permission(current_admin, "manage_admins"):
         raise HTTPException(status_code=403, detail="You do not have permission to manage admins")
 
@@ -699,29 +809,21 @@ def update_admin(username: str, body: UpdateAdminRequest, current_admin: dict = 
             detail="You cannot change your own role or permissions. Ask another admin with manage admins permission.",
         )
 
-    new_role = body.role
-    if new_role is not None:
-        # Normalize
-        if new_role in ("superadmin", "super-admin"):
-            new_role = "super_admin"
-        elif new_role in ("subadmin", "sub-admin"):
-            new_role = "sub_admin"
-        elif new_role == "admin":
-            new_role = "admin"
-        if new_role not in ("super_admin", "admin", "sub_admin"):
-            new_role = target["role"]
-
-        current_role = current_admin.get("role")
-        if new_role == "super_admin" and target["role"] != "super_admin":
-            raise HTTPException(status_code=403, detail="There can be only one super admin")
-        if new_role == "admin" and current_role != "super_admin":
-            raise HTTPException(status_code=403, detail="Only a super admin can grant the admin role")
-        if target["role"] == "super_admin" and new_role != "super_admin" and current_role != "super_admin":
-            raise HTTPException(status_code=403, detail="Only a super admin can demote a super admin")
-        if target["role"] == "super_admin" and new_role != "super_admin" and count_admins_by_role("super_admin") <= 1:
-            raise HTTPException(status_code=400, detail="Cannot demote the last super admin")
-    else:
-        new_role = target["role"]
+    if body.role is not None:
+        requested_role = body.role
+        if requested_role in ("superadmin", "super-admin"):
+            requested_role = "super_admin"
+        elif requested_role in ("subadmin", "sub-admin"):
+            requested_role = "sub_admin"
+        if requested_role != target["role"]:
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    "Roles are fixed at account creation and cannot be changed. "
+                    "Delete this account and create a new one with the correct role."
+                ),
+            )
+    new_role = target["role"]
 
     if body.permissions is not None:
         permissions = _parse_permissions(body.permissions, default_all=False)
@@ -729,10 +831,6 @@ def update_admin(username: str, body: UpdateAdminRequest, current_admin: dict = 
         permissions = _parse_permissions(target["permissions"])
 
     if new_role == "super_admin":
-        permissions = dict(SUPER_ADMIN_PERMISSIONS)
-    elif new_role == "admin" and target["role"] != "admin":
-        # Promoting to admin grants the full set up front; a super admin can
-        # edit the switches down afterwards.
         permissions = dict(SUPER_ADMIN_PERMISSIONS)
 
     # Only a super admin may re-scope an admin to another tenant; for everyone

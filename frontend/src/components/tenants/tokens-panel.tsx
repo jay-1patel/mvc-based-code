@@ -11,10 +11,10 @@ import { Alert, EmptyState, LoadingBlock } from '@/components/ui/feedback'
 import { PageHeader } from '@/components/layout/page-header'
 import { useToast } from '@/components/ui/toast'
 import { useAsync } from '@/lib/hooks'
-import { useAuth } from '@/lib/auth'
+import { usePermissions } from '@/lib/permissions'
 
 export function TokensPanel({ tenantId }: { tenantId: string }) {
-  const { can } = useAuth()
+  const { canWriteTenant, isSuperAdmin } = usePermissions()
   const { reload: reloadTenants } = useTenants()
   const toast = useToast()
   const action = useAction()
@@ -24,7 +24,8 @@ export function TokensPanel({ tenantId }: { tenantId: string }) {
   const [revoking, setRevoking] = useState<number | null>(null)
 
   const tokens = useAsync(() => tenantsApi.tokens(tenantId), [tenantId])
-  const adminOnly = can('manage_operations')
+  // Mint/revoke are tenant-data writes: a super admin is view-only here.
+  const canWrite = canWriteTenant('manage_operations')
 
   const mint = async () => {
     const result = await action.run(() => tenantsApi.mintToken(tenantId, label.trim()))
@@ -64,9 +65,11 @@ export function TokensPanel({ tenantId }: { tenantId: string }) {
         description="A tenant token is scoped to exactly one tenant. It can read and publish that tenant's profile and nothing else — cross-tenant access is refused by the server, not by this UI."
       />
 
-      {!adminOnly && (
+      {!canWrite && (
         <Alert tone="warning" title="Read-only" className="mb-4">
-          Minting and revoking tokens needs the manage_operations permission.
+          {isSuperAdmin
+            ? 'View-only — tokens are minted and revoked by the tenant’s admin.'
+            : 'Minting and revoking tokens needs the manage_operations permission.'}
         </Alert>
       )}
       {action.error && (
@@ -88,6 +91,7 @@ export function TokensPanel({ tenantId }: { tenantId: string }) {
         </Alert>
       )}
 
+      {canWrite && (
       <Card className="mb-4">
         <CardHeader title="Mint a token" description="Use it as a bearer token against this tenant's routes only." />
         <CardBody>
@@ -103,7 +107,7 @@ export function TokensPanel({ tenantId }: { tenantId: string }) {
             <Button
               variant="primary"
               loading={action.busy}
-              disabled={!adminOnly}
+              disabled={!canWrite}
               onClick={mint}
               icon={<Plus className="h-4 w-4" />}
             >
@@ -112,6 +116,7 @@ export function TokensPanel({ tenantId }: { tenantId: string }) {
           </div>
         </CardBody>
       </Card>
+      )}
 
       <Card>
         <CardHeader title="Issued tokens" icon={<KeyRound className="h-4 w-4" />} />
@@ -150,7 +155,7 @@ export function TokensPanel({ tenantId }: { tenantId: string }) {
                       <Button
                         size="sm"
                         variant="secondary"
-                        disabled={!adminOnly}
+                        disabled={!canWrite}
                         icon={<ShieldOff className="h-3.5 w-3.5" />}
                         onClick={() => setRevoking(token.id)}
                       >

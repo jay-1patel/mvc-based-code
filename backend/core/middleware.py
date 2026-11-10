@@ -41,6 +41,62 @@ except ImportError:  # imported as part of the `backend` package
 logger = logging.getLogger("router")
 
 
+async def super_admin_view_only_middleware(request: Request, call_next):
+    """Refuse tenant-data writes by a super-admin principal (decided rule).
+
+    The dependency-level guard in routes/auth.py covers every route that
+    passes through ``require_tenant_access`` / ``require_permission``. This
+    middleware is the same rule for the routers that authenticate ad hoc
+    (legacy global surfaces, callbacks, inbox, complaints, orders, catalog):
+    for a non-GET request carrying an admin JWT, resolve the caller's role
+    and refuse tenant-data writes when the caller is a super admin. Tenant
+    API tokens are not JWTs and are unaffected; unauthenticated and
+    non-super requests pass straight through to the route's own checks.
+    """
+    if request.method not in ("POST", "PUT", "PATCH", "DELETE"):
+        return await call_next(request)
+    try:
+        from routes.auth import is_tenant_data_write
+    except ImportError:
+        from backend.routes.auth import is_tenant_data_write
+    if not is_tenant_data_write(request.method, request.url.path):
+        return await call_next(request)
+    auth_header = request.headers.get("authorization", "")
+    role = None
+    if auth_header.startswith("Bearer "):
+        try:
+            payload = jwt.decode(
+                auth_header.split(" ")[1], ADMIN_SECRET_KEY,
+                algorithms=["HS256"], options={"verify_exp": False},
+            )
+            username = payload.get("sub")
+            if username:
+                with get_db_context() as conn:
+                    row = conn.execute(
+                        "SELECT role FROM admins WHERE username = ?", (username,)
+                    ).fetchone()
+                if row:
+                    role = row["role"] if hasattr(row, "keys") else row[0]
+        except Exception:
+            # A token that does not resolve to an admin is the route's own
+            # problem (it will 401/403); this guard only acts on a proven
+            # super-admin principal.
+            role = None
+    if role == "super_admin":
+        return JSONResponse(
+            status_code=403,
+            content={
+                "detail": (
+                    "Super admins are view-only inside tenants: this change must "
+                    "come from the tenant's admin (and is approved by you)."
+                ),
+                "error": "super_admin_view_only",
+                "api": f"{request.method} {request.url.path}",
+            },
+        )
+    return await call_next(request)
+
+
 async def audit_request_context(request: Request, call_next):
     """Provide trusted network metadata to audit writes for this request."""
     peer = request.client.host if request.client else None

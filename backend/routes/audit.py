@@ -1,9 +1,13 @@
-"""Superadmin-only query API for durable admin activity history with export and statistics."""
+"""Query API for durable admin activity history with export and statistics.
+
+Super admins query every tenant; a tenant admin is scoped to their own
+tenant only (see ``_scoped_tenant_id``). Exports: CSV, JSON and PDF.
+"""
 
 import json
 import csv
 import io
-from datetime import date
+from datetime import date, datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
@@ -13,6 +17,29 @@ from database import get_db, safe_audit_details
 from routes.auth import get_current_admin
 
 router = APIRouter(tags=["audit-history"])
+
+
+def _scoped_tenant_id(current_admin: dict, requested_tenant_id: Optional[str]) -> Optional[str]:
+    """Resolve which tenant's audit rows this caller may see.
+
+    Super admins see every tenant (``requested_tenant_id`` passes through,
+    including None = all). A tenant admin sees ONLY their own tenant: the
+    filter is forced to their tenant, and explicitly asking for another
+    tenant is refused with 403 — never silently widened, never other
+    tenants' rows. Everyone else (sub admins) is refused.
+    """
+    role = current_admin.get("role")
+    if role == "super_admin":
+        return requested_tenant_id
+    if role == "admin":
+        own = str(current_admin.get("tenant_id") or "").strip()
+        if not own:
+            raise HTTPException(status_code=403, detail="Your admin account is not assigned to a tenant")
+        requested = str(requested_tenant_id or "").strip()
+        if requested and requested != own:
+            raise HTTPException(status_code=403, detail="Admins can only view their own tenant's audit history")
+        return own
+    raise HTTPException(status_code=403, detail="Super admin access is required")
 
 
 CATEGORY_ACTIONS = {
@@ -84,8 +111,7 @@ def list_audit_history(
     current_admin: dict = Depends(get_current_admin),
 ):
     """List audit history events with filtering and sorting."""
-    if current_admin.get("role") != "super_admin":
-        raise HTTPException(status_code=403, detail="Super admin access is required")
+    tenant_id = _scoped_tenant_id(current_admin, tenant_id)
     if start_date and end_date and start_date > end_date:
         raise HTTPException(status_code=422, detail="start_date must not be after end_date")
     if outcome and outcome not in {"success", "failure"}:
@@ -202,8 +228,7 @@ def get_audit_statistics(
     current_admin: dict = Depends(get_current_admin),
 ):
     """Get aggregated statistics for audit events."""
-    if current_admin.get("role") != "super_admin":
-        raise HTTPException(status_code=403, detail="Super admin access is required")
+    tenant_id = _scoped_tenant_id(current_admin, tenant_id)
 
     where = ["datetime(created_at) >= datetime('now', '-365 days')"]
     params = []
@@ -351,6 +376,63 @@ def get_audit_statistics(
     }
 
 
+def _render_audit_pdf(events: list, columns: list) -> bytes:
+    """Render audit rows as a simple, titled PDF via PyMuPDF (fitz).
+
+    Same rows and column selection as the CSV export. Fixed-width text
+    layout: a title, the generation timestamp, a header row, then one
+    truncated line per event, paginated. No new dependency — PyMuPDF is
+    already a project requirement (PDF ingestion).
+    """
+    import fitz
+
+    generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    # Keep the PDF readable: the wide audit row set is trimmed to the core
+    # columns unless the caller asked for a narrower selection.
+    preferred = ["created_at", "action", "actor_username", "target_username", "tenant_label", "outcome", "resource_type"]
+    pdf_columns = [c for c in preferred if c in columns] or preferred
+    widths = {
+        "created_at": 19, "action": 26, "actor_username": 16,
+        "target_username": 16, "tenant_label": 22, "outcome": 9,
+        "resource_type": 16,
+    }
+
+    def _line(values: dict) -> str:
+        parts = []
+        for col in pdf_columns:
+            value = values.get(col)
+            if isinstance(value, dict):
+                value = json.dumps(value)
+            text = "" if value is None else str(value)
+            width = widths.get(col, 16)
+            parts.append(text[:width].ljust(width))
+        return "  ".join(parts).rstrip()
+
+    header = _line({col: col.replace("_", " ").title() for col in pdf_columns})
+    doc = fitz.open()
+    lines_per_page = 44
+    chunks = [events[i:i + lines_per_page] for i in range(0, len(events), lines_per_page)] or [[]]
+    for index, chunk in enumerate(chunks):
+        page = doc.new_page(width=842, height=595)  # A4 landscape
+        y = 48
+        if index == 0:
+            page.insert_text((40, y), "Audit History", fontsize=16, fontname="hebo")
+            y += 22
+            page.insert_text((40, y), f"Generated at: {generated_at}  |  Events: {len(events)}", fontsize=9, fontname="helv")
+            y += 26
+        page.insert_text((40, y), header, fontsize=8, fontname="hebo")
+        y += 6
+        page.draw_line((40, y), (802, y), width=0.5)
+        y += 14
+        for event in chunk:
+            page.insert_text((40, y), _line(event), fontsize=8, fontname="helv")
+            y += 12
+        page.insert_text((40, 570), f"Page {index + 1} of {len(chunks)}", fontsize=8, fontname="helv")
+    payload = doc.tobytes()
+    doc.close()
+    return payload
+
+
 @router.get("/api/admin/audit-export")
 def export_audit_history(
     start_date: Optional[date] = Query(default=None),
@@ -366,12 +448,11 @@ def export_audit_history(
     limit: int = Query(default=10000, ge=1, le=50000),
     current_admin: dict = Depends(get_current_admin),
 ):
-    """Export audit history as CSV or JSON."""
-    if current_admin.get("role") != "super_admin":
-        raise HTTPException(status_code=403, detail="Super admin access is required")
+    """Export audit history as CSV, JSON or PDF."""
+    tenant_id = _scoped_tenant_id(current_admin, tenant_id)
     
-    if format not in ("csv", "json"):
-        raise HTTPException(status_code=422, detail="Format must be csv or json")
+    if format not in ("csv", "json", "pdf"):
+        raise HTTPException(status_code=422, detail="Format must be csv, json or pdf")
     
     where = ["datetime(created_at) >= datetime('now', '-365 days')"]
     params = []
@@ -434,7 +515,16 @@ def export_audit_history(
         "ip_address", "user_agent", "details"
     ]
     
-    if format == "csv":
+    if format == "pdf":
+        return Response(
+            content=_render_audit_pdf(events, requested_columns),
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": "attachment; filename=audit-history.pdf",
+                "Content-Type": "application/pdf",
+            },
+        )
+    elif format == "csv":
         # Generate CSV
         output = io.StringIO()
         writer = csv.writer(output)
@@ -518,9 +608,11 @@ def get_audit_event(
     current_admin: dict = Depends(get_current_admin),
 ):
     """Get details for a specific audit event."""
-    if current_admin.get("role") != "super_admin":
-        raise HTTPException(status_code=403, detail="Super admin access is required")
-    
+    # Role gate first (sub admins refused); tenant scoping is enforced
+    # against the loaded row below so an admin can never read another
+    # tenant's event by id.
+    _scoped_tenant_id(current_admin, None)
+
     conn = get_db()
     try:
         row = conn.execute(
@@ -530,9 +622,13 @@ def get_audit_event(
                 FROM admin_audit_events WHERE id = ?""",
             [event_id],
         ).fetchone()
-        
+
         if not row:
             raise HTTPException(status_code=404, detail="Event not found")
+        if current_admin.get("role") == "admin":
+            own = _scoped_tenant_id(current_admin, None)
+            if str(dict(row).get("tenant_id") or "") != str(own or ""):
+                raise HTTPException(status_code=403, detail="Admins can only view their own tenant's audit history")
         
         event = dict(row)
         try:

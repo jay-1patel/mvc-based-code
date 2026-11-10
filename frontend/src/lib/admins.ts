@@ -28,7 +28,9 @@ export const adminsApi = {
 
   update: (
     username: string,
-    body: { role?: string; permissions?: Record<string, boolean>; email?: string | null; tenant_id?: string | null },
+    // No `role` here on purpose: roles are fixed at creation and the API
+    // refuses role changes — changing a role is delete + recreate.
+    body: { permissions?: Record<string, boolean>; email?: string | null; tenant_id?: string | null },
   ) =>
     api.patch<{ status: string; username: string; role: string; permissions: Record<string, boolean>; tenant_id?: string | null }>(
       `/api/auth/admins/${encodeURIComponent(username)}`,

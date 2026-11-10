@@ -4,9 +4,12 @@ import { adminsApi, type AdminRecord } from '@/lib/admins'
 import { navigate } from '@/lib/router'
 import {
   ALL_PERMISSIONS,
+  matchingPreset,
   PERMISSION_GROUPS,
   permissionGroups,
   PERMISSION_LABELS,
+  presetPermissions,
+  SUB_ADMIN_PRESETS,
   usePermissions,
 } from '@/lib/permissions'
 import { useTenants } from '@/lib/tenants'
@@ -109,14 +112,6 @@ export function TeamScreen() {
     if (result) {
       toast.push(`Saved changes for ${admin.username}`)
       setEditing(null)
-      admins.reload()
-    }
-  }
-
-  const saveRole = async (username: string, role: string) => {
-    const result = await action.run(() => adminsApi.update(username, { role }))
-    if (result) {
-      toast.push(`${username} is now a ${role.replace('_', ' ')}`)
       admins.reload()
     }
   }
@@ -261,11 +256,17 @@ export function TeamScreen() {
             </Select>
 
             {draft.role === 'sub_admin' && (
-              <PermissionMatrix
-                groups={permissionGroups(verticalOf(isSuperAdmin ? draft.tenantId : ownTenantId))}
-                value={draft.permissions}
-                onChange={(permissions) => setDraft({ ...draft, permissions })}
-              />
+              <>
+                <PresetRow
+                  value={draft.permissions}
+                  onChange={(permissions) => setDraft({ ...draft, permissions })}
+                />
+                <PermissionMatrix
+                  groups={permissionGroups(verticalOf(isSuperAdmin ? draft.tenantId : ownTenantId))}
+                  value={draft.permissions}
+                  onChange={(permissions) => setDraft({ ...draft, permissions })}
+                />
+              </>
             )}
 
             <div className="flex justify-end gap-2">
@@ -395,23 +396,6 @@ export function TeamScreen() {
                   </p>
                 )}
 
-                {(!isSelf) && !isEditing && (
-                  (isSuperAdmin) ||
-                  (identity?.role === 'admin' && admin.role === 'sub_admin')
-                ) && (
-                  <div className="mt-4 flex items-center gap-2 border-t border-surface-line pt-3">
-                    <span className="text-xs text-slate-500">Role:</span>
-                    <Select
-                      value={admin.role}
-                      onChange={(e) => saveRole(admin.username, e.target.value)}
-                      className="w-40"
-                    >
-                      {(identity?.role === 'admin' || isSuperAdmin) && <option value="sub_admin">sub admin</option>}
-                      {isSuperAdmin && <option value="admin">admin</option>}
-                    </Select>
-                  </div>
-                )}
-
                 {isEditing && (
                   <div className="mt-4 border-t border-surface-line pt-4">
                     <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -446,6 +430,9 @@ export function TeamScreen() {
                         Tenant is fixed to yours ({ownTenantId || 'none'}) — only a super admin can re-scope an admin.
                       </p>
                     )}
+                    {admin.role === 'sub_admin' && (
+                      <PresetRow value={editPerms} onChange={setEditPerms} />
+                    )}
                     <PermissionMatrix
                       groups={permissionGroups(verticalOf(editTenant || admin.tenant_id))}
                       value={editPerms}
@@ -466,6 +453,42 @@ export function TeamScreen() {
           })}
         </div>
       )}
+    </div>
+  )
+}
+
+/**
+ * One-tap sub-admin presets (Support / Content / Operations / Growth from
+ * the role-panels design). A preset only pre-ticks switches — the admin can
+ * still adjust them, and any manual change turns the selection into Custom.
+ * Roles are fixed at creation, so there is deliberately no role control
+ * anywhere on this screen: the role is the pill on each person's card.
+ */
+function PresetRow({
+  value,
+  onChange,
+}: {
+  value: Record<string, boolean>
+  onChange: (next: Record<string, boolean>) => void
+}) {
+  const active = matchingPreset(value)
+  return (
+    <div className="mb-3 flex flex-wrap items-center gap-2">
+      <span className="text-xs text-slate-500">Preset:</span>
+      {SUB_ADMIN_PRESETS.map((preset) => (
+        <Button
+          key={preset.id}
+          size="sm"
+          variant={active === preset.id ? 'primary' : 'secondary'}
+          title={preset.description}
+          onClick={() => onChange(presetPermissions(preset.id))}
+        >
+          {preset.label}
+        </Button>
+      ))}
+      <span className="text-xs text-slate-500">
+        {active === 'custom' ? 'Custom — tick the switches yourself.' : 'Pre-ticked switches — adjust any of them before saving.'}
+      </span>
     </div>
   )
 }

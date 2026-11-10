@@ -276,15 +276,117 @@ export function isOnboardingLocked(
   return identity.onboarding_approved === false
 }
 
+/**
+ * Permission switches that WRITE a tenant's own data (upload, edit, publish,
+ * send, reply, mint, delete...). The decided role rule: a super admin is
+ * VIEW-ONLY inside tenants, so for them these switches never open a write
+ * control — even though the role technically holds every switch. Read-type
+ * switches (view_*, chat_history) and system powers (manage_admins, tenant
+ * registration via manage_operations at the registry level) are unaffected;
+ * panels gate their write controls with `canWriteTenant`, not `can`.
+ * The server refuses the same writes with 403 (backend/routes/auth.py).
+ */
+export const TENANT_WRITE_PERMISSIONS = [
+  'upload_faq',
+  'upload_kb',
+  'delete_files',
+  'edit_delete_products',
+  'add_product',
+  'edit_product',
+  'delete_product',
+  'manage_services',
+  'manage_projects',
+  'manage_technologies',
+  'manage_careers',
+  'manage_benefits',
+  'manage_operations',
+  'chat',
+  'catalogue_new_arrival',
+  'manage_orders',
+  'manage_complaints',
+  'manage_campaigns',
+  'manage_distributors',
+]
+
+/**
+ * Sub-admin presets (decided 2026-11-10): one-tap bundles of the real
+ * switches from the role-panels design §3. A preset only pre-ticks switches
+ * in the Team create/edit form — the admin can still adjust before saving,
+ * and any manual change makes the selection "Custom". Every delete-type
+ * switch (delete_files, delete_product, edit_delete_products) stays OFF in
+ * every preset. `manage_services` and the IT company-page switches are the
+ * Content preset's vertical switches; they only take effect for tenants
+ * whose vertical exposes those pages.
+ */
+export const SUB_ADMIN_PRESETS: {
+  id: string
+  label: string
+  description: string
+  permissions: string[]
+}[] = [
+  {
+    id: 'support',
+    label: 'Support',
+    description: 'Inbox, chat history, complaints, customers (view)',
+    permissions: ['view_inbox', 'chat_history', 'view_complaints', 'manage_complaints', 'view_customers', 'chat'],
+  },
+  {
+    id: 'content',
+    label: 'Content',
+    description: 'Uploads, catalogue and content pages',
+    permissions: [
+      'view_files', 'upload_faq', 'upload_kb', 'view_products',
+      'add_product', 'edit_product', 'manage_services',
+      'manage_projects', 'manage_technologies', 'manage_careers', 'manage_benefits',
+    ],
+  },
+  {
+    id: 'operations',
+    label: 'Operations',
+    description: 'Orders, customers, distributors',
+    permissions: ['view_orders', 'manage_orders', 'view_customers', 'view_distributors'],
+  },
+  {
+    id: 'growth',
+    label: 'Growth',
+    description: 'Campaigns and analytics',
+    permissions: ['view_campaigns', 'manage_campaigns', 'view_analytics'],
+  },
+]
+
+/** The full switch set a preset applies: preset switches ON, everything else OFF. */
+export function presetPermissions(presetId: string): Record<string, boolean> {
+  const preset = SUB_ADMIN_PRESETS.find((p) => p.id === presetId)
+  const on = new Set(preset?.permissions ?? [])
+  return Object.fromEntries(ALL_PERMISSIONS.map((p) => [p, on.has(p)]))
+}
+
+/** Which preset exactly matches a switch set, or 'custom' when none does. */
+export function matchingPreset(permissions: Record<string, boolean>): string {
+  for (const preset of SUB_ADMIN_PRESETS) {
+    const candidate = presetPermissions(preset.id)
+    if (ALL_PERMISSIONS.every((p) => Boolean(permissions[p]) === candidate[p])) return preset.id
+  }
+  return 'custom'
+}
+
 export function usePermissions() {
   const { can, identity } = useAuth()
+  const isSuperAdmin = identity?.role === 'super_admin'
   return {
     identity,
-    isSuperAdmin: identity?.role === 'super_admin',
+    isSuperAdmin,
   isAdmin: identity?.role === 'admin',
   isSubAdmin: identity?.role === 'sub_admin',
   can,
     canManageTenants: can(TENANT_PERMISSION),
     canManageTeam: can(TEAM_PERMISSION),
+    /**
+     * Whether a write control for a tenant-data action may be offered.
+     * Identical to `can` for admins and sub admins; always false for a
+     * super admin on a tenant-write switch (view-only rule).
+     */
+    canWriteTenant: (permission: string) =>
+      isSuperAdmin && TENANT_WRITE_PERMISSIONS.includes(permission) ? false : can(permission),
   }
 }

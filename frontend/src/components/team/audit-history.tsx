@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect, useCallback } from 'react'
 import { useAsync } from '@/lib/hooks'
+import { useAuth } from '@/lib/auth'
 import { formatDate, relativeTime } from '@/lib/format'
 import { auditApiExtended } from '@/lib/audit.extended'
 import { Card, CardHeader, CardBody } from '@/components/ui/card'
@@ -58,17 +59,17 @@ const FilterPresets = ({ onApplyPreset }: { onApplyPreset: (preset: Record<strin
 }
 
 // Export Menu Component
-const ExportMenu = ({ events, filters, onExportSuccess }: { events: AuditEventExtended[]; filters: AuditFiltersExtended; onExportSuccess: () => void }) => {
+const ExportMenu = ({ events, filters, onExportSuccess, onExportError }: { events: AuditEventExtended[]; filters: AuditFiltersExtended; onExportSuccess: () => void; onExportError: (message: string) => void }) => {
   const [isOpen, setIsOpen] = useState(false)
   const [isExporting, setIsExporting] = useState(false)
 
-  const handleExport = async (format: 'csv' | 'json') => {
+  const handleExport = async (format: 'csv' | 'json' | 'pdf') => {
     setIsExporting(true)
     try {
       const columns = getDefaultExportColumns()
       const request = { filters, format, columns }
       const response = await auditApiExtended.exportEvents(request)
-      
+
       // Create download link
       const url = window.URL.createObjectURL(new Blob([response]))
       const link = document.createElement('a')
@@ -78,10 +79,11 @@ const ExportMenu = ({ events, filters, onExportSuccess }: { events: AuditEventEx
       link.click()
       document.body.removeChild(link)
       window.URL.revokeObjectURL(url)
-      
+
       onExportSuccess()
     } catch (error) {
-      console.error('Export failed:', error)
+      // Export failures must be visible on the page, not just the console.
+      onExportError(error instanceof Error ? error.message : 'The export failed. Please try again.')
     } finally {
       setIsExporting(false)
       setIsOpen(false)
@@ -101,6 +103,12 @@ const ExportMenu = ({ events, filters, onExportSuccess }: { events: AuditEventEx
             className="block w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
           >
             Export as CSV
+          </button>
+          <button
+            onClick={() => handleExport('pdf')}
+            className="block w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+          >
+            Export as PDF
           </button>
           <button
             onClick={() => handleExport('json')}
@@ -381,6 +389,11 @@ const TimelineView = ({ events }: { events: AuditEventExtended[] }) => {
 
 // Main AuditHistory Component
 export function AuditHistory() {
+  const { identity } = useAuth()
+  // Tenant admins get this page scoped to their own tenant (role-panels
+  // item 12): the filter is forced here and enforced again by the API.
+  const scopedTenant = identity?.role === 'admin' ? identity.tenant_id ?? '' : ''
+  const [exportError, setExportError] = useState<string | null>(null)
   const [filters, setFilters] = useState<AuditFiltersExtended>({ 
     limit: PAGE_SIZE, 
     offset: 0, 
@@ -419,17 +432,17 @@ export function AuditHistory() {
   }, [])
 
   const requestFilters = useMemo(() => ({
-    ...filters, 
+    ...filters,
     limit: filters.limit ?? PAGE_SIZE,
     start_date: draft.start_date || undefined,
     end_date: draft.end_date || undefined,
     actor: draft.actor || filters.actor,
     action: draft.action || filters.action,
     category: draft.category || filters.category,
-    tenant_id: draft.tenant_id || filters.tenant_id,
+    tenant_id: scopedTenant || draft.tenant_id || filters.tenant_id,
     outcome: draft.outcome || filters.outcome,
     search: draft.search || filters.search,
-  }), [filters, draft])
+  }), [filters, draft, scopedTenant])
 
   // Fetch audit data
   const state = useAsync(() => auditApiExtended.list(requestFilters) as Promise<AuditPageState>, [JSON.stringify(requestFilters)])
@@ -509,6 +522,7 @@ export function AuditHistory() {
   }
 
   const notifyExport = () => {
+    setExportError(null)
     setToastMessage('Audit export downloaded')
     setTimeout(() => setToastMessage(null), 2500)
   }
@@ -521,13 +535,15 @@ export function AuditHistory() {
 
   return (
     <div className="space-y-4">
-      <PageHeader 
-        title="Audit History" 
-        description="Review administrator activity across tenants, with actor, client, request and change details."
+      <PageHeader
+        title="Audit History"
+        description={scopedTenant
+          ? 'Activity in your tenant only, with actor, client, request and change details.'
+          : 'Review administrator activity across tenants, with actor, client, request and change details.'}
         actions={
           <div className="flex flex-wrap gap-2">
             <FilterPresets onApplyPreset={applyPreset} />
-            <ExportMenu events={formattedEvents} filters={filters} onExportSuccess={notifyExport} />
+            <ExportMenu events={formattedEvents} filters={requestFilters} onExportSuccess={notifyExport} onExportError={setExportError} />
             <Button 
               variant="secondary" 
               icon={<RefreshCw className={`h-4 w-4 ${showRefreshing ? 'animate-spin' : ''}`} />}
@@ -541,6 +557,7 @@ export function AuditHistory() {
       />
       
       {toastMessage && <Toast>{toastMessage}</Toast>}
+      {exportError && <Alert tone="danger" title="Export failed">{exportError}</Alert>}
       {state.error && <Alert tone="danger" title="Could not load audit history">{String(state.error)}</Alert>}
       {state.loading && <LoadingBlock label="Loading audit history..." />}
 
@@ -614,11 +631,12 @@ export function AuditHistory() {
                   ))}
                 </Select>
               </div>
-              <Input 
-                label="Tenant / client ID" 
-                placeholder="Tenant ID" 
-                value={draft.tenant_id} 
-                onChange={e => updateDraft('tenant_id', e.target.value)} 
+              <Input
+                label="Tenant / client ID"
+                placeholder="Tenant ID"
+                value={scopedTenant || draft.tenant_id}
+                disabled={Boolean(scopedTenant)}
+                onChange={e => updateDraft('tenant_id', e.target.value)}
               />
               <div className="flex items-end gap-2">
                 <DateRangePicker

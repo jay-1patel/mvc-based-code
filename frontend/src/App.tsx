@@ -38,6 +38,7 @@ import { RegisterWizard } from '@/components/onboarding/register-wizard'
 import { ApiOnboardingPanel } from '@/components/tenants/api-onboarding-panel'
 import { ApiOnboardingReview } from '@/components/team/api-onboarding-review'
 import { AuditHistory } from '@/components/team/audit-history'
+import { ErrorsPanel } from '@/components/team/errors-panel'
 import { TenantChangeReview, MyTenantChangeRequests } from '@/components/tenants/tenant-approvals-panel'
 
 function Router() {
@@ -106,10 +107,21 @@ function Router() {
   }
 
   if (route.view === 'audit-history') {
-    if (!isSuperAdmin) return <NotPermitted what="view audit history" />
+    // Super admins see every tenant; a tenant admin sees only their own
+    // tenant's activity (the page and the API both enforce that scope).
+    if (!isSuperAdmin && identity?.role !== 'admin') return <NotPermitted what="view audit history" />
     return (
       <AppShell route={route}>
         <AuditHistory />
+      </AppShell>
+    )
+  }
+
+  if (route.view === 'errors') {
+    if (!isSuperAdmin && identity?.role !== 'admin') return <NotPermitted what="view errors" />
+    return (
+      <AppShell route={route}>
+        <ErrorsPanel />
       </AppShell>
     )
   }
@@ -228,6 +240,7 @@ const KNOWN_VIEWS = [
   'tenant-requests',
   'api-requests',
   'audit-history',
+  'errors',
 ]
 
 function ComingSoon({ view }: { view: string }) {

@@ -42,6 +42,7 @@ from routes.admin import (
     run_upload,
 )
 from routes.auth import (
+    ensure_super_admin_view_only,
     get_current_admin,
     get_tenant_principal,
     has_permission,
@@ -64,7 +65,12 @@ def _require(perm: str):
     ) -> dict:
         if principal.get("type") == "tenant":
             return principal
-        if not has_permission(get_current_admin(request, credentials), perm):
+        admin = get_current_admin(request, credentials)
+        # Super admins are view-only inside tenants (decided rule): reads
+        # pass, tenant-data writes are refused even though the role holds
+        # every permission switch.
+        ensure_super_admin_view_only(admin, request.method, request.url.path)
+        if not has_permission(admin, perm):
             raise HTTPException(
                 status_code=403,
                 detail="You do not have permission to perform this action",
@@ -103,7 +109,10 @@ def _resolve_uploader(
     """The admin dict ``run_upload`` checks upload permissions against.
 
     A tenant token is, by construction, authorized for its own tenant, so it is
-    represented as a super admin of that tenant.
+    represented as a super admin of that tenant. That stand-in exists ONLY
+    for tenant tokens: a real super-admin caller is view-only inside tenants
+    (decided rule) and is refused here instead of being lent the tenant's
+    upload rights.
     """
     try:
         from backend.services.audit_context import set_audit_actor
@@ -123,7 +132,9 @@ def _resolve_uploader(
             "tenant_id": principal.get("tenant_id"),
             "permissions": {},
         }
-    return get_current_admin(request, credentials)
+    admin = get_current_admin(request, credentials)
+    ensure_super_admin_view_only(admin, request.method, request.url.path)
+    return admin
 
 
 @router.get("/files")

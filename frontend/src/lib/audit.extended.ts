@@ -37,7 +37,7 @@ export interface AuditFiltersExtended extends AuditFilters {
 // Export request
 export interface ExportRequest {
   filters: AuditFiltersExtended
-  format: 'csv' | 'json'
+  format: 'csv' | 'json' | 'pdf'
   columns: string[]
 }
 

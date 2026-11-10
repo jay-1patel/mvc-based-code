@@ -22,6 +22,7 @@ import {
 } from 'lucide-react'
 import { useAction, useAsync } from '@/lib/hooks'
 import { useAuth } from '@/lib/auth'
+import { usePermissions } from '@/lib/permissions'
 import {
   FILE_MODULES,
   UPLOAD_ACCEPT,
@@ -64,6 +65,7 @@ import { OnboardingKitWidget } from '@/components/onboarding/onboarding-kit-widg
  */
 export function UploadsPanel({ tenantId }: { tenantId: string }) {
   const { can } = useAuth()
+  const { canWriteTenant, isSuperAdmin } = usePermissions()
   const toast = useToast()
   const confirmDialog = useConfirm()
   const action = useAction()
@@ -95,8 +97,8 @@ export function UploadsPanel({ tenantId }: { tenantId: string }) {
   )
 
   const activeModule = FILE_MODULES.find((m) => m.value === module) ?? FILE_MODULES[0]
-  const canUpload = can(activeModule.permission)
-  const canDelete = can('delete_files')
+  const canUpload = canWriteTenant(activeModule.permission)
+  const canDelete = canWriteTenant('delete_files')
   const files = state.data ?? []
 
   const pickUpload = () => inputRef.current?.click()
@@ -418,10 +420,14 @@ export function UploadsPanel({ tenantId }: { tenantId: string }) {
         </Card>
       )}
 
-      {/* Predefined Onboarding Kits & AI Bifurcation */}
-      <div className="mb-6">
-        <OnboardingKitWidget tenantId={tenantId} kitOnly onPublished={() => state.reload()} />
-      </div>
+      {/* Predefined Onboarding Kits & AI Bifurcation — never for a super
+          admin: they are view-only inside a tenant, so no kit upload or
+          publish-to-live control is offered to them here. */}
+      {!isSuperAdmin && (
+        <div className="mb-6">
+          <OnboardingKitWidget tenantId={tenantId} kitOnly onPublished={() => state.reload()} />
+        </div>
+      )}
 
       {/* Traditional Upload & Existing Files Section */}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">

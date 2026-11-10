@@ -16,12 +16,17 @@ import { PageHeader } from '@/components/layout/page-header'
 import { useToast } from '@/components/ui/toast'
 import { useConfirm } from '@/components/ui/confirm'
 import { useTenantDetail } from '@/components/tenants/hooks'
+import { usePermissions } from '@/lib/permissions'
 
 export function IntentsEditor({ tenantId }: { tenantId: string }) {
   const { data, loading, error, reload } = useTenantDetail(tenantId)
   const action = useAction()
   const toast = useToast()
   const confirmDialog = useConfirm()
+  // Save/Publish are tenant-data writes: hidden unless the caller may
+  // write this tenant (a super admin is view-only here).
+  const { canWriteTenant } = usePermissions()
+  const canWrite = canWriteTenant('manage_operations')
   const [draft, setDraft] = useState<IntentSpec | null>(null)
   const [editing, setEditing] = useState(false)
   const [validation, setValidation] = useState<string[]>([])
@@ -115,9 +120,11 @@ export function IntentsEditor({ tenantId }: { tenantId: string }) {
         title="Intents Editor"
         description="Add, edit, enable/disable intents. Changes go to draft and need publishing."
         actions={
-          <Button size="sm" variant="primary" icon={<Plus className="h-4 w-4" />} onClick={startAdd}>
-            Add intent
-          </Button>
+          canWrite ? (
+            <Button size="sm" variant="primary" icon={<Plus className="h-4 w-4" />} onClick={startAdd}>
+              Add intent
+            </Button>
+          ) : undefined
         }
       />
 
@@ -164,10 +171,12 @@ export function IntentsEditor({ tenantId }: { tenantId: string }) {
                   {i.flow && <Badge tone="accent">flow:{i.flow}</Badge>}
                   {i.requires_feature && <Badge tone="neutral">needs:{i.requires_feature}</Badge>}
                 </div>
-                <div className="flex gap-1">
-                  <Button size="sm" variant="ghost" onClick={() => startEdit(i)} icon={<Pencil className="h-4 w-4" />} />
-                  <Button size="sm" variant="ghost" onClick={() => remove(i.name)} icon={<Trash2 className="h-4 w-4" />} />
-                </div>
+                {canWrite && (
+                  <div className="flex gap-1">
+                    <Button size="sm" variant="ghost" onClick={() => startEdit(i)} icon={<Pencil className="h-4 w-4" />} />
+                    <Button size="sm" variant="ghost" onClick={() => remove(i.name)} icon={<Trash2 className="h-4 w-4" />} />
+                  </div>
+                )}
               </div>
               {i.keywords?.length > 0 && <p className="text-xs text-slate-500 mt-1">Keywords: {i.keywords.join(', ')}</p>}
               {i.examples?.length > 0 && <p className="text-xs text-slate-500 mt-1">Examples: {i.examples.join(', ')}</p>}

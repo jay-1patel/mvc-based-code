@@ -18,7 +18,10 @@ export function VersionsPanel({ tenantId }: { tenantId: string }) {
   const action = useAction()
   const toast = useToast()
   const { identity } = useAuth()
-  const isSuperAdmin = identity?.role === 'super_admin'
+  // Decided role rule (flipped from the old model): only the tenant admin
+  // publishes and rolls back. A super admin is view-only here; sub admins
+  // get neither action.
+  const isAdmin = identity?.role === 'admin'
   const [confirming, setConfirming] = useState<number | null>(null)
   const [preview, setPreview] = useState<{ version: number; data: Record<string, unknown> } | null>(null)
 
@@ -63,15 +66,17 @@ export function VersionsPanel({ tenantId }: { tenantId: string }) {
         title="Versions"
         description="Publishing appends an immutable version and swaps the live profile. Rolling back never deletes anything — it re-points which version is current."
         actions={
-          <Button
-            variant="primary"
-            size="sm"
-            loading={action.busy}
-            icon={<Rocket className="h-4 w-4" />}
-            onClick={publish}
-          >
-            {isSuperAdmin ? 'Publish draft' : 'Submit for approval'}
-          </Button>
+          isAdmin ? (
+            <Button
+              variant="primary"
+              size="sm"
+              loading={action.busy}
+              icon={<Rocket className="h-4 w-4" />}
+              onClick={publish}
+            >
+              Publish draft
+            </Button>
+          ) : undefined
         }
         meta={
           <Badge tone={current ? 'success' : 'warning'}>
@@ -116,7 +121,7 @@ export function VersionsPanel({ tenantId }: { tenantId: string }) {
                         <Button size="sm" variant="ghost" onClick={() => openVersion(row.version)}>
                           {preview?.version === row.version ? 'Hide' : 'Inspect'}
                         </Button>
-                        {!isCurrent &&
+                        {!isCurrent && isAdmin &&
                           (confirming === row.version ? (
                             <>
                               <Button size="sm" variant="danger" loading={action.busy} onClick={() => rollback(row.version)}>

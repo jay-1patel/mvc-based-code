@@ -1,5 +1,5 @@
 import { type ReactNode, useEffect, useState } from 'react'
-import { ArrowLeft, Blocks, ChevronDown, ClipboardCheck, LayoutGrid, LogOut, Menu, PlusCircle, ScrollText, Send, UserRound, Users, ShieldCheck, KeyRound, X } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, Blocks, ChevronDown, ClipboardCheck, LayoutGrid, LogOut, Menu, PlusCircle, ScrollText, Send, UserRound, Users, ShieldCheck, KeyRound, X } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { useTenantProfile, useTenants } from '@/lib/tenants'
 import { useOfferingsCount } from '@/lib/offerings'
@@ -332,9 +332,52 @@ export function AppShell({ route, children }: { route: RouteMatch; children: Rea
                   <ScrollText className="h-4 w-4 shrink-0" />
                   Audit history
                 </button>
+                <button
+                  type="button"
+                  onClick={() => navigate('/errors')}
+                  className={cn(
+                    'mt-1 flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition',
+                    route.view === 'errors'
+                      ? 'bg-accent-100 font-medium text-accent-800'
+                      : 'text-slate-400 hover:bg-accent-50 hover:text-slate-100',
+                  )}
+                >
+                  <AlertTriangle className="h-4 w-4 shrink-0" />
+                  Errors
+                </button>
                 </div>
               ) : (
                 <>
+                  {identity?.role === 'admin' && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => navigate('/audit-history')}
+                        className={cn(
+                          'mb-1 flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition',
+                          route.view === 'audit-history'
+                            ? 'bg-accent-100 font-medium text-accent-800'
+                            : 'text-slate-400 hover:bg-accent-50 hover:text-slate-100',
+                        )}
+                      >
+                        <ScrollText className="h-4 w-4 shrink-0" />
+                        Audit history
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => navigate('/errors')}
+                        className={cn(
+                          'mb-1 flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition',
+                          route.view === 'errors'
+                            ? 'bg-accent-100 font-medium text-accent-800'
+                            : 'text-slate-400 hover:bg-accent-50 hover:text-slate-100',
+                        )}
+                      >
+                        <AlertTriangle className="h-4 w-4 shrink-0" />
+                        Errors
+                      </button>
+                    </>
+                  )}
                   {identity?.tenant_id && !locked && (
                     <button
                       type="button"
@@ -449,6 +492,14 @@ export function AppShell({ route, children }: { route: RouteMatch; children: Rea
             flush && 'flex min-h-0 w-full flex-1 flex-col',
           )}
         >
+          {isSuperAdmin && route.tenantId && (
+            <div
+              role="note"
+              className="mb-4 rounded-lg bg-surface-panel px-4 py-2.5 text-xs text-slate-400 ring-1 ring-surface-line"
+            >
+              View-only — changes come from the tenant's admin and are approved by you.
+            </div>
+          )}
           {children}
         </div>
       </main>
