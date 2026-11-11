@@ -96,6 +96,23 @@ export interface StagedIntent {
   flow?: string | null
 }
 
+/** Whether a staged section genuinely came out of the document. */
+export type SectionSource = 'extracted' | 'template' | 'mixed'
+
+/**
+ * Per-section provenance from the staging backend: 'extracted' = the
+ * section's values came from the document itself; 'template' = a
+ * vertical-template/default fallback supplied them; 'mixed' = a document
+ * signal is present but headline values still include defaults.
+ */
+export interface SectionSources {
+  brand?: SectionSource
+  business_hours?: SectionSource
+  guardrails?: SectionSource
+  menu?: SectionSource
+  offerings?: SectionSource
+}
+
 export interface StagedOnboardingDraft {
   status: string
   tenant_id: string
@@ -152,6 +169,7 @@ export interface StagedOnboardingDraft {
   }
   source_files: string[]
   extraction_mode?: 'kit' | 'universal' | string
+  section_sources?: SectionSources
   warning?: string
   kit_sections?: Record<string, boolean>
   stats: {

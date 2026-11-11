@@ -81,7 +81,7 @@ export function RegisterWizard({ onSubmitted }: { onSubmitted?: () => void } = {
   const [draft, setDraft] = useState<WizardDraft>(emptyDraft)
   // PDF auto-fill (admin flow only): what the staged document filled in, and
   // a staging failure that must never block manual completion.
-  const [pdfSummary, setPdfSummary] = useState<{ filled: string[]; mode: 'kit' | 'universal' } | null>(null)
+  const [pdfSummary, setPdfSummary] = useState<{ filled: string[]; mode: 'kit' | 'universal'; unconfirmed: string[] } | null>(null)
   const [pdfError, setPdfError] = useState<string | null>(null)
   const [pdfBusy, setPdfBusy] = useState(false)
   const { reload, tenants } = useTenants()
@@ -154,7 +154,20 @@ export function RegisterWizard({ onSubmitted }: { onSubmitted?: () => void } = {
       const staged = await onboardingKitsApi.stageTenant(tenantId, file, 'any')
       const { draft: merged, filled, mode } = applyStagedToDraft(draft, staged)
       setDraft(merged)
-      setPdfSummary({ filled, mode })
+      // Universal mode: the template-risky sections the backend could
+      // NOT confirm came out of the document (section_sources). The
+      // summary names only these as unconfirmed — sections labelled
+      // 'extracted' were applied and appear in `filled` instead.
+      const src = staged.section_sources ?? {}
+      const unconfirmed =
+        mode === 'universal'
+          ? [
+              ...(src.menu === 'extracted' ? [] : ['the menu']),
+              ...(src.business_hours === 'extracted' ? [] : ['working hours']),
+              ...(src.guardrails === 'extracted' ? [] : ['tone and guardrails']),
+            ]
+          : []
+      setPdfSummary({ filled, mode, unconfirmed })
       if (staged.warning) toast.push(staged.warning, 'error')
       toast.push(
         mode === 'kit'
@@ -361,7 +374,7 @@ function TenantStep({
   onPick: (tenantId: string) => void
   onStageFile: (file: File) => void
   pdfBusy: boolean
-  pdfSummary: { filled: string[]; mode: 'kit' | 'universal' } | null
+  pdfSummary: { filled: string[]; mode: 'kit' | 'universal'; unconfirmed: string[] } | null
   pdfError: string | null
 }) {
   const fileRef = useRef<HTMLInputElement>(null)
@@ -431,10 +444,10 @@ function TenantStep({
               <p className="text-sm font-medium text-slate-100">Have a company document?</p>
               <p className="text-xs leading-relaxed text-slate-400">
                 Upload your company PDF, Word file or Markdown and the details it confirms —
-                brand, contacts and services, and for a filled onboarding kit also the menu,
-                hours and guardrails — pre-fill the next steps. Anything you already typed
-                stays untouched, and everything remains editable before you submit for
-                approval.
+                brand, contacts and services, plus the menu, hours and guardrails whenever
+                the document itself confirms them — pre-fill the next steps. Anything you
+                already typed stays untouched, and everything remains editable before you
+                submit for approval.
               </p>
             </div>
             <Button
@@ -473,10 +486,21 @@ function TenantStep({
             >
               {pdfSummary.filled.length ? (
                 <>
-                  Filled in from your document: {pdfSummary.filled.join(' · ')}. Working hours,
-                  tone, guardrails and the menu keep the standard starting values — the document
-                  did not confirm those, so please review those steps. Everything stays
-                  editable, and nothing goes live until a super admin approves your submission.
+                  Filled in from your document: {pdfSummary.filled.join(' · ')}.{' '}
+                  {pdfSummary.unconfirmed.length ? (
+                    <>
+                      Not applied: {pdfSummary.unconfirmed.join(', ')} — the document did not
+                      confirm those, so they keep the standard starting values. Please review
+                      those steps.
+                    </>
+                  ) : (
+                    <>
+                      The document also confirmed the menu, working hours, tone and guardrails —
+                      please still review those steps.
+                    </>
+                  )}{' '}
+                  Everything stays editable, and nothing goes live until a super admin approves
+                  your submission.
                 </>
               ) : (
                 'The document was read, but its details could not be confirmed, so nothing was pre-filled — you can fill the steps in by hand.'
@@ -957,6 +981,35 @@ function ReviewStep({
     Array.isArray(value) ? value.length : Boolean(value),
   )
 
+  // Document import note: in universal mode, speak per section — a
+  // section is claimed as applied only when the backend's provenance
+  // label says the document itself confirmed it ('extracted').
+  const staged = draft.stagedUpload
+  let documentImportNote: string | null = null
+  if (staged) {
+    const offeringsFaqs = `${staged.offerings?.length ?? 0} offerings and ${staged.faqs?.length ?? 0} FAQs`
+    if (staged.extraction_mode === 'kit') {
+      documentImportNote = `Menu of ${staged.menu_items?.length ?? 0} item(s) from your document goes into this draft; ${offeringsFaqs} were extracted.`
+    } else {
+      const src = staged.section_sources ?? {}
+      const applied: string[] = []
+      if (src.menu === 'extracted')
+        applied.push(`the menu (${staged.menu_items?.length ?? 0} items)`)
+      if (src.business_hours === 'extracted') applied.push('business hours')
+      if (src.guardrails === 'extracted') applied.push('tone and guardrails')
+      const skipped: string[] = []
+      if (src.menu !== 'extracted') skipped.push('the menu')
+      if (src.business_hours !== 'extracted') skipped.push('business hours')
+      if (src.guardrails !== 'extracted') skipped.push('tone and guardrails')
+      documentImportNote =
+        `${offeringsFaqs} were extracted from your document.` +
+        (applied.length ? ` Applied from the document: ${applied.join(', ')}.` : '') +
+        (skipped.length
+          ? ` Not applied — not confirmed in the document: ${skipped.join(', ')}.`
+          : '')
+    }
+  }
+
   const rows: { label: string; value: React.ReactNode; step: number }[] = [
     { label: 'Company', value: draft.companyName || '—', step: 0 },
     { label: 'Tenant id', value: draft.tenantId || '—', step: 0 },
@@ -1002,14 +1055,11 @@ function ReviewStep({
       value: draft.neverState ? draft.neverState.split('\n').filter(Boolean).length + ' rule(s)' : '—',
       step: 5,
     },
-    ...(draft.stagedUpload
+    ...(documentImportNote
       ? [
           {
             label: 'Document import',
-            value:
-              draft.stagedUpload.extraction_mode === 'kit'
-                ? `Menu of ${draft.stagedUpload.menu_items?.length ?? 0} item(s) from your document goes into this draft; ${draft.stagedUpload.offerings?.length ?? 0} offerings and ${draft.stagedUpload.faqs?.length ?? 0} FAQs were extracted.`
-                : `${draft.stagedUpload.offerings?.length ?? 0} offerings and ${draft.stagedUpload.faqs?.length ?? 0} FAQs were extracted from your document. Its menu, hours and tone were not applied — the extraction could not confirm them in the document.`,
+            value: documentImportNote,
             step: 0,
           },
         ]

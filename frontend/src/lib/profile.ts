@@ -347,17 +347,20 @@ const SERVICE_ANSWER_KEYS = ['services', 'offerings', 'categories', 'products', 
  *  - values the wizard itself pre-fills (tone, timezone, open/close times,
  *    escalation message, the all-week open days) may be replaced while they
  *    still equal the untouched defaults — anything else counts as typed;
- *  - PROVENANCE: the staged payload's `extraction_mode` is the only
- *    provenance signal the backend provides. In `kit` mode every section
- *    was parsed out of the document itself, so everything may fill. In
- *    `universal` mode the extractor mixes document-derived values with
- *    template defaults and does not say which is which: brand contacts are
- *    regex/LLM-extracted from the text (document-derived), but business
- *    hours fall back to hard-coded defaults, guardrails to the template,
- *    and a short menu is silently replaced by the vertical template menu.
- *    So in universal mode only brand, contacts and the services list fill;
- *    tone, hours, guardrails and the menu are left alone rather than
- *    dressing template defaults up as the company's own details;
+ *  - PROVENANCE: the staged payload labels each section in
+ *    `section_sources` ('extracted' | 'template' | 'mixed'). In `kit`
+ *    mode every section was parsed out of the document itself, so
+ *    everything may fill. In `universal` mode the extractor mixes
+ *    document-derived values with template defaults: brand contacts are
+ *    regex/LLM-extracted from the text (document-derived, they always
+ *    fill), but business hours may be hard-coded defaults, guardrails
+ *    the template, and a short menu may be the vertical template menu
+ *    substituted in. So in universal mode a section beyond brand /
+ *    contacts / services fills ONLY when its label is 'extracted' —
+ *    'template' and 'mixed' are left alone rather than dressing
+ *    template defaults up as the company's own details. (Payloads from
+ *    an older backend carry no labels; everything unlabelled is treated
+ *    as unconfirmed, i.e. the conservative behaviour.);
  *  - the staged payload itself is carried on `stagedUpload`; in kit mode
  *    `draftToSnapshot` puts its menu into the draft snapshot — per the
  *    two-source rule, the menu comes from this document;
@@ -373,6 +376,13 @@ export function applyStagedToDraft(
 ): { draft: WizardDraft; filled: string[]; mode: 'kit' | 'universal' } {
   const mode: 'kit' | 'universal' = staged.extraction_mode === 'kit' ? 'kit' : 'universal'
   const fromKit = mode === 'kit'
+  // Per-section trust for the template-risky sections: a kit parse is
+  // document-derived wholesale; in universal mode only a section the
+  // backend labelled 'extracted' may fill.
+  const sources = staged.section_sources ?? {}
+  const trustGuardrails = fromKit || sources.guardrails === 'extracted'
+  const trustHours = fromKit || sources.business_hours === 'extracted'
+  const trustMenu = fromKit || sources.menu === 'extracted'
   const next: WizardDraft = { ...draft, answers: { ...draft.answers } }
   const filled: string[] = []
   const defaults = emptyDraft()
@@ -411,10 +421,11 @@ export function applyStagedToDraft(
     (v) => (next.notificationsSupportEmail = v),
   )
 
-  // Tone, guardrails and business hours fill ONLY from a kit parse: in
-  // universal mode those staged values may be template defaults wearing the
-  // document's clothes (see the provenance note above).
-  if (fromKit) {
+  // Tone, guardrails and business hours fill only when the section is
+  // trusted: a kit parse, or a universal section the backend labelled
+  // 'extracted' (see the provenance note above). The sections are gated
+  // separately — extracted hours say nothing about the guardrails.
+  if (trustGuardrails) {
     const rails = staged.guardrails ?? ({} as StagedOnboardingDraft['guardrails'])
     const verticalTone = getVertical(next.vertical).tone
     fillText('Tone', next.tone, rails.tone, (v) => (next.tone = v), next.tone === verticalTone)
@@ -435,7 +446,9 @@ export function applyStagedToDraft(
       (v) => (next.escalationMessage = v),
       next.escalationMessage === defaults.escalationMessage,
     )
+  }
 
+  if (trustHours) {
     const hours = staged.business_hours ?? ({} as StagedOnboardingDraft['business_hours'])
     // Open/close times arrive pre-filled with the wizard defaults on a fresh
     // draft, so — like tone and timezone — the document may replace a value
@@ -492,10 +505,11 @@ export function applyStagedToDraft(
 
   const menuCount = (staged.menu_items ?? []).filter((m) => m && (m.title || m.id)).length
   next.stagedUpload = { ...staged, tenant_id: draft.tenantId || staged.tenant_id }
-  // The menu is claimed (and applied by draftToSnapshot) only when it was
-  // parsed from the document itself — a kit. A universal-mode menu may be
-  // the vertical template substituted for a short extraction.
-  if (menuCount && fromKit) {
+  // The menu is claimed (and applied by draftToSnapshot) only when it is
+  // trusted: parsed from a kit, or labelled 'extracted' in universal
+  // mode. An unlabelled/template universal menu may be the vertical
+  // template substituted for a short extraction.
+  if (menuCount && trustMenu) {
     filled.push(`Menu (${menuCount} item${menuCount === 1 ? '' : 's'} from the document)`)
   }
 
@@ -569,16 +583,20 @@ export function draftToSnapshot(draft: WizardDraft): ProfileSnapshot {
     snapshot.menu = { header: draft.companyName, body: draft.greeting.trim() }
   }
 
-  // Two-source rule: the menu comes from the tenant's own document. When the
-  // admin staged a filled kit in the wizard, its menu items ride along in
-  // the draft snapshot (layers merge menu buttons by id at publish) — still
-  // only a draft until a super admin approves the submission. A
-  // universal-mode staged menu is NOT carried: the extractor may have
-  // substituted the vertical template menu for a short extraction, and the
-  // payload carries no marker telling the two apart (only extraction_mode).
-  const stagedMenu = (
-    draft.stagedUpload?.extraction_mode === 'kit' ? draft.stagedUpload.menu_items ?? [] : []
-  ).filter((item) => item && (item.title || item.id))
+  // Two-source rule: the menu comes from the tenant's own document. When
+  // the admin staged a document in the wizard, its menu items ride along
+  // in the draft snapshot (layers merge menu buttons by id at publish) —
+  // still only a draft until a super admin approves the submission. A
+  // universal-mode staged menu is carried ONLY when the backend labelled
+  // it 'extracted' in section_sources: otherwise the extractor may have
+  // substituted the vertical template menu for a short extraction.
+  const stagedUpload = draft.stagedUpload
+  const menuTrusted =
+    stagedUpload?.extraction_mode === 'kit' ||
+    stagedUpload?.section_sources?.menu === 'extracted'
+  const stagedMenu = (menuTrusted ? stagedUpload?.menu_items ?? [] : []).filter(
+    (item) => item && (item.title || item.id),
+  )
   if (stagedMenu.length) {
     snapshot.menu = {
       ...(snapshot.menu ?? {}),
