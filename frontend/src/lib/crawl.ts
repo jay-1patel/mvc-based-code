@@ -28,7 +28,8 @@ export interface CrawlSchedule {
   tenant_id: string
   url: string
   interval_hours: number
-  max_pages: number
+  /** Legacy field, no longer applied — crawls have no page-count limit. */
+  max_pages: number | null
   auto_publish: boolean
   is_enabled: boolean
   last_status?: string | null
@@ -118,6 +119,7 @@ export const crawlApi = {
   listRuns: (tenantId: string, signal?: AbortSignal) =>
     api.get<CrawlRunsResponse>(`${base(tenantId)}/crawl-runs`, signal),
 
+  // No max_pages is sent: crawls are unlimited and fetch every page found.
   start: (tenantId: string, url: string) =>
     api.post<{ ok: boolean; status: string; run_id: number; run: CrawlRun }>(
       `${base(tenantId)}/crawl`,

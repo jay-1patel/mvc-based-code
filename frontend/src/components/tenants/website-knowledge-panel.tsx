@@ -16,6 +16,7 @@ import { tenantsApi } from '@/lib/tenants'
 import {
   crawlApi,
   type CrawlExportFormat,
+  type CrawlRun,
   type CrawlStagedResponse,
 } from '@/lib/crawl'
 import { saveBlob } from '@/lib/uploads'
@@ -39,6 +40,22 @@ import { useToast } from '@/components/ui/toast'
  */
 
 type BadgeTone = 'neutral' | 'success' | 'warning' | 'danger'
+
+/**
+ * Page-count label for a run. Crawls are unlimited, so a finished run that
+ * fetched everything it found reads "95 pages crawled". The "X of Y"
+ * framing is kept only when some discovered pages genuinely did not get
+ * scraped (fetch errors, robots, non-HTML) — including historic runs that
+ * were recorded under the old 50-page cap.
+ */
+function pagesCrawledLabel(run: CrawlRun): string {
+  const scraped = run.pages_scraped ?? 0
+  const found = run.pages_found ?? 0
+  if (run.status === 'done' && found > 0 && scraped >= found) {
+    return `${scraped} pages crawled`
+  }
+  return `${scraped} of ${found} pages crawled`
+}
 
 function runStatusTone(status: string): BadgeTone {
   if (status === 'done') return 'success'
@@ -191,7 +208,7 @@ export function WebsiteKnowledgePanel({ tenantId }: { tenantId: string }) {
                       </span>
                       <Badge tone={runStatusTone(run.status)}>{run.status}</Badge>
                       <span className="text-xs text-slate-400">
-                        {run.pages_scraped ?? 0} of {run.pages_found ?? 0} pages crawled
+                        {pagesCrawledLabel(run)}
                       </span>
                       <span className="min-w-0 flex-1 truncate text-xs text-slate-500">
                         {run.source_url}
