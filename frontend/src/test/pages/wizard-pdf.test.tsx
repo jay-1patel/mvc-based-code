@@ -57,12 +57,43 @@ const STAGED: StagedOnboardingDraft = {
 }
 
 /**
- * The same payload as a general (universal) extraction. Without per-field
- * provenance, hours/tone/guardrails/menu in such a payload may be template
- * defaults substituted by the extractor — only brand, contacts and the
- * services list are known to come from the document text.
+ * The same payload as a general (universal) extraction, WITHOUT provenance
+ * labels (an older backend). Hours/tone/guardrails/menu in such a payload
+ * may be template defaults substituted by the extractor — only brand,
+ * contacts and the services list are known to come from the document text,
+ * so unlabelled sections stay unapplied.
  */
 const STAGED_UNIVERSAL: StagedOnboardingDraft = { ...STAGED, extraction_mode: 'universal' }
+
+/**
+ * Universal extraction WITH provenance labels: the backend confirmed the
+ * menu and the brand in the document itself, but the hours and guardrails
+ * in this payload are the template stand-ins.
+ */
+const STAGED_UNIVERSAL_MENU_EXTRACTED: StagedOnboardingDraft = {
+  ...STAGED,
+  extraction_mode: 'universal',
+  section_sources: {
+    brand: 'extracted',
+    business_hours: 'template',
+    guardrails: 'template',
+    menu: 'extracted',
+    offerings: 'extracted',
+  },
+}
+
+/** Same, but the confirmed sections are the hours and the guardrails. */
+const STAGED_UNIVERSAL_HOURS_RAILS_EXTRACTED: StagedOnboardingDraft = {
+  ...STAGED,
+  extraction_mode: 'universal',
+  section_sources: {
+    brand: 'extracted',
+    business_hours: 'extracted',
+    guardrails: 'extracted',
+    menu: 'template',
+    offerings: 'extracted',
+  },
+}
 
 const ADMIN_IDENTITY = {
   id: 2,
@@ -170,6 +201,53 @@ describe('applyStagedToDraft (unit)', () => {
     expect(ids).not.toContain('services')
     expect(ids).not.toContain('contact')
   })
+
+  it('universal mode applies the menu when the backend labels it extracted', () => {
+    const base: WizardDraft = {
+      ...emptyDraft(),
+      tenantId: 'acme',
+      vertical: 'ecommerce',
+      companyName: 'Acme Retail',
+    }
+    const { draft, filled } = applyStagedToDraft(base, STAGED_UNIVERSAL_MENU_EXTRACTED)
+    expect(filled).toContain('Menu (2 items from the document)')
+    const snapshot = draftToSnapshot(draft)
+    expect(snapshot.menu?.buttons?.map((b) => b.id)).toEqual(['services', 'contact'])
+    // The label is per-section: hours and guardrails are 'template' in
+    // this payload, so they still do NOT fill.
+    expect(draft.openTime).toBe(base.openTime)
+    expect(draft.tone).toBe(base.tone)
+    expect(draft.neverState).toBe('')
+  })
+
+  it('universal mode keeps the menu out when the backend labels it template', () => {
+    const base: WizardDraft = {
+      ...emptyDraft(),
+      tenantId: 'acme',
+      vertical: 'ecommerce',
+      companyName: 'Acme Retail',
+    }
+    const { draft, filled } = applyStagedToDraft(base, STAGED_UNIVERSAL_HOURS_RAILS_EXTRACTED)
+    expect(filled.join(' ')).not.toContain('Menu (')
+    const snapshot = draftToSnapshot(draft)
+    const ids = snapshot.menu?.buttons?.map((b) => b.id) ?? []
+    expect(ids).not.toContain('services')
+    expect(ids).not.toContain('contact')
+  })
+
+  it('universal mode applies hours and guardrails when labelled extracted', () => {
+    // Plain emptyDraft: its tone is still the generic vertical's default,
+    // which is exactly the state in which a document tone may replace it.
+    const base: WizardDraft = { ...emptyDraft(), tenantId: 'acme' }
+    const { draft, filled } = applyStagedToDraft(base, STAGED_UNIVERSAL_HOURS_RAILS_EXTRACTED)
+    expect(draft.openTime).toBe('10:00')
+    expect(draft.closeTime).toBe('20:00')
+    expect(draft.openDays).toEqual([1, 2, 3, 4, 5])
+    expect(draft.tone).toBe('formal and compliant')
+    expect(draft.neverState).toBe('We deliver in one hour')
+    expect(filled).toContain('Tone')
+    expect(filled).toContain('Working days')
+  })
 })
 
 describe('register wizard PDF auto-fill (admin, awaiting approval)', () => {
@@ -220,6 +298,24 @@ describe('register wizard PDF auto-fill (admin, awaiting approval)', () => {
     expect(summary.textContent).not.toContain('Menu (')
     expect(summary.textContent).not.toContain('Working days')
     expect(summary.textContent).toMatch(/did not confirm those/)
+  })
+
+  it('universal with an extracted menu names it as filled, not unconfirmed', async () => {
+    testState.respond('POST /api/admin/tenants/acme/onboarding/stage', () => ({
+      body: STAGED_UNIVERSAL_MENU_EXTRACTED,
+    }))
+    await renderLockedAdminWizard()
+    await pickTenantAndUpload()
+
+    const summary = await screen.findByText(/Filled in from your document:/)
+    // The extracted menu is listed among the filled-in sections…
+    expect(summary.textContent).toContain('Menu (2 items from the document)')
+    // …and only the sections the backend did NOT confirm are named as
+    // unconfirmed — the menu is not among them.
+    const notApplied = summary.textContent?.match(/Not applied:([^—]*)/)?.[1] ?? ''
+    expect(notApplied).toContain('working hours')
+    expect(notApplied).toContain('tone and guardrails')
+    expect(notApplied).not.toContain('menu')
   })
 
   it('shows a clear error and stays fully usable when staging fails', async () => {
