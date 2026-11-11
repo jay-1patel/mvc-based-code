@@ -25,6 +25,7 @@ import { LiveInboxPanel } from '@/components/tenants/live-inbox-panel'
 import { CallbacksPanel } from '@/components/tenants/callbacks-panel'
 import { ComplaintsPanel } from '@/components/tenants/complaints-panel'
 import { UploadsPanel } from '@/components/tenants/uploads-panel'
+import { WebsiteKnowledgePanel } from '@/components/tenants/website-knowledge-panel'
 import { AdminChatPanel } from '@/components/tenants/admin-chat'
 
 import { IntentsEditor } from '@/components/tenants/intents-editor'
@@ -175,6 +176,9 @@ function Router() {
       {route.view === 'complaints' && <ComplaintsPanel tenantId={route.tenantId} />}
       {route.view === 'callbacks' && <CallbacksPanel tenantId={route.tenantId} />}
       {route.view === 'uploads' && <UploadsPanel tenantId={route.tenantId} />}
+      {route.view === 'website-knowledge' && (
+        <WebsiteKnowledgePanel tenantId={route.tenantId} />
+      )}
       {route.view === 'chat' && <AdminChatPanel tenantId={route.tenantId} />}
       {route.view === 'versions' && <VersionsPanel tenantId={route.tenantId} />}
       {route.view === 'layers' && <LayersPanel tenantId={route.tenantId} />}
@@ -226,6 +230,7 @@ const KNOWN_VIEWS = [
   'careers',
   'benefits',
   'uploads',
+  'website-knowledge',
   'chat',
   'chat-history',
   'inbox',
