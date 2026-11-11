@@ -200,7 +200,16 @@ async def stage_onboarding_document_tenant(
         raise HTTPException(status_code=400, detail="tenant_id is required")
 
     from services.auto_bifurcator import AutoBifurcator
-    actor = principal.get("actor") or {"username": "admin", "role": "super_admin", "tenant_id": tid}
+    # Attribute the staging to the actual caller. require_tenant_access()
+    # never puts an "actor" key on the principal, so the old fallback made
+    # every tenant admin stage documents as a phantom super admin named
+    # "admin" — build the actor from the principal itself, exactly like
+    # the publish endpoint below does.
+    actor = principal.get("actor") or {
+        "username": principal.get("username") or principal.get("label") or "admin",
+        "role": principal.get("role") or "admin",
+        "tenant_id": tid,
+    }
     bifurcator = AutoBifurcator(tenant_id=tid, actor=actor)
     try:
         staged = await run_in_threadpool(

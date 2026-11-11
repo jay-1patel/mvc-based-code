@@ -1757,6 +1757,124 @@ class AutoBifurcator:
             by_name[name] = merged
         return list(by_name.values())
 
+    # ── Section provenance (staged payloads) ───────────────────────────
+    # The universal extractor merges genuinely document-derived values
+    # with vertical-template stand-ins and, historically, did not say
+    # which was which. ``section_sources`` labels each staged section so
+    # consumers (the onboarding wizard) can trust a section only when it
+    # really came out of the document:
+    #   "extracted" — the values came from the document (LLM parts or
+    #                 deterministic heuristic/regex extraction);
+    #   "template"  — a fallback/default supplied the values;
+    #   "mixed"     — the section carries a document signal, but its
+    #                 headline values still include defaults.
+    # The labels describe the pipeline exactly as it behaves today; no
+    # extraction behaviour changes here.
+
+    @staticmethod
+    def _business_hours_source(raw_hours: Any) -> str:
+        """Provenance of the staged business hours, judged on the
+        PRE-sanitize draft hours.
+
+        The sanitizer fills open/close with hard-coded 09:30/18:30
+        whenever they are missing, and the heuristic extractor seeds
+        those same defaults unconditionally — so the mere presence of
+        open/close in the payload proves nothing. The trustworthy
+        document signals are the ones the merge actually lets through:
+        a free-text ``raw`` hours label (regex-found in the document
+        and parsed by the sanitizer) or an ``always_open`` claim.
+        """
+        if not isinstance(raw_hours, dict):
+            return "template"
+        raw_label = str(raw_hours.get("raw") or "").strip()
+        if raw_label:
+            times = re.findall(
+                r"(\d{1,2}:\d{2})\s*(AM|PM)?", raw_label, flags=re.IGNORECASE
+            )
+            if len(times) >= 2:
+                return "extracted"
+            low = raw_label.lower()
+            if "24/7" in low or "always" in low:
+                return "extracted"
+            # A labelled hours line exists in the document but its times
+            # could not be parsed — open/close are still the defaults.
+            return "mixed"
+        if raw_hours.get("always_open"):
+            return "extracted"
+        return "template"
+
+    @staticmethod
+    def _menu_section_source(menu_items: List[Dict[str, Any]], vertical: str) -> str:
+        """Provenance of the staged menu.
+
+        The merge (and, for very short menus, ``_stage_universal``
+        itself) tops a short extracted menu up with the vertical's
+        default buttons, so the payload alone cannot be trusted. Each
+        item is classified against the vertical defaults by normalized
+        id/title key: an item whose keys all match a default counts as
+        template. That errs conservative — a document item that happens
+        to share a default's id/title counts as template too — which is
+        the safe direction for a consumer deciding whether to trust it.
+        """
+        items = [i for i in (menu_items or []) if isinstance(i, dict)]
+        if not items:
+            return "template"
+        default_keys = set()
+        for d in _menu_items_from_vertical_defaults(vertical, limit=10):
+            for field in ("id", "title"):
+                key = _normalize_menu_button_key(str(d.get(field) or ""))
+                if key:
+                    default_keys.add(key)
+
+        def _is_default(item: Dict[str, Any]) -> bool:
+            keys = {
+                _normalize_menu_button_key(str(item.get(f) or ""))
+                for f in ("id", "title")
+            }
+            keys.discard("")
+            return bool(keys) and keys <= default_keys
+
+        flags = [_is_default(i) for i in items]
+        if all(flags):
+            return "template"
+        if any(flags):
+            return "mixed"
+        return "extracted"
+
+    def _universal_section_sources(
+        self,
+        draft: Dict[str, Any],
+        *,
+        brand_name_fabricated: bool,
+        guardrails_from_template: bool,
+        menu_items: List[Dict[str, Any]],
+        vertical: str,
+        offerings: List[Dict[str, Any]],
+    ) -> Dict[str, str]:
+        """Assemble the ``section_sources`` map for a universal staging."""
+        draft_brand = draft.get("brand") if isinstance(draft.get("brand"), dict) else {}
+        if not brand_name_fabricated:
+            brand_source = "extracted"
+        elif any(
+            str(draft_brand.get(k) or "").strip()
+            for k in ("support_email", "support_phone", "website", "tagline")
+        ):
+            # The name is the tenant-id stand-in, but real contact
+            # details were extracted from the document.
+            brand_source = "mixed"
+        else:
+            brand_source = "template"
+        return {
+            "brand": brand_source,
+            "business_hours": self._business_hours_source(draft.get("business_hours")),
+            "guardrails": "template" if guardrails_from_template else "extracted",
+            "menu": self._menu_section_source(menu_items, vertical),
+            # Offerings are never filled from vertical templates in this
+            # path (heuristic tables/headings or LLM only); an empty
+            # list therefore means nothing document-derived was found.
+            "offerings": "extracted" if offerings else "template",
+        }
+
     def _stage_universal(
         self,
         extracted_docs: List[Dict[str, Any]],
@@ -1773,7 +1891,8 @@ class AutoBifurcator:
                 tenant_id=self.tenant_id,
             )
         brand = dict(draft.get("brand") or {})
-        if not brand.get("name"):
+        brand_name_fabricated = not brand.get("name")
+        if brand_name_fabricated:
             brand["name"] = self.tenant_id.replace("-", " ").replace("_", " ").title()
         business_hours = _sanitize_business_hours(draft.get("business_hours") or {})
         vertical = draft.get("vertical") or _guess_vertical(combined_text)
@@ -1799,7 +1918,13 @@ class AutoBifurcator:
             intents = list(by_name.values())
         intents = self._enrich_intents_with_offerings(intents, offerings, brand.get("name") or "")
         guardrails = draft.get("guardrails") if isinstance(draft.get("guardrails"), dict) else {}
-        if not guardrails or not guardrails.get("tone"):
+        # NOTE: merge_bifurcation_results does not carry a guardrails
+        # key, so in universal mode this fallback is currently ALWAYS
+        # taken — the staged guardrails are the template defaults. The
+        # provenance label follows the branch actually taken, so it
+        # stays truthful if the merge ever carries extracted rails.
+        guardrails_from_template = not guardrails or not guardrails.get("tone")
+        if guardrails_from_template:
             guardrails = self._default_guardrails()
         staged = {
             "status": "staged",
@@ -1815,6 +1940,14 @@ class AutoBifurcator:
             "guardrails": guardrails,
             "source_files": [d["filename"] for d in extracted_docs],
             "extraction_mode": "universal",
+            "section_sources": self._universal_section_sources(
+                draft,
+                brand_name_fabricated=brand_name_fabricated,
+                guardrails_from_template=guardrails_from_template,
+                menu_items=menu_items,
+                vertical=vertical,
+                offerings=offerings,
+            ),
             "stats": {
                 "offerings_count": len(offerings),
                 "menu_items_count": len(menu_items),
@@ -2041,6 +2174,15 @@ class AutoBifurcator:
             "guardrails": guardrails,
             "source_files": [d["filename"] for d in extracted_docs],
             "extraction_mode": "kit",
+            # Kit documents are parsed section-by-section out of the
+            # document itself, so every section is document-derived.
+            "section_sources": {
+                "brand": "extracted",
+                "business_hours": "extracted",
+                "guardrails": "extracted",
+                "menu": "extracted",
+                "offerings": "extracted",
+            },
             "kit_sections": presence,
             "stats": {
                 "offerings_count": len(offerings),

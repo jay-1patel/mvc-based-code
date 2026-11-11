@@ -22,6 +22,7 @@ import {
   type Tenant,
 } from './types'
 import { getVertical } from './verticals'
+import type { StagedOnboardingDraft } from './uploads'
 
 // ── shared wizard/editor data ───────────────────────────────────────────────
 
@@ -331,6 +332,190 @@ export function draftFromProfile(profile: ResolvedProfile, tenant: Tenant): Wiza
   }
 }
 
+// ── staged document → wizard draft ─────────────────────────────────────────
+
+/** Answer keys that hold the "what we sell / do" list, per vertical. */
+const SERVICE_ANSWER_KEYS = ['services', 'offerings', 'categories', 'products', 'departments']
+
+/**
+ * Merge a staged onboarding document (the tenant admin's own company PDF /
+ * DOCX / MD, parsed by the stage endpoint) into the wizard draft so the
+ * later steps arrive pre-filled.
+ *
+ * Rules (the admin stays in charge):
+ *  - a field the admin already filled in is NEVER overwritten;
+ *  - values the wizard itself pre-fills (tone, timezone, open/close times,
+ *    escalation message, the all-week open days) may be replaced while they
+ *    still equal the untouched defaults — anything else counts as typed;
+ *  - PROVENANCE: the staged payload labels each section in
+ *    `section_sources` ('extracted' | 'template' | 'mixed'). In `kit`
+ *    mode every section was parsed out of the document itself, so
+ *    everything may fill. In `universal` mode the extractor mixes
+ *    document-derived values with template defaults: brand contacts are
+ *    regex/LLM-extracted from the text (document-derived, they always
+ *    fill), but business hours may be hard-coded defaults, guardrails
+ *    the template, and a short menu may be the vertical template menu
+ *    substituted in. So in universal mode a section beyond brand /
+ *    contacts / services fills ONLY when its label is 'extracted' —
+ *    'template' and 'mixed' are left alone rather than dressing
+ *    template defaults up as the company's own details. (Payloads from
+ *    an older backend carry no labels; everything unlabelled is treated
+ *    as unconfirmed, i.e. the conservative behaviour.);
+ *  - the staged payload itself is carried on `stagedUpload`; in kit mode
+ *    `draftToSnapshot` puts its menu into the draft snapshot — per the
+ *    two-source rule, the menu comes from this document;
+ *  - nothing here publishes: the wizard still saves a draft and submits it
+ *    for super admin approval, exactly as a manual completion does.
+ *
+ * Returns the merged draft, the human-readable list of what was filled
+ * (for the summary), and the extraction mode that decided the rules.
+ */
+export function applyStagedToDraft(
+  draft: WizardDraft,
+  staged: StagedOnboardingDraft,
+): { draft: WizardDraft; filled: string[]; mode: 'kit' | 'universal' } {
+  const mode: 'kit' | 'universal' = staged.extraction_mode === 'kit' ? 'kit' : 'universal'
+  const fromKit = mode === 'kit'
+  // Per-section trust for the template-risky sections: a kit parse is
+  // document-derived wholesale; in universal mode only a section the
+  // backend labelled 'extracted' may fill.
+  const sources = staged.section_sources ?? {}
+  const trustGuardrails = fromKit || sources.guardrails === 'extracted'
+  const trustHours = fromKit || sources.business_hours === 'extracted'
+  const trustMenu = fromKit || sources.menu === 'extracted'
+  const next: WizardDraft = { ...draft, answers: { ...draft.answers } }
+  const filled: string[] = []
+  const defaults = emptyDraft()
+  const text = (value: unknown): string => (typeof value === 'string' ? value.trim() : '')
+
+  const fillText = (
+    label: string,
+    current: string,
+    value: string | undefined,
+    assign: (v: string) => void,
+    replaceDefault = false,
+  ) => {
+    const v = text(value)
+    if (!v || v === current) return
+    if (current.trim() && !replaceDefault) return
+    assign(v)
+    filled.push(label)
+  }
+
+  const brand = staged.brand ?? ({} as StagedOnboardingDraft['brand'])
+  fillText('Company name', next.companyName, brand.name, (v) => (next.companyName = v))
+  fillText('Display name', next.displayName, brand.name, (v) => (next.displayName = v))
+  fillText('Website', next.website, brand.website, (v) => (next.website = v))
+  fillText('Bot name', next.botName, brand.bot_name, (v) => (next.botName = v))
+  fillText('Tagline', next.tagline, brand.tagline, (v) => (next.tagline = v))
+  fillText('Closing signature', next.signature, brand.signature, (v) => (next.signature = v))
+  fillText('Support email', next.supportEmail, brand.support_email, (v) => (next.supportEmail = v))
+  fillText('Support phone', next.supportPhone, brand.support_phone, (v) => (next.supportPhone = v))
+  // Notifications: the document's contact email is the destination the admin
+  // most likely wants leads sent to as well.
+  fillText('Sales / enquiries email', next.salesEmail, brand.support_email, (v) => (next.salesEmail = v))
+  fillText(
+    'Notifications support email',
+    next.notificationsSupportEmail,
+    brand.support_email,
+    (v) => (next.notificationsSupportEmail = v),
+  )
+
+  // Tone, guardrails and business hours fill only when the section is
+  // trusted: a kit parse, or a universal section the backend labelled
+  // 'extracted' (see the provenance note above). The sections are gated
+  // separately — extracted hours say nothing about the guardrails.
+  if (trustGuardrails) {
+    const rails = staged.guardrails ?? ({} as StagedOnboardingDraft['guardrails'])
+    const verticalTone = getVertical(next.vertical).tone
+    fillText('Tone', next.tone, rails.tone, (v) => (next.tone = v), next.tone === verticalTone)
+    const neverLines = (rails.never_state ?? []).map((s) => text(s)).filter(Boolean)
+    if (neverLines.length && !next.neverState.trim()) {
+      next.neverState = neverLines.join('\n')
+      filled.push('Never-state rules')
+    }
+    const triggers = (rails.escalation_triggers ?? []).map((s) => text(s)).filter(Boolean)
+    if (triggers.length && next.escalateKeywords.length === 0) {
+      next.escalateKeywords = triggers
+      filled.push('Escalation keywords')
+    }
+    fillText(
+      'Escalation message',
+      next.escalationMessage,
+      rails.escalation_message,
+      (v) => (next.escalationMessage = v),
+      next.escalationMessage === defaults.escalationMessage,
+    )
+  }
+
+  if (trustHours) {
+    const hours = staged.business_hours ?? ({} as StagedOnboardingDraft['business_hours'])
+    // Open/close times arrive pre-filled with the wizard defaults on a fresh
+    // draft, so — like tone and timezone — the document may replace a value
+    // that is still exactly the untouched default.
+    fillText(
+      'Opens at',
+      next.openTime,
+      hours.open,
+      (v) => (next.openTime = v),
+      next.openTime === defaults.openTime,
+    )
+    fillText(
+      'Closes at',
+      next.closeTime,
+      hours.close,
+      (v) => (next.closeTime = v),
+      next.closeTime === defaults.closeTime,
+    )
+    fillText(
+      'Timezone',
+      next.timezone,
+      hours.timezone,
+      (v) => (next.timezone = v),
+      next.timezone === defaults.timezone,
+    )
+    const stagedDays = (hours.open_days ?? []).filter((d) => Number.isInteger(d))
+    const DEFAULT_DAYS = [0, 1, 2, 3, 4, 5, 6]
+    if (
+      stagedDays.length &&
+      JSON.stringify([...next.openDays].sort()) === JSON.stringify(DEFAULT_DAYS)
+    ) {
+      next.openDays = [...stagedDays].sort()
+      next.alwaysOpen = false
+      filled.push('Working days')
+    }
+  }
+
+  // "Your business": the document's offerings fill the vertical's services
+  // question when that question exists and is still unanswered.
+  const offeringNames = (staged.offerings ?? []).map((o) => text(o?.name)).filter(Boolean)
+  if (offeringNames.length) {
+    const questions = getVertical(next.vertical).questions
+    const key = SERVICE_ANSWER_KEYS.find((k) => questions.some((q) => q.key === k))
+    if (key) {
+      const current = next.answers[key]
+      const isEmpty = Array.isArray(current) ? current.length === 0 : !text(current as string)
+      if (isEmpty) {
+        const question = questions.find((q) => q.key === key)
+        next.answers[key] = question?.kind === 'chips' ? offeringNames : offeringNames.join(', ')
+        filled.push('Services list')
+      }
+    }
+  }
+
+  const menuCount = (staged.menu_items ?? []).filter((m) => m && (m.title || m.id)).length
+  next.stagedUpload = { ...staged, tenant_id: draft.tenantId || staged.tenant_id }
+  // The menu is claimed (and applied by draftToSnapshot) only when it is
+  // trusted: parsed from a kit, or labelled 'extracted' in universal
+  // mode. An unlabelled/template universal menu may be the vertical
+  // template substituted for a short extraction.
+  if (menuCount && trustMenu) {
+    filled.push(`Menu (${menuCount} item${menuCount === 1 ? '' : 's'} from the document)`)
+  }
+
+  return { draft: next, filled, mode }
+}
+
 // ── wizard → snapshot ──────────────────────────────────────────────────────
 
 export function draftToSnapshot(draft: WizardDraft): ProfileSnapshot {
@@ -396,6 +581,35 @@ export function draftToSnapshot(draft: WizardDraft): ProfileSnapshot {
 
   if (draft.greeting.trim()) {
     snapshot.menu = { header: draft.companyName, body: draft.greeting.trim() }
+  }
+
+  // Two-source rule: the menu comes from the tenant's own document. When
+  // the admin staged a document in the wizard, its menu items ride along
+  // in the draft snapshot (layers merge menu buttons by id at publish) —
+  // still only a draft until a super admin approves the submission. A
+  // universal-mode staged menu is carried ONLY when the backend labelled
+  // it 'extracted' in section_sources: otherwise the extractor may have
+  // substituted the vertical template menu for a short extraction.
+  const stagedUpload = draft.stagedUpload
+  const menuTrusted =
+    stagedUpload?.extraction_mode === 'kit' ||
+    stagedUpload?.section_sources?.menu === 'extracted'
+  const stagedMenu = (menuTrusted ? stagedUpload?.menu_items ?? [] : []).filter(
+    (item) => item && (item.title || item.id),
+  )
+  if (stagedMenu.length) {
+    snapshot.menu = {
+      ...(snapshot.menu ?? {}),
+      ...(snapshot.menu?.header || !draft.companyName ? {} : { header: draft.companyName }),
+      buttons: stagedMenu.map((item, index) => ({
+        id: item.id || `pdf_item_${index + 1}`,
+        title: item.title || item.id,
+        ...(item.description ? { description: item.description } : {}),
+        ...(item.section ? { section: item.section } : {}),
+        sort_order: index,
+        enabled: true,
+      })),
+    }
   }
 
   const channels = draft.channels
