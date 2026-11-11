@@ -6,6 +6,7 @@ NO auto_publish anywhere in this module.
 """
 from __future__ import annotations
 
+import copy
 import logging
 import os
 from typing import Any, Dict, List, Optional
@@ -340,6 +341,24 @@ def approve_crawl_run(
         logger.warning("D8_WEBSITE_SNAPSHOT_FAILED | tenant=%s", tenant_id, exc_info=True)
         current_website = ""
 
+    # ── Rule 1: menu / brand / business hours / intents come ONLY from ──
+    # the tenant's own PDF/kit — a website crawl publishes knowledge
+    # (KB, FAQs, product knowledge) and must never rewrite them. Snapshot
+    # the live profile sections now; the publish below is fed a
+    # knowledge-only payload, and any drift is restored afterwards
+    # (same belt-and-braces pattern as the D8 lock above).
+    RULE1_LOCKED_KEYS = ("menu", "brand", "business_hours", "intents")
+    profile_lock: Dict[str, Any] = {}
+    try:
+        live_payload_before = tenancy_store.get_current_payload(tenant_id)
+        if isinstance(live_payload_before, dict):
+            for key in RULE1_LOCKED_KEYS:
+                if key in live_payload_before:
+                    profile_lock[key] = copy.deepcopy(live_payload_before[key])
+    except Exception:
+        logger.warning("RULE1_SNAPSHOT_FAILED | tenant=%s", tenant_id, exc_info=True)
+        profile_lock = {}
+
     # Promote staged files → served product-images; rewrite media URLs
     url_map = promote_images_to_product_dir(tenant_id, run_id, images)
     brand = bifurcation.get("brand") or {}
@@ -379,11 +398,15 @@ def approve_crawl_run(
     bifurcation["vertical"] = vertical
 
     extracted_name = (brand.get("name") or tenant_id).strip()
+    # Rule 1: an existing tenant keeps its own display name — the website's
+    # brand guess must not rename it (ensure_tenant overwrites when given
+    # a non-empty name). Only a brand-new tenant row takes the staged name.
+    existing_display_name = (tenant_row.get("display_name") or "").strip()
     tenancy_store.ensure_tenant(
         tenant_id=tenant_id,
         slug=tenant_id,
         vertical=vertical,
-        display_name=extracted_name,
+        display_name=existing_display_name or extracted_name,
         status="active",
     )
 
@@ -399,21 +422,36 @@ def approve_crawl_run(
         for p in (payload.get("crawl") or {}).get("pages") or []
     ]
 
+    # ── Rule 1: publish KNOWLEDGE ONLY ──
+    # The staged bifurcation also carries website guesses for brand, menu,
+    # business hours and intents. None of those may reach the publisher:
+    # apply_bifurcation is fed an allow-listed payload (vertical +
+    # offerings + FAQs + KB articles), so the PDF-owned profile sections
+    # are never even candidates for a write. The snapshot/restore below
+    # covers anything the publisher derives on its own (e.g. the
+    # offering-linked intents it synthesises from the catalog).
+    knowledge_bifurcation: Dict[str, Any] = {
+        "vertical": vertical,
+        "offerings": bifurcation.get("offerings") or [],
+        "faqs": bifurcation.get("faqs") or [],
+        "knowledge_articles": bifurcation.get("knowledge_articles") or [],
+    }
+
     try:
         from services.auto_bifurcator import AutoBifurcator
         bifurcator = AutoBifurcator(tenant_id=tenant_id, actor=actor)
         summary = bifurcator.apply_bifurcation(
-            bifurcation=bifurcation,
+            bifurcation=knowledge_bifurcation,
             raw_files=raw_files,
             auto_publish=True,
             source_file=f"crawl_run_{run_id}.md",
         )
     except Exception as exc:
         logger.error("Approve AutoBifurcator failed: %s — falling back", exc, exc_info=True)
-        summary = onboarder._direct_commit(tenant_id, bifurcation, vertical, True)
+        summary = onboarder._direct_commit(tenant_id, knowledge_bifurcation, vertical, True)
 
-    onboarder._sync_products_with_images(tenant_id, bifurcation.get("offerings") or [])
-    faqs_created = onboarder._ingest_faqs_dataset(tenant_id, bifurcation.get("faqs") or [])
+    onboarder._sync_products_with_images(tenant_id, knowledge_bifurcation.get("offerings") or [])
+    faqs_created = onboarder._ingest_faqs_dataset(tenant_id, knowledge_bifurcation.get("faqs") or [])
     summary["faqs_created"] = faqs_created
 
     try:
@@ -464,6 +502,35 @@ def approve_crawl_run(
     except Exception:
         logger.warning("D8_WEBSITE_VERIFY_FAILED | tenant=%s", tenant_id, exc_info=True)
 
+    # ── Rule 1 belt-and-braces: verify the PDF-owned profile sections ──
+    # survived publishing byte-identical; restore any that drifted.
+    profile_sections_restored: List[str] = []
+    if profile_lock:
+        try:
+            after_payload = tenancy_store.get_current_payload(tenant_id)
+            if isinstance(after_payload, dict):
+                drifted = [
+                    key for key, locked in profile_lock.items()
+                    if after_payload.get(key) != locked
+                ]
+                if drifted:
+                    logger.warning(
+                        "RULE1_PROFILE_RESTORE | tenant=%s run=%s | %s",
+                        tenant_id, run_id, drifted,
+                    )
+                    for key in drifted:
+                        after_payload[key] = copy.deepcopy(profile_lock[key])
+                    tenancy_store.save_draft(
+                        tenant_id, after_payload, updated_by=_actor_name(actor)
+                    )
+                    tenancy_store.publish_version(
+                        tenant_id, after_payload, published_by=_actor_name(actor)
+                    )
+                    tenancy_store.invalidate(tenant_id)
+                    profile_sections_restored = drifted
+        except Exception:
+            logger.warning("RULE1_VERIFY_FAILED | tenant=%s", tenant_id, exc_info=True)
+
     decide_crawl_staged(
         run_id, tenant_id, "published", decided_by=_actor_name(actor)
     )
@@ -482,6 +549,8 @@ def approve_crawl_run(
                     "faqs_created": faqs_created,
                     "images_promoted": len(url_map),
                     "skipped_fields": skipped_fields,
+                    "rule1_locked_sections": sorted(profile_lock.keys()),
+                    "profile_sections_restored": profile_sections_restored,
                 },
             )
     except Exception:
@@ -495,6 +564,8 @@ def approve_crawl_run(
         "products_live": len(products),
         "images_promoted": len(url_map),
         "skipped_fields": skipped_fields,
+        "rule1_locked_sections": sorted(profile_lock.keys()),
+        "profile_sections_restored": profile_sections_restored,
     })
     return summary
 
