@@ -18,6 +18,7 @@ import {
   FolderOpen,
   Gift,
   GitBranch,
+  Globe,
   History,
   Inbox,
   KeyRound,
@@ -112,6 +113,15 @@ export function buildTenantNav(opts: {
       id: 'uploads',
       label: 'Uploads',
       icon: Upload,
+      permissions: ['upload_faq', 'upload_kb', 'view_files', 'catalogue_new_arrival'],
+    },
+    {
+      // Website Knowledge: the crawl half of onboarding (KB / FAQs /
+      // product knowledge from the tenant's website). Same content
+      // switches as Uploads — the two screens are one knowledge hub.
+      id: 'website-knowledge',
+      label: 'Website Knowledge',
+      icon: Globe,
       permissions: ['upload_faq', 'upload_kb', 'view_files', 'catalogue_new_arrival'],
     },
     {

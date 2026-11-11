@@ -6,10 +6,13 @@ tenant-scoped). Unknown / cross-tenant run ids → 404.
 """
 from __future__ import annotations
 
+import csv
+import io
+import json
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response
 from pydantic import BaseModel, Field
 
 from database import (
@@ -208,6 +211,249 @@ def get_crawl_run_staged(
         },
         "payload": payload,
     }
+
+
+def _crawl_export_data(tenant_id: str, run_id: int, run: dict, staged: dict) -> dict:
+    """Normalise a staged crawl payload into the downloadable knowledge doc.
+
+    Only knowledge content is exported — KB articles, FAQs, product
+    knowledge and the crawled page list. Website-guessed menu / brand /
+    hours are NOT part of the export (Rule 1: those come from the
+    tenant's PDF, never from the crawl).
+    """
+    payload = staged.get("payload") or {}
+    bifurcation = payload.get("bifurcation") or {}
+    crawl_meta = payload.get("crawl") or {}
+
+    knowledge_base = []
+    for art in bifurcation.get("knowledge_articles") or []:
+        if not isinstance(art, dict):
+            continue
+        knowledge_base.append({
+            "title": art.get("title") or "",
+            "category": art.get("category") or "",
+            "content": art.get("markdown_content") or art.get("content") or "",
+        })
+
+    faqs = []
+    for faq in bifurcation.get("faqs") or []:
+        if not isinstance(faq, dict):
+            continue
+        faqs.append({
+            "question": faq.get("question") or "",
+            "answer": faq.get("answer") or "",
+            "category": faq.get("category") or "",
+        })
+
+    products = []
+    for off in bifurcation.get("offerings") or []:
+        if not isinstance(off, dict):
+            continue
+        products.append({
+            "name": off.get("name") or "",
+            "category": off.get("category") or "",
+            "price": "" if off.get("price") is None else str(off.get("price")),
+            "short_description": off.get("short_description") or "",
+            "description": off.get("description") or "",
+            "media_url": off.get("media_url") or "",
+            "detail_url": off.get("detail_url") or "",
+        })
+
+    pages = []
+    for page in crawl_meta.get("pages") or []:
+        if not isinstance(page, dict):
+            continue
+        pages.append({
+            "url": page.get("url") or "",
+            "title": page.get("title") or "",
+            "meta_description": page.get("meta_description") or "",
+            "word_count": page.get("word_count"),
+        })
+
+    return {
+        "tenant_id": tenant_id,
+        "run_id": run_id,
+        "status": staged.get("status"),
+        "source_url": run.get("source_url") or crawl_meta.get("root_url") or "",
+        "pages_found": crawl_meta.get("pages_found"),
+        "pages_scraped": crawl_meta.get("pages_scraped"),
+        "counts": {
+            "knowledge_base": len(knowledge_base),
+            "faqs": len(faqs),
+            "products": len(products),
+            "pages": len(pages),
+        },
+        "knowledge_base": knowledge_base,
+        "faqs": faqs,
+        "products": products,
+        "pages": pages,
+    }
+
+
+def _crawl_export_csv(data: dict) -> str:
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["section", "title_or_question", "category", "text_or_answer", "price", "url"])
+    for art in data["knowledge_base"]:
+        writer.writerow(["knowledge_base", art["title"], art["category"], art["content"], "", ""])
+    for faq in data["faqs"]:
+        writer.writerow(["faq", faq["question"], faq["category"], faq["answer"], "", ""])
+    for prod in data["products"]:
+        writer.writerow([
+            "product",
+            prod["name"],
+            prod["category"],
+            prod["description"] or prod["short_description"],
+            prod["price"],
+            prod["detail_url"] or prod["media_url"],
+        ])
+    for page in data["pages"]:
+        writer.writerow(["page", page["title"], "", page["meta_description"], "", page["url"]])
+    return output.getvalue()
+
+
+def _render_crawl_export_pdf(data: dict) -> bytes:
+    """Render the crawl knowledge doc as a simple paginated PDF via PyMuPDF.
+
+    Same approach as the audit export (routes/audit.py): no new dependency.
+    Body text is word-wrapped to a fixed character width so long KB
+    article text stays readable.
+    """
+    import textwrap
+
+    import fitz
+
+    lines: list[tuple[str, str]] = []  # (kind, text)
+
+    def add(kind: str, text: str) -> None:
+        lines.append((kind, text or ""))
+
+    add("title", f"Website crawl — run {data['run_id']}")
+    add("meta", f"Tenant: {data['tenant_id']}  |  Source: {data['source_url']}  |  Status: {data['status']}")
+    counts = data["counts"]
+    add("meta", (
+        f"Knowledge base: {counts['knowledge_base']}  |  FAQs: {counts['faqs']}  |  "
+        f"Products: {counts['products']}  |  Pages: {counts['pages']}"
+    ))
+    add("blank", "")
+
+    add("h", "Knowledge Base")
+    if not data["knowledge_base"]:
+        add("body", "(none)")
+    for art in data["knowledge_base"]:
+        add("item", art["title"] or "(untitled)")
+        if art["category"]:
+            add("body", f"Category: {art['category']}")
+        for wrapped in textwrap.wrap(art["content"], width=108) or [""]:
+            add("body", wrapped)
+        add("blank", "")
+
+    add("h", "FAQs")
+    if not data["faqs"]:
+        add("body", "(none)")
+    for faq in data["faqs"]:
+        add("item", f"Q: {faq['question']}")
+        for wrapped in textwrap.wrap(f"A: {faq['answer']}", width=108) or [""]:
+            add("body", wrapped)
+        add("blank", "")
+
+    add("h", "Product Knowledge")
+    if not data["products"]:
+        add("body", "(none)")
+    for prod in data["products"]:
+        heading = prod["name"]
+        if prod["price"]:
+            heading += f" — {prod['price']}"
+        add("item", heading)
+        if prod["category"]:
+            add("body", f"Category: {prod['category']}")
+        desc = prod["description"] or prod["short_description"]
+        for wrapped in textwrap.wrap(desc, width=108) or [""]:
+            add("body", wrapped)
+        add("blank", "")
+
+    add("h", "Pages Crawled")
+    if not data["pages"]:
+        add("body", "(none)")
+    for page in data["pages"]:
+        add("body", f"{page['url']}  —  {page['title']}".rstrip(" —"))
+
+    doc = fitz.open()
+    page = None
+    y = 48
+    PAGE_BOTTOM = 545
+
+    def new_page():
+        nonlocal page, y
+        page = doc.new_page(width=842, height=595)  # A4 landscape
+        y = 48
+
+    new_page()
+    styles = {
+        "title": (16, "hebo", 22),
+        "meta": (9, "helv", 13),
+        "h": (13, "hebo", 20),
+        "item": (10, "hebo", 14),
+        "body": (9, "helv", 12),
+        "blank": (9, "helv", 8),
+    }
+    for kind, text in lines:
+        size, font, advance = styles[kind]
+        if y > PAGE_BOTTOM:
+            new_page()
+        if text:
+            page.insert_text((40, y), text[:160], fontsize=size, fontname=font)
+        y += advance
+    payload = doc.tobytes()
+    doc.close()
+    return payload
+
+
+@router.get("/{tenant_id}/crawl-runs/{run_id}/export")
+def export_crawl_run(
+    tenant_id: str,
+    run_id: int,
+    format: str = "json",
+    principal: dict = Depends(require_tenant_access()),
+):
+    """Download a run's staged crawled knowledge (KB / FAQs / products).
+
+    Formats: json (default), csv, pdf. Unknown format → 400; unknown or
+    cross-tenant run → 404, mirroring the sibling crawl routes.
+    """
+    fmt = (format or "json").strip().lower()
+    if fmt not in ("json", "csv", "pdf"):
+        raise HTTPException(
+            status_code=400,
+            detail="Format must be one of: json, csv, pdf",
+        )
+    run = get_crawl_run(run_id, tenant_id=tenant_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Crawl run not found")
+    staged = get_crawl_staged(run_id, tenant_id=tenant_id)
+    if not staged:
+        raise HTTPException(status_code=404, detail="No staged payload for this run")
+
+    data = _crawl_export_data(tenant_id, run_id, run, staged)
+    filename = f"crawl-run-{run_id}-knowledge.{fmt}"
+    headers = {"Content-Disposition": f"attachment; filename={filename}"}
+    if fmt == "json":
+        return Response(
+            content=json.dumps(data, indent=2, ensure_ascii=False),
+            media_type="application/json",
+            headers=headers,
+        )
+    if fmt == "csv":
+        return Response(
+            content=_crawl_export_csv(data),
+            media_type="text/csv",
+            headers=headers,
+        )
+    return Response(
+        content=_render_crawl_export_pdf(data),
+        media_type="application/pdf",
+        headers=headers,
+    )
 
 
 @router.post("/{tenant_id}/crawl-runs/{run_id}/approve")

@@ -209,6 +209,12 @@ export const fixtureServer = {
         statusText: status === 200 ? 'OK' : 'Error',
         json: async () => result.body,
         text: async () => JSON.stringify(result.body),
+        blob: async () =>
+          new Blob([
+            typeof result.body === 'string'
+              ? result.body
+              : JSON.stringify(result.body),
+          ]),
       } as Response
     }) as unknown as typeof fetch
   },
