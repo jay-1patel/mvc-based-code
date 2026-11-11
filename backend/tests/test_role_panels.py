@@ -136,6 +136,9 @@ class RolePanelTests(unittest.TestCase):
         self.assertFalse(guard("POST", "/api/admin/integration-requests/7/decision"))
         self.assertFalse(guard("POST", "/api/auth/create"))
         self.assertFalse(guard("PATCH", "/api/auth/admins/helper"))
+        # Capture-only WhatsApp Tester — not a tenant publish/approval write.
+        self.assertFalse(guard("POST", "/api/test-simulator"))
+        self.assertFalse(guard("POST", "/api/test-simulator/reset"))
 
     # ── super admin view-only, over HTTP ───────────────────────────────
 

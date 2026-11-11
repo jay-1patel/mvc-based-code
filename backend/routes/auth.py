@@ -238,7 +238,8 @@ TENANT_DATA_WRITE_PREFIXES = (
     "/api/orders",
     "/api/leads",
     "/catalog",
-    "/api/test-simulator",
+    # /api/test-simulator is capture-only diagnostics (no tenant publish /
+    # approval surface) — super admins may use WhatsApp Tester.
     "/faq/admin",
 )
 

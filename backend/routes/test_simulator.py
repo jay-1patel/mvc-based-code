@@ -117,7 +117,10 @@ async def simulate_message(request: SimulatorRequest):
 
     resolved_type = _ensure_user_type(wa_id, request.user_type)
 
-    result = await process_incoming_message(wa_id, message, tenant_id=request.tenant_id)
+    # Capture-only: same pipeline as production, but do NOT hit send2.digital.
+    result = await process_incoming_message(
+        wa_id, message, capture_only=True, tenant_id=request.tenant_id
+    )
 
     result["user_type"] = resolved_type
     return result

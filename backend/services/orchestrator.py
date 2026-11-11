@@ -46,6 +46,21 @@ async def process_incoming_message(
         end_capture(capture_tokens)
 
 
+def _is_distributor(wa_id: str) -> bool:
+    with get_db_context() as conn:
+        return bool(
+            conn.execute("SELECT 1 FROM distributors WHERE wa_id=?", (wa_id,)).fetchone()
+        )
+
+
+async def _send_b2b_menu(wa_id: str):
+    """Send the distributor main menu."""
+    from services.whatsapp_sender import send_list_menu
+    from bots.distributor_b2b import menus
+
+    await send_list_menu(wa_id, **menus.get_dist_main_menu())
+
+
 async def _send_b2c_menu(wa_id: str, tenant_id: str = None):
     """Send active tenant's published profile menu using Smart Switch (Buttons <=3, List >3)."""
     from bots.customer_b2c import menus
@@ -218,12 +233,17 @@ async def _process_captured_message(wa_id: str, message: str, tenant_id: str = N
             "cancel", "stop", "exit", "quit", "abort", "back", "home", "leave", "close", "nevermind", "never mind"
         )
 
+        # Resolve persona before hi/menu shortcuts so distributors never get B2C menus.
+        is_b2b = _is_distributor(wa_id)
+        menu_state = "B2B_MAIN_MENU" if is_b2b else "B2C_MAIN_MENU"
+        menu_user_type = "b2b" if is_b2b else "b2c"
+
         if is_menu_cmd or is_cancel_cmd:
             flow_runner.clear_flow(wa_id)
             with get_db_context() as conn:
                 conn.execute(
-                    "UPDATE user_states SET state = 'B2C_MAIN_MENU', context_json = '{}', updated_at = CURRENT_TIMESTAMP WHERE wa_id = ?",
-                    (wa_id,),
+                    "UPDATE user_states SET state = ?, context_json = '{}', updated_at = CURRENT_TIMESTAMP WHERE wa_id = ?",
+                    (menu_state, wa_id),
                 )
             if is_cancel_cmd:
                 await send_text_message(
@@ -233,31 +253,33 @@ async def _process_captured_message(wa_id: str, message: str, tenant_id: str = N
                 return {
                     "status": "processed",
                     "messages": drain_captured(),
-                    "new_state": "B2C_MAIN_MENU",
+                    "new_state": menu_state,
                     "human_handover": False,
-                    "user_type": "b2c",
+                    "user_type": menu_user_type,
                     "error": None,
                 }
+            if is_b2b:
+                await _send_b2b_menu(wa_id)
             else:
                 await _send_b2c_menu(wa_id, tenant_id=tenant_id)
-                return {
-                    "status": "processed",
-                    "messages": drain_captured(),
-                    "new_state": "B2C_MAIN_MENU",
-                    "human_handover": False,
-                    "user_type": "b2c",
-                    "error": None,
-                }
+            return {
+                "status": "processed",
+                "messages": drain_captured(),
+                "new_state": menu_state,
+                "human_handover": False,
+                "user_type": menu_user_type,
+                "error": None,
+            }
 
         # If user clicked a menu or action button, clear any stale flow & state first
         if message and (message.startswith(("menu_", "b2c_", "flow:", "flow_")) or clean_btn.startswith("menu_")):
             flow_runner.clear_flow(wa_id)
             with get_db_context() as conn:
                 conn.execute(
-                    "UPDATE user_states SET state = 'B2C_MAIN_MENU', context_json = '{}', updated_at = CURRENT_TIMESTAMP WHERE wa_id = ?",
-                    (wa_id,),
+                    "UPDATE user_states SET state = ?, context_json = '{}', updated_at = CURRENT_TIMESTAMP WHERE wa_id = ?",
+                    (menu_state, wa_id),
                 )
-            user_state = ("B2C_MAIN_MENU", "{}")
+            user_state = (menu_state, "{}")
 
         # 1. If user is currently running a flow, advance the flow with their reply
         if flow_runner.is_running(wa_id):
@@ -471,11 +493,8 @@ async def _process_captured_message(wa_id: str, message: str, tenant_id: str = N
     except Exception as exc:
         logger.debug(f"Tenant profile intent routing fallback for {wa_id}: {exc}")
 
-    # 2. Determine User Type (B2B vs B2C)
-    with get_db_context() as conn:
-        is_distributor = conn.execute(
-            "SELECT 1 FROM distributors WHERE wa_id=?", (wa_id,)
-        ).fetchone()
+    # 2. Determine User Type (B2B vs B2C) — same check as early menu routing.
+    is_distributor = _is_distributor(wa_id)
 
     current_state = user_state[0] if user_state else None
     try:
@@ -532,8 +551,10 @@ async def _process_captured_message(wa_id: str, message: str, tenant_id: str = N
 
     messages = drain_captured()
 
-    handover = any(m.get("type") == "text" and "human" in (m.get("text") or "").lower()
-                   for m in messages)
+    handover = bool(
+        (result or {}).get("status") == "human_handover"
+        or any(m.get("type") == "text" and "human" in (m.get("text") or "").lower() for m in messages)
+    )
 
     return {
         "messages": messages,

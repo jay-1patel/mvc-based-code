@@ -29,11 +29,13 @@ import {
   Package,
   ScrollText,
   ShoppingCart,
+  Smartphone,
   Truck,
   Upload,
   Users,
   Phone,
   Plug,
+  FlaskConical,
   type LucideIcon,
 } from 'lucide-react'
 import type { FeatureFlag, Features } from './types'
@@ -139,8 +141,20 @@ export function buildTenantNav(opts: {
       feature: 'distributors',
     },
     {
+      id: 'whatsapp-tester',
+      label: 'WhatsApp Tester',
+      icon: Smartphone,
+      permissions: ['chat', 'view_inbox', 'upload_faq'],
+    },
+    {
+      id: 'test',
+      label: 'Test & smoke',
+      icon: FlaskConical,
+      permissions: ['upload_faq', 'upload_kb'],
+    },
+    {
       id: 'chat',
-      label: 'Admin chat',
+      label: 'Team chat (internal)',
       icon: MessagesSquare,
       permissions: ['chat'],
     },
@@ -152,7 +166,7 @@ export function buildTenantNav(opts: {
     },
     {
       id: 'inbox',
-      label: 'Live inbox',
+      label: 'Live inbox (WhatsApp)',
       icon: Inbox,
       permissions: ['view_inbox'],
       feature: 'human_handover',

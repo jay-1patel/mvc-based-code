@@ -466,6 +466,18 @@ def flow_for_button(wa_id: str, button_id: str, tenant_id=None):
             or (len(b_clean) >= 4 and b_clean in clean_target)
             or (getattr(b, "flow", None) and _clean_title(b.flow) == clean_target)
         )
+        # Talk-to-human must escalate / hand over — never open book_callback.
+        is_human_btn = (
+            (b.id or "") in ("menu_human", "human_handover", "talk_to_human")
+            or "talk to human" in (b.title or "").lower()
+            or "talk to a human" in (b.title or "").lower()
+        )
+        if matched and is_human_btn:
+            handover = profile.flow("human_handover")
+            if handover:
+                return handover.name
+            return None
+
         if matched and getattr(b, "flow", None):
             flow = profile.flow(b.flow)
             # Published menu rows are authoritative: if the user can see/tap the
@@ -550,15 +562,17 @@ def flow_for_text(wa_id: str, text: str, tenant_id=None):
         if flow and (not flow.requires_feature or profile.feature_on(flow.requires_feature)):
             return "get_quote"
 
-    # Human Handover triggers
+    # Human Handover triggers — never map these to book_callback.
     human_phrases = (
         "talk to human", "speak to human", "talk to agent", "connect to agent",
         "human agent", "talk to a human", "speak to a person", "talk to person",
+        "i want to talk to a human", "human handover",
     )
     if any(p in clean or clean == p for p in human_phrases):
-        flow = profile.flow("book_callback") or profile.flow("human_handover")
+        flow = profile.flow("human_handover")
         if flow and (not flow.requires_feature or profile.feature_on(flow.requires_feature)):
             return flow.name
+        return None
 
     # Ticket / Complaint triggers
     ticket_phrases = (

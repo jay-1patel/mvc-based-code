@@ -151,6 +151,25 @@ class AuditHistoryTests(unittest.TestCase):
         self.assertEqual(search.status_code, 200)
         self.assertEqual(search.json()["total"], 1)
 
+    def test_actor_filter_matches_partial_username(self):
+        self._insert(action="login", actor="leewayadmin")
+        self._insert(action="login", actor="otheruser")
+
+        partial = self.client.get("/api/admin/audit-history", params={"actor": "lee"})
+        self.assertEqual(partial.status_code, 200)
+        payload = partial.json()
+        self.assertEqual(payload["total"], 1)
+        self.assertEqual(payload["events"][0]["actor_username"], "leewayadmin")
+
+        # Stuck pagination past the filtered total must not hide matches that exist on page 1.
+        empty_page = self.client.get(
+            "/api/admin/audit-history",
+            params={"actor": "lee", "limit": 50, "offset": 50},
+        )
+        self.assertEqual(empty_page.status_code, 200)
+        self.assertEqual(empty_page.json()["total"], 1)
+        self.assertEqual(empty_page.json()["events"], [])
+
     def test_invalid_date_range_and_outcome_are_rejected(self):
         self.assertEqual(
             self.client.get("/api/admin/audit-history", params={"start_date": "2026-10-08", "end_date": "2026-10-07"}).status_code,

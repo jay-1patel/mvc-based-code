@@ -2,7 +2,7 @@ import { forwardRef, type InputHTMLAttributes, type ReactNode } from 'react'
 import { cn } from '@/lib/cn'
 
 const base =
-  'w-full rounded-lg bg-surface-raised px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 ' +
+  'w-full rounded-xl bg-surface-raised px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 ' +
   'ring-1 ring-inset ring-surface-line transition focus:outline-none focus:ring-2 focus:ring-accent-500 ' +
   'disabled:cursor-not-allowed disabled:opacity-60'
 

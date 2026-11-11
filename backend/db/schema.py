@@ -83,7 +83,8 @@ def init_db():
                 embedding BLOB,
                 media_url TEXT,
                 media_type TEXT,
-                module TEXT NOT NULL DEFAULT 'faq'
+                module TEXT NOT NULL DEFAULT 'faq',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )"""
         )
         conn.execute(

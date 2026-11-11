@@ -10,7 +10,14 @@ from typing import Optional
 
 from database import get_db, get_db_context, save_chat
 from routes.auth import get_current_admin
-from routing.config import SEND2_USERNAME, SEND2_PASSWORD, SEND2_NUMBER, SEND_MEDIA, IMGHIPPO_API_KEY
+from routing.config import (
+    SEND2_USERNAME,
+    SEND2_PASSWORD,
+    SEND2_NUMBER,
+    SEND2_SESSION_SEND_URL,
+    SEND_MEDIA,
+    IMGHIPPO_API_KEY,
+)
 
 logger = logging.getLogger("chat")
 router = APIRouter(prefix="/api/chat")
@@ -113,7 +120,7 @@ def _guess_media_type(filename: str, content_type: str = "") -> str:
 
 def _send_text_via_send2(wa_id: str, text: str) -> dict:
     """Send text message via send2.digital."""
-    url = "https://api.send2.digital/devdesk/session-msg-send"
+    url = SEND2_SESSION_SEND_URL
     payload = {
         "user_name": SEND2_USERNAME,
         "password": SEND2_PASSWORD,
@@ -132,7 +139,7 @@ def _send_text_via_send2(wa_id: str, text: str) -> dict:
 
 def _send_media_via_send2(wa_id: str, media_type: str, media_url: str, caption: str = None) -> dict:
     """Send media message via send2.digital."""
-    url = "https://api.send2.digital/devdesk/session-msg-send"
+    url = SEND2_SESSION_SEND_URL
     payload = {
         "user_name": SEND2_USERNAME,
         "password": SEND2_PASSWORD,

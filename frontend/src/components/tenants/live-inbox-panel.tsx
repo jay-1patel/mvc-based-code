@@ -119,8 +119,8 @@ export function LiveInboxPanel({ tenantId }: { tenantId: string }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <PageHeader
-        title="Live inbox"
-        description="Conversations the bot has handed over, or that a person has taken over. Replying pauses the bot until you resolve."
+        title="Live inbox (WhatsApp)"
+        description="Customer WhatsApp conversations. Replies go out via send2.digital. Taking over pauses the bot until you resolve."
         meta={
           state.data && (
             <>
@@ -291,6 +291,13 @@ export function LiveInboxPanel({ tenantId }: { tenantId: string }) {
                 )}
               </CardBody>
 
+              {action.error && (
+                <Alert tone="danger" title="WhatsApp send failed">
+                  {/502|could not be sent|send2|credentials/i.test(action.error)
+                    ? `${action.error} — Check SEND2_USERNAME / SEND2_PASSWORD / SEND2_NUMBER in routing/.env and restart the backend.`
+                    : action.error}
+                </Alert>
+              )}
               {canWrite && (
               <Composer
                 busy={action.busy}
@@ -300,10 +307,11 @@ export function LiveInboxPanel({ tenantId }: { tenantId: string }) {
                     conversationsApi.reply(tenantId, selected, message, attachment),
                   )
                   if (result) {
-                    toast.push('Reply sent')
+                    toast.push('Reply sent via WhatsApp')
                     refresh()
                     return true
                   }
+                  toast.push('Reply failed — see error above')
                   return false
                 }}
               />

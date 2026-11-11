@@ -1,4 +1,4 @@
-﻿"""B2B Distributor state-machine handler.
+"""B2B Distributor state-machine handler.
 
 This module is the single entry point the orchestrator calls for B2B users:
 
@@ -163,8 +163,17 @@ async def _handle_main_selection(wa_id: str, message: str, context: dict, cfg, t
 
     if sel == "menu_human" or sel in ("talk to human", "human handover", "talk to a human"):
         rep = tools.get_assigned_sales_rep(wa_id)
-        await send_text_message(wa_id, f"Your assigned sales representative is {rep['name']} ({rep['phone']}).")
-        return {"new_state": cfg.B2B_MAIN_MENU_STATE}
+        await send_text_message(
+            wa_id,
+            f"Connecting you with your sales representative {rep['name']} ({rep['phone']}). "
+            "A team member will reply here shortly. Type *hi* anytime to return to the bot.",
+        )
+        try:
+            from database import set_human_handover
+            set_human_handover(wa_id, True)
+        except Exception:
+            logger.exception("B2B_HANDOVER_FLAG_FAILED | wa=%s", wa_id)
+        return {"new_state": cfg.B2B_MAIN_MENU_STATE, "status": "human_handover"}
 
     if sel == "menu_discounts" or sel in ("discounts & offers", "discounts", "offers"):
         from . import catalog_flow

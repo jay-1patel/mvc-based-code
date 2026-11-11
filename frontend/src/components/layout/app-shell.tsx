@@ -81,7 +81,7 @@ export function AppShell({ route, children }: { route: RouteMatch; children: Rea
 
       <aside
         className={cn(
-          'fixed inset-y-0 left-0 z-50 flex w-64 shrink-0 flex-col border-r border-surface-line bg-surface-panel transition-transform duration-200 ease-out',
+          'fixed inset-y-0 left-0 z-50 flex w-64 shrink-0 flex-col bg-[#10211c] text-emerald-50 transition-transform duration-200 ease-out',
           navOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full',
           'lg:static lg:z-auto lg:translate-x-0 lg:shadow-none',
         )}
@@ -97,15 +97,15 @@ export function AppShell({ route, children }: { route: RouteMatch; children: Rea
           <div className="min-w-0 flex-1">
             {!isSuperAdmin ? (
               <>
-                <p className="truncate text-sm font-semibold text-slate-100">
+                <p className="truncate font-display text-sm font-semibold text-white">
                   {brandName || 'Company console'}
                 </p>
-                <p className="truncate text-xs text-slate-500">{brandTagline || 'WhatsApp console'}</p>
+                <p className="truncate text-xs text-emerald-100/60">{brandTagline || 'WhatsApp console'}</p>
               </>
             ) : (
               <>
-                <p className="truncate text-sm font-semibold text-slate-100">Tenant Console</p>
-                <p className="text-xs text-slate-500">Multi-tenant WhatsApp</p>
+                <p className="truncate font-display text-sm font-semibold text-white">Tenant Console</p>
+                <p className="text-xs text-emerald-100/60">Multi-tenant WhatsApp</p>
               </>
             )}
           </div>
@@ -114,7 +114,7 @@ export function AppShell({ route, children }: { route: RouteMatch; children: Rea
             onClick={() => setNavOpen(false)}
             aria-label="Close navigation"
             title="Close navigation"
-            className="shrink-0 rounded-md p-1.5 text-slate-500 transition hover:bg-surface-panel hover:text-slate-300 lg:hidden"
+            className="shrink-0 rounded-md p-1.5 text-emerald-100/70 transition hover:bg-white/10 hover:text-white lg:hidden"
           >
             <X className="h-5 w-5" />
           </button>
@@ -131,7 +131,7 @@ export function AppShell({ route, children }: { route: RouteMatch; children: Rea
               Register a tenant
             </Button>
           ) : (
-            <p className="rounded-lg bg-surface-raised px-3 py-2.5 text-xs leading-relaxed text-slate-500 ring-1 ring-surface-line">
+            <p className="rounded-xl bg-white/5 px-3 py-2.5 text-xs leading-relaxed text-emerald-100/70 ring-1 ring-white/10">
               Read-only access. Ask a super admin for the manage_operations permission to register or edit
               tenants.
             </p>
@@ -143,22 +143,22 @@ export function AppShell({ route, children }: { route: RouteMatch; children: Rea
             <button
               type="button"
               onClick={() => setSwitcherOpen((v) => !v)}
-              className="flex w-full items-center gap-2.5 rounded-lg bg-surface px-3 py-2.5 text-left ring-1 ring-surface-line transition hover:bg-surface-panel"
+              className="flex w-full items-center gap-2.5 rounded-xl bg-white/5 px-3 py-2.5 text-left ring-1 ring-white/10 transition hover:bg-white/10"
             >
-              <VerticalGlyph name={getVertical(active?.vertical).icon} className="h-4 w-4 shrink-0 text-accent-700" />
+              <VerticalGlyph name={getVertical(active?.vertical).icon} className="h-4 w-4 shrink-0 text-accent-300" />
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-xs font-medium text-slate-100">
+                <span className="block truncate text-xs font-medium text-white">
                   {active?.display_name || active?.id || 'No tenant'}
                 </span>
-                <span className="block truncate text-xs text-slate-500">
+                <span className="block truncate text-xs text-emerald-100/60">
                   {active ? getVertical(active.vertical).short : 'select a tenant'}
                 </span>
               </span>
-              <ChevronDown className={cn('h-4 w-4 shrink-0 text-slate-500 transition', switcherOpen && 'rotate-180')} />
+              <ChevronDown className={cn('h-4 w-4 shrink-0 text-emerald-100/50 transition', switcherOpen && 'rotate-180')} />
             </button>
 
             {switcherOpen && (
-              <div className="absolute left-3 right-3 top-full z-30 mt-1 overflow-hidden rounded-lg bg-surface-overlay ring-1 ring-surface-line shadow-xl">
+              <div className="absolute left-3 right-3 top-full z-30 mt-1 overflow-hidden rounded-xl bg-[#183028] ring-1 ring-white/10 shadow-xl">
                 <button
                   type="button"
                   onClick={() => {

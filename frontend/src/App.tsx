@@ -34,6 +34,7 @@ import { VersionsPanel } from '@/components/tenants/versions-panel'
 import { LayersPanel } from '@/components/tenants/layers-panel'
 import { TokensPanel } from '@/components/tenants/tokens-panel'
 import { TestAndSmoke } from '@/components/tenants/test-and-smoke'
+import { WhatsAppTester } from '@/components/tester/whatsapp-tester'
 import { TeamScreen } from '@/components/team/team-screen'
 import { RegisterWizard } from '@/components/onboarding/register-wizard'
 import { ApiOnboardingPanel } from '@/components/tenants/api-onboarding-panel'
@@ -184,6 +185,7 @@ function Router() {
       {route.view === 'layers' && <LayersPanel tenantId={route.tenantId} />}
       {route.view === 'tokens' && <TokensPanel tenantId={route.tenantId} />}
       {route.view === 'test' && <TestAndSmoke tenantId={route.tenantId} />}
+      {route.view === 'whatsapp-tester' && <WhatsAppTester tenantId={route.tenantId} />}
       {PENDING_VIEWS.has(route.view) && <ComingSoon view={route.view} />}
       {!KNOWN_VIEWS.includes(route.view) && (
         <Alert tone="warning" title="Unknown view">
@@ -239,6 +241,7 @@ const KNOWN_VIEWS = [
   'layers',
   'tokens',
   'test',
+  'whatsapp-tester',
   'callbacks',
   'callback',
   'api-access',

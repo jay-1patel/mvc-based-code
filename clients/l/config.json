@@ -338,15 +338,15 @@
       },
       {
         "id": "menu_human",
-        "title": "Request Callback",
-        "description": "connect with our team",
+        "title": "Talk to Human",
+        "description": "Chat with our team",
         "section": "Support",
-        "icon": "📞",
+        "icon": "🙋",
         "sort_order": 5,
         "enabled": true,
         "requires_feature": "human_handover",
         "out_of_hours_only": false,
-        "flow": "book_callback",
+        "flow": null,
         "intent": null
       }
     ]

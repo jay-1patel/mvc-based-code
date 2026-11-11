@@ -1,5 +1,11 @@
 from fastapi import APIRouter, Query
-from routing.config import WHATSAPP_VERIFY_TOKEN, SEND2_USERNAME, SEND2_PASSWORD, SEND2_NUMBER, SEND2_SESSION_MSG_URL
+from routing.config import (
+    WHATSAPP_VERIFY_TOKEN,
+    SEND2_USERNAME,
+    SEND2_PASSWORD,
+    SEND2_NUMBER,
+    SEND2_SESSION_SEND_URL,
+)
 from database import get_db, get_webhook_stats
 import requests
 import logging
@@ -64,7 +70,7 @@ def health_check():
 
     # Check send2.digital API - verify credentials and connectivity only (no real message)
     try:
-        resp = requests.post(SEND2_SESSION_MSG_URL, data={
+        resp = requests.post(SEND2_SESSION_SEND_URL, data={
             "user_name": SEND2_USERNAME or "",
             "password": SEND2_PASSWORD or "",
             "contact_no": SEND2_NUMBER or "",
@@ -85,14 +91,14 @@ def health_check():
         else:
             send2_status = "unknown_response"
         results["send2_api"] = {
-            "url": SEND2_SESSION_MSG_URL,
+            "url": SEND2_SESSION_SEND_URL,
             "http_status": resp.status_code,
             "api_status": send2_status,
             "response": body[:300],
             "ok": resp.status_code == 200 and send2_status in ["sending_ok", "reachable"],
         }
     except Exception as e:
-        results["send2_api"] = {"url": SEND2_SESSION_MSG_URL, "api_status": "unreachable", "ok": False, "error": str(e)}
+        results["send2_api"] = {"url": SEND2_SESSION_SEND_URL, "api_status": "unreachable", "ok": False, "error": str(e)}
 
     # Check hkdk.events webhook
     hkdk_url = "https://hkdk.events/63akz9xv0bor2a/webhook"

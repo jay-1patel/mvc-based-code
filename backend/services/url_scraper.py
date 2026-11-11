@@ -897,7 +897,7 @@ class UrlAutoOnboarder:
             ],
             "intents": [
                 {"name": "browse_offerings", "description": "User wants to explore products/services", "keywords": ["offerings", "products", "services", "catalog"], "examples": ["What do you sell?", "Show products"], "flow": None},
-                {"name": "human_support", "description": "User wants to talk to a person", "keywords": ["human", "agent", "call", "help"], "examples": ["Can someone call me?", "Talk to agent"], "flow": "book_callback"},
+                {"name": "human_support", "description": "User wants to talk to a person", "keywords": ["human", "agent", "help", "talk to human"], "examples": ["Can someone help me?", "Talk to a human"], "flow": "human_handover"},
             ],
             "offerings": offerings[:15],
             "faqs": faqs,

@@ -160,10 +160,15 @@ export function describeDetails(details: Record<string, unknown>): string {
 
 */
 
-// Filter preset dates
+// Filter preset dates — use local calendar dates, not UTC (toISOString shifts the day in IST/other positive offsets)
 export function getPresetDates(preset: FilterPreset): { start_date: string; end_date: string } {
   const today = new Date()
-  const formatDateStr = (date: Date): string => date.toISOString().split('T')[0]
+  const formatDateStr = (date: Date): string => {
+    const y = date.getFullYear()
+    const m = String(date.getMonth() + 1).padStart(2, '0')
+    const d = String(date.getDate()).padStart(2, '0')
+    return `${y}-${m}-${d}`
+  }
 
   switch (preset) {
     case 'today': {

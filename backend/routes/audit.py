@@ -94,6 +94,55 @@ CATEGORY_ACTIONS = {
 }
 
 
+def _append_audit_filters(
+    where: list[str],
+    params: list,
+    *,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    actor: Optional[str] = None,
+    action: Optional[str] = None,
+    category: Optional[str] = None,
+    tenant_id: Optional[str] = None,
+    outcome: Optional[str] = None,
+    search: Optional[str] = None,
+    require_known_category: bool = False,
+) -> None:
+    """Append shared list/stats/export filter predicates.
+
+    Actor uses substring match so typing a partial username works.
+    """
+    if start_date:
+        where.append("date(created_at) >= ?")
+        params.append(start_date.isoformat())
+    if end_date:
+        where.append("date(created_at) <= ?")
+        params.append(end_date.isoformat())
+    if actor and actor.strip():
+        where.append("actor_username LIKE ?")
+        params.append(f"%{actor.strip()}%")
+    for column, value in (("action", action), ("tenant_id", tenant_id), ("outcome", outcome)):
+        if value:
+            where.append(f"{column} = ?")
+            params.append(value.strip())
+    if category:
+        if category not in CATEGORY_ACTIONS:
+            if require_known_category:
+                raise HTTPException(status_code=422, detail="Unknown audit category")
+        else:
+            actions = CATEGORY_ACTIONS[category]
+            where.append(f"action IN ({', '.join('?' for _ in actions)})")
+            params.extend(actions)
+    if search and search.strip():
+        term = f"%{search.strip()}%"
+        where.append(
+            "(actor_username LIKE ? OR actor_label LIKE ? OR target_username LIKE ? OR "
+            "resource_type LIKE ? OR resource_id LIKE ? OR action LIKE ? OR tenant_id LIKE ? OR "
+            "tenant_name LIKE ? OR tenant_slug LIKE ? OR ip_address LIKE ? OR user_agent LIKE ? OR details_json LIKE ?)"
+        )
+        params.extend([term] * 12)
+
+
 @router.get("/api/admin/audit-history")
 def list_audit_history(
     start_date: Optional[date] = Query(default=None),
@@ -130,42 +179,26 @@ def list_audit_history(
         raise HTTPException(status_code=422, detail="sort_order must be asc or desc")
 
     where = ["datetime(created_at) >= datetime('now', '-365 days')"]
-    params = []
-    
-    if start_date:
-        where.append("date(created_at) >= ?")
-        params.append(start_date.isoformat())
-    if end_date:
-        where.append("date(created_at) <= ?")
-        params.append(end_date.isoformat())
-    
-    for column, value in (("actor_username", actor), ("action", action), ("tenant_id", tenant_id), ("outcome", outcome)):
-        if value:
-            where.append(f"{column} = ?")
-            params.append(value.strip())
-    
-    if category:
-        if category not in CATEGORY_ACTIONS:
-            raise HTTPException(status_code=422, detail="Unknown audit category")
-        actions = CATEGORY_ACTIONS[category]
-        where.append(f"action IN ({', '.join('?' for _ in actions)})")
-        params.extend(actions)
-    
-    if search and search.strip():
-        term = f"%{search.strip()}%"
-        where.append(
-            "(actor_username LIKE ? OR actor_label LIKE ? OR target_username LIKE ? OR "
-            "resource_type LIKE ? OR resource_id LIKE ? OR action LIKE ? OR tenant_id LIKE ? OR "
-            "tenant_name LIKE ? OR tenant_slug LIKE ? OR ip_address LIKE ? OR user_agent LIKE ? OR details_json LIKE ?)"
-        )
-        params.extend([term] * 12)
+    params: list = []
+    _append_audit_filters(
+        where,
+        params,
+        start_date=start_date,
+        end_date=end_date,
+        actor=actor,
+        action=action,
+        category=category,
+        tenant_id=tenant_id,
+        outcome=outcome,
+        search=search,
+        require_known_category=True,
+    )
     
     clause = f" WHERE {' AND '.join(where)}" if where else ""
     
     # Sorting
     sort_column = sort_by or "created_at"
     sort_direction = sort_order or "desc"
-    order_by = f"ORDER BY {sort_column} {sort_direction}"
 
     conn = get_db()
     try:
@@ -231,31 +264,19 @@ def get_audit_statistics(
     tenant_id = _scoped_tenant_id(current_admin, tenant_id)
 
     where = ["datetime(created_at) >= datetime('now', '-365 days')"]
-    params = []
-    
-    if start_date:
-        where.append("date(created_at) >= ?")
-        params.append(start_date.isoformat())
-    if end_date:
-        where.append("date(created_at) <= ?")
-        params.append(end_date.isoformat())
-    for column, value in (("actor_username", actor), ("action", action), ("tenant_id", tenant_id), ("outcome", outcome)):
-        if value:
-            where.append(f"{column} = ?")
-            params.append(value.strip())
-    if category:
-        if category in CATEGORY_ACTIONS:
-            actions = CATEGORY_ACTIONS[category]
-            where.append(f"action IN ({', '.join('?' for _ in actions)})")
-            params.extend(actions)
-    if search and search.strip():
-        term = f"%{search.strip()}%"
-        where.append(
-            "(actor_username LIKE ? OR actor_label LIKE ? OR target_username LIKE ? OR "
-            "resource_type LIKE ? OR resource_id LIKE ? OR action LIKE ? OR tenant_id LIKE ? OR "
-            "tenant_name LIKE ? OR tenant_slug LIKE ? OR ip_address LIKE ? OR user_agent LIKE ? OR details_json LIKE ?)"
-        )
-        params.extend([term] * 12)
+    params: list = []
+    _append_audit_filters(
+        where,
+        params,
+        start_date=start_date,
+        end_date=end_date,
+        actor=actor,
+        action=action,
+        category=category,
+        tenant_id=tenant_id,
+        outcome=outcome,
+        search=search,
+    )
     clause = f" WHERE {' AND '.join(where)}" if where else ""
 
     conn = get_db()
@@ -455,31 +476,19 @@ def export_audit_history(
         raise HTTPException(status_code=422, detail="Format must be csv, json or pdf")
     
     where = ["datetime(created_at) >= datetime('now', '-365 days')"]
-    params = []
-    
-    if start_date:
-        where.append("date(created_at) >= ?")
-        params.append(start_date.isoformat())
-    if end_date:
-        where.append("date(created_at) <= ?")
-        params.append(end_date.isoformat())
-    for column, value in (("actor_username", actor), ("action", action), ("tenant_id", tenant_id), ("outcome", outcome)):
-        if value:
-            where.append(f"{column} = ?")
-            params.append(value.strip())
-    if category:
-        if category in CATEGORY_ACTIONS:
-            actions = CATEGORY_ACTIONS[category]
-            where.append(f"action IN ({', '.join('?' for _ in actions)})")
-            params.extend(actions)
-    if search and search.strip():
-        term = f"%{search.strip()}%"
-        where.append(
-            "(actor_username LIKE ? OR actor_label LIKE ? OR target_username LIKE ? OR "
-            "resource_type LIKE ? OR resource_id LIKE ? OR action LIKE ? OR tenant_id LIKE ? OR "
-            "tenant_name LIKE ? OR tenant_slug LIKE ? OR ip_address LIKE ? OR user_agent LIKE ? OR details_json LIKE ?)"
-        )
-        params.extend([term] * 12)
+    params: list = []
+    _append_audit_filters(
+        where,
+        params,
+        start_date=start_date,
+        end_date=end_date,
+        actor=actor,
+        action=action,
+        category=category,
+        tenant_id=tenant_id,
+        outcome=outcome,
+        search=search,
+    )
     
     clause = f" WHERE {' AND '.join(where)}" if where else ""
     

@@ -204,6 +204,30 @@ def _get_brand_name(wa_id: str = "") -> str:
     return "our company"
 
 
+def _b2b_menu_body(wa_id: str) -> str:
+    """Body text for the B2B distributor main menu (used by menu-preview / tester)."""
+    try:
+        from database import get_db_context
+        with get_db_context() as conn:
+            row = conn.execute(
+                "SELECT name, tier, outstanding_payments FROM distributors WHERE wa_id = ?",
+                (wa_id,),
+            ).fetchone()
+        if row:
+            tier = (row["tier"] or "Bronze").strip()
+            outstanding = float(row["outstanding_payments"] or 0)
+            name = (row["name"] or "Distributor").strip()
+            if outstanding > 0:
+                return (
+                    f"{name} · {tier} tier. Outstanding: ₹{outstanding:,.0f}. "
+                    "Choose an option below."
+                )
+            return f"{name} · {tier} tier. Choose an option below."
+    except Exception as e:
+        logger.debug("Could not build B2B menu body: %s", e)
+    return "Distributor menu — choose an option below."
+
+
 def personalize_header(wa_id: str, user_type: str = "b2c") -> str:
     """
     Return a personalized greeting header for the given user type.

@@ -421,7 +421,7 @@
         "enabled": false,
         "requires_feature": "human_handover",
         "out_of_hours_only": false,
-        "flow": "book_callback",
+        "flow": null,
         "intent": null
       }
     ],

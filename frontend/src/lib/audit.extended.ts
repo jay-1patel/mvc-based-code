@@ -1,4 +1,4 @@
-import { api } from './api'
+import { api, ApiError, apiCallStart, getToken, logApiCall, logApiError } from './api'
 import { type AuditEvent, type AuditFilters, type AuditPage } from './audit'
 
 // Extended audit types for new features
@@ -68,16 +68,50 @@ export const auditApiExtended = {
     return api.get<AuditStatistics>(`/api/admin/audit-statistics?${query.toString()}`, signal)
   },
 
-  // Export endpoint
-  exportEvents: (request: ExportRequest, signal?: AbortSignal) => {
+  // Export endpoint — returns a file blob (CSV / JSON / PDF), not JSON-parsed body.
+  // Must not go through api.get(), which always JSON.parse()'s the response.
+  exportEvents: async (request: ExportRequest, signal?: AbortSignal): Promise<Blob> => {
     const query = new URLSearchParams()
     for (const [key, value] of Object.entries(request.filters)) {
       if (value !== undefined && value !== '') query.set(key, String(value))
     }
     query.set('format', request.format)
     query.set('columns', request.columns.join(','))
-    
-    return api.get<Blob>(`/api/admin/audit-export?${query.toString()}`, signal)
+
+    const path = `/api/admin/audit-export?${query.toString()}`
+    const startedAt = apiCallStart()
+    const token = getToken()
+    let res: Response
+    try {
+      res = await fetch(path, {
+        method: 'GET',
+        headers: {
+          Accept: '*/*',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        signal,
+      })
+    } catch (err) {
+      if ((err as Error)?.name === 'AbortError') throw err
+      const detail = 'Cannot reach the backend. Is it running on port 9000?'
+      logApiError('GET', path, 0, detail, startedAt)
+      throw new ApiError(0, detail)
+    }
+
+    if (!res.ok) {
+      let detail = `Export failed (${res.status})`
+      try {
+        const body = await res.json()
+        if (typeof body?.detail === 'string') detail = body.detail
+      } catch {
+        /* body may be empty or non-JSON */
+      }
+      logApiError('GET', path, res.status, detail, startedAt)
+      throw new ApiError(res.status, detail)
+    }
+
+    logApiCall('GET', path, res.status, startedAt)
+    return res.blob()
   },
 
   // Get single event details

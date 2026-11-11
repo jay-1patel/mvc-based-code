@@ -170,7 +170,7 @@
         "section": "Support",
         "sort_order": 9,
         "enabled": true,
-        "flow": "book_callback"
+        "flow": null
       },
       {
         "id": "menu_block_card",
