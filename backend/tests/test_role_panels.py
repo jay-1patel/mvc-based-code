@@ -180,6 +180,31 @@ class RolePanelTests(unittest.TestCase):
         )
         self.assertEqual(created.status_code, 200, created.text)
 
+    def test_super_admin_registration_with_website_still_works(self):
+        # Regression (2026-11-11): the register wizard's super flow used to
+        # save the basics through PUT /{tenant}/profile after creating,
+        # which the view-only guard correctly refuses — registration itself
+        # failed. The basics (incl. website) now travel with the create
+        # call; the profile endpoint must stay refused for super admins.
+        created = self.client.post(
+            "/api/admin/tenants",
+            json={
+                "tenant_id": "leeway",
+                "vertical": "it_services",
+                "display_name": "Leeway",
+                "website": "leewaysoftech.com",
+                "auto_scrape": False,
+            },
+            headers=self.root,
+        )
+        self.assertEqual(created.status_code, 200, created.text)
+        draft = self.client.put(
+            "/api/admin/tenants/leeway/profile",
+            json={"snapshot": {"brand": {"name": "Leeway"}}},
+            headers=self.root,
+        )
+        self.assertEqual(draft.status_code, 403, draft.text)
+
     def test_super_admin_approval_decision_still_works(self):
         submitted = self.client.post(
             "/api/tenant-change-requests",

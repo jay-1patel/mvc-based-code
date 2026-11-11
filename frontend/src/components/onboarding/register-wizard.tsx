@@ -139,14 +139,17 @@ export function RegisterWizard({ onSubmitted }: { onSubmitted?: () => void } = {
           vertical: draft.vertical,
           display_name: draft.displayName || draft.companyName,
           status: 'active',
+          // Registration basics travel with the create call itself: the
+          // profile-draft endpoint is tenant-admin territory (super admins
+          // are view-only inside tenants), and auto-scrape stays off so
+          // registering never publishes website-derived content.
+          website: draft.website.trim(),
+          auto_scrape: false,
         }),
       )
       if (!created) return
 
       const id = created.tenant.id
-      const saved = await action.run(() => tenantsApi.saveDraft(id, draftToSnapshot(draft)))
-      if (!saved) return
-
       toast.push(`${draft.companyName} registered. An admin can now complete it from WhatsApp onwards.`)
       reload()
       navigate(`/tenants/${encodeURIComponent(id)}/overview`)
