@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import {
   ArrowLeft,
   ArrowRight,
@@ -6,6 +6,8 @@ import {
   Building2,
   CalendarClock,
   Check,
+  FileText,
+  FolderUp,
   MessageSquareText,
   Rocket,
   ShieldAlert,
@@ -13,6 +15,7 @@ import {
   Webhook,
 } from 'lucide-react'
 import {
+  applyStagedToDraft,
   applyVertical,
   draftFromProfile,
   draftToSnapshot,
@@ -25,6 +28,7 @@ import {
   URL_RE,
   type WizardDraft,
 } from '@/lib/profile'
+import { onboardingKitsApi } from '@/lib/uploads'
 import { useAction } from '@/lib/hooks'
 import { useAuth } from '@/lib/auth'
 import { tenantsApi, useTenants } from '@/lib/tenants'
@@ -75,6 +79,11 @@ type StepId = (typeof SUPER_STEPS | typeof ADMIN_STEPS)[number]['id']
 export function RegisterWizard({ onSubmitted }: { onSubmitted?: () => void } = {}) {
   const [step, setStep] = useState(0)
   const [draft, setDraft] = useState<WizardDraft>(emptyDraft)
+  // PDF auto-fill (admin flow only): what the staged document filled in, and
+  // a staging failure that must never block manual completion.
+  const [pdfSummary, setPdfSummary] = useState<{ filled: string[]; mode: 'kit' | 'universal' } | null>(null)
+  const [pdfError, setPdfError] = useState<string | null>(null)
+  const [pdfBusy, setPdfBusy] = useState(false)
   const { reload, tenants } = useTenants()
   const { identity } = useAuth()
   const action = useAction()
@@ -115,6 +124,8 @@ export function RegisterWizard({ onSubmitted }: { onSubmitted?: () => void } = {
   const pickTenant = async (tenantId: string) => {
     const tenant = tenants.find((t) => t.id === tenantId)
     if (!tenant) return
+    setPdfSummary(null)
+    setPdfError(null)
     // Prefer the pending draft: it carries every unpublished change (from
     // the profile editor or an earlier wizard pass), so both panels always
     // edit the same working copy.
@@ -125,6 +136,43 @@ export function RegisterWizard({ onSubmitted }: { onSubmitted?: () => void } = {
     } else {
       // A tenant the resolver cannot build yet still keeps its basics.
       setDraft({ ...emptyDraft(), companyName: tenant.display_name || tenant.id, tenantId: tenant.id, displayName: tenant.display_name, vertical: tenant.vertical })
+    }
+  }
+
+  /**
+   * Admin-only PDF auto-fill: stage the company's own document against the
+   * picked tenant and merge what was extracted into the draft. Fields the
+   * admin already typed are never overwritten (see applyStagedToDraft), and
+   * a staging failure leaves the wizard fully usable by hand.
+   */
+  const stageDocument = async (file: File) => {
+    const tenantId = draft.tenantId.trim()
+    if (!tenantId) return
+    setPdfBusy(true)
+    setPdfError(null)
+    try {
+      const staged = await onboardingKitsApi.stageTenant(tenantId, file, 'any')
+      const { draft: merged, filled, mode } = applyStagedToDraft(draft, staged)
+      setDraft(merged)
+      setPdfSummary({ filled, mode })
+      if (staged.warning) toast.push(staged.warning, 'error')
+      toast.push(
+        mode === 'kit'
+          ? filled.length
+            ? `Fetched from your document: ${filled.join(', ')}`
+            : 'Document read — every field it covers was already filled in.'
+          : filled.length
+            ? `Pre-filled from your document: ${filled.join(', ')} — please review the other steps`
+            : 'Document read — its details could not be confirmed, so nothing was pre-filled.',
+      )
+    } catch (err) {
+      setPdfError(
+        err instanceof Error
+          ? err.message
+          : 'Could not read that document. You can still complete every step by hand.',
+      )
+    } finally {
+      setPdfBusy(false)
     }
   }
 
@@ -215,7 +263,17 @@ export function RegisterWizard({ onSubmitted }: { onSubmitted?: () => void } = {
       </ol>
 
       <Card>
-        {stepId === 'tenant' && <TenantStep draft={draft} tenants={tenants} onPick={pickTenant} />}
+        {stepId === 'tenant' && (
+          <TenantStep
+            draft={draft}
+            tenants={tenants}
+            onPick={pickTenant}
+            onStageFile={stageDocument}
+            pdfBusy={pdfBusy}
+            pdfSummary={pdfSummary}
+            pdfError={pdfError}
+          />
+        )}
         {stepId === 'company' && <CompanyStep draft={draft} patch={patch} />}
         {stepId === 'whatsapp' && <WhatsAppStep draft={draft} patch={patch} />}
         {stepId === 'brand' && <BrandStep draft={draft} patch={patch} />}
@@ -293,11 +351,20 @@ function TenantStep({
   draft,
   tenants,
   onPick,
+  onStageFile,
+  pdfBusy,
+  pdfSummary,
+  pdfError,
 }: {
   draft: WizardDraft
   tenants: Tenant[]
   onPick: (tenantId: string) => void
+  onStageFile: (file: File) => void
+  pdfBusy: boolean
+  pdfSummary: { filled: string[]; mode: 'kit' | 'universal' } | null
+  pdfError: string | null
 }) {
+  const fileRef = useRef<HTMLInputElement>(null)
   return (
     <StepShell
       title="Which tenant are you completing?"
@@ -341,6 +408,83 @@ function TenantStep({
           )
         })}
       </div>
+
+      {draft.tenantId && (
+        <div className="rounded-lg border border-dashed border-accent-300 bg-accent-50/40 p-4">
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".pdf,.docx,.doc,.md"
+            className="hidden"
+            aria-label="Upload your company document"
+            onChange={(e) => {
+              const f = e.target.files?.[0]
+              if (f) onStageFile(f)
+              e.target.value = ''
+            }}
+          />
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-accent-100 text-accent-700">
+              <FileText className="h-4 w-4" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium text-slate-100">Have a company document?</p>
+              <p className="text-xs leading-relaxed text-slate-400">
+                Upload your company PDF, Word file or Markdown and the details it confirms —
+                brand, contacts and services, and for a filled onboarding kit also the menu,
+                hours and guardrails — pre-fill the next steps. Anything you already typed
+                stays untouched, and everything remains editable before you submit for
+                approval.
+              </p>
+            </div>
+            <Button
+              variant="primary"
+              size="sm"
+              loading={pdfBusy}
+              icon={<FolderUp className="h-4 w-4" />}
+              onClick={() => fileRef.current?.click()}
+            >
+              Upload document
+            </Button>
+          </div>
+
+          {pdfError && (
+            <Alert tone="danger" title="We could not read that document" className="mt-3">
+              {pdfError} You can still complete every step by hand.
+            </Alert>
+          )}
+          {pdfSummary && pdfSummary.mode === 'kit' && (
+            <Alert tone="success" title="Fetched from your PDF" className="mt-3">
+              {pdfSummary.filled.length ? (
+                <>
+                  Filled in: {pdfSummary.filled.join(' · ')}. Check each step — everything stays
+                  editable, and nothing goes live until a super admin approves your submission.
+                </>
+              ) : (
+                'The document was read, but every field it covers was already filled in — nothing was changed.'
+              )}
+            </Alert>
+          )}
+          {pdfSummary && pdfSummary.mode === 'universal' && (
+            <Alert
+              tone="info"
+              title="Started from your document — review the pre-filled steps"
+              className="mt-3"
+            >
+              {pdfSummary.filled.length ? (
+                <>
+                  Filled in from your document: {pdfSummary.filled.join(' · ')}. Working hours,
+                  tone, guardrails and the menu keep the standard starting values — the document
+                  did not confirm those, so please review those steps. Everything stays
+                  editable, and nothing goes live until a super admin approves your submission.
+                </>
+              ) : (
+                'The document was read, but its details could not be confirmed, so nothing was pre-filled — you can fill the steps in by hand.'
+              )}
+            </Alert>
+          )}
+        </div>
+      )}
     </StepShell>
   )
 }
@@ -858,6 +1002,18 @@ function ReviewStep({
       value: draft.neverState ? draft.neverState.split('\n').filter(Boolean).length + ' rule(s)' : '—',
       step: 5,
     },
+    ...(draft.stagedUpload
+      ? [
+          {
+            label: 'Document import',
+            value:
+              draft.stagedUpload.extraction_mode === 'kit'
+                ? `Menu of ${draft.stagedUpload.menu_items?.length ?? 0} item(s) from your document goes into this draft; ${draft.stagedUpload.offerings?.length ?? 0} offerings and ${draft.stagedUpload.faqs?.length ?? 0} FAQs were extracted.`
+                : `${draft.stagedUpload.offerings?.length ?? 0} offerings and ${draft.stagedUpload.faqs?.length ?? 0} FAQs were extracted from your document. Its menu, hours and tone were not applied — the extraction could not confirm them in the document.`,
+            step: 0,
+          },
+        ]
+      : []),
   ]
 
   return (
