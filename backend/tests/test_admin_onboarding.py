@@ -285,5 +285,110 @@ class AdminOnboardingTests(unittest.TestCase):
         self.assertEqual([b["id"] for b in captured_menu["buttons"]], ["services", "contact"])
 
 
+class SectionSourcesTests(unittest.TestCase):
+    """Provenance labels (``section_sources``) on universal staged payloads.
+
+    The universal extractor mixes document-derived values with vertical
+    template stand-ins. These tests drive the REAL staging pipeline
+    (heuristics + merge) with only the LLM transport stubbed, and check
+    the labels match what the pipeline actually did:
+
+      * a document with a parseable hours line and an LLM-extracted menu
+        labels business_hours and menu "extracted";
+      * a thin document (no LLM parts at all) falls back to the
+        hard-coded hours and the vertical template menu — and the labels
+        must say "template" for menu / business_hours / guardrails;
+      * a single extracted menu item topped up with template buttons
+        labels the menu "mixed".
+    """
+
+    def _stage(self, text, llm_part=None):
+        bifurcator = AutoBifurcator(tenant_id="acme-docs")
+        docs = [{"filename": "company.md", "text": text, "tables": []}]
+        with patch.object(AutoBifurcator, "_call_llm_json", return_value=llm_part):
+            return bifurcator._stage_universal(docs, text)
+
+    def test_extracted_menu_and_hours_are_labelled_extracted(self):
+        text = (
+            "# Acme Corp\n\n"
+            "Business Hours: 10:00 AM - 08:00 PM (Mon-Sat)\n\n"
+            "Write to hello@acme.example for details.\n"
+        )
+        llm_part = {
+            "vertical": "it_software",
+            "brand": {"name": "Acme Corp", "support_email": "hello@acme.example"},
+            "business_hours": {"raw": "10:00 AM - 08:00 PM (Mon-Sat)"},
+            "menu_items": [
+                {"id": "price_list", "title": "Price List 2026", "description": "", "section": "", "action": "pricing"},
+                {"id": "book_demo", "title": "Book a Live Demo", "description": "", "section": "", "action": "demo"},
+                {"id": "downloads", "title": "Downloads", "description": "", "section": "", "action": "downloads"},
+            ],
+            "offerings": [
+                {
+                    "name": "Cloud Consulting",
+                    "category": "Services",
+                    "price": "",
+                    "short_description": "Cloud help",
+                    "description": "Cloud consulting",
+                }
+            ],
+        }
+        staged = self._stage(text, llm_part)
+        sources = staged["section_sources"]
+        # The labels cover every section the wizard consumes.
+        self.assertEqual(
+            set(sources), {"brand", "business_hours", "guardrails", "menu", "offerings"}
+        )
+        self.assertEqual(sources["menu"], "extracted")
+        self.assertEqual(sources["business_hours"], "extracted")
+        self.assertEqual(sources["brand"], "extracted")
+        self.assertEqual(sources["offerings"], "extracted")
+        # And the labelled values really are the document's own: the
+        # sanitizer parsed the raw label instead of using 09:30/18:30.
+        self.assertEqual(staged["business_hours"]["open"], "10:00")
+        self.assertEqual(staged["business_hours"]["close"], "20:00")
+        self.assertEqual(
+            [m["id"] for m in staged["menu_items"]],
+            ["price_list", "book_demo", "downloads"],
+        )
+        # The merge never carries guardrails in universal mode, so the
+        # staged rails are the template defaults — labelled as such.
+        self.assertEqual(sources["guardrails"], "template")
+
+    def test_thin_document_labels_template_fallbacks_as_template(self):
+        text = "Acme Corp is a software company. Reach out to know more."
+        staged = self._stage(text, llm_part=None)
+        sources = staged["section_sources"]
+        self.assertEqual(sources["menu"], "template")
+        self.assertEqual(sources["business_hours"], "template")
+        self.assertEqual(sources["guardrails"], "template")
+        self.assertEqual(sources["brand"], "template")
+        self.assertEqual(sources["offerings"], "template")
+        # The fallbacks really are in the payload (that is the point of
+        # the label): hard-coded hours and the vertical template menu.
+        self.assertEqual(staged["business_hours"]["open"], "09:30")
+        self.assertEqual(staged["business_hours"]["close"], "18:30")
+        self.assertTrue(staged["menu_items"])
+        self.assertTrue(
+            all(m["id"].startswith("menu_") for m in staged["menu_items"]),
+            staged["menu_items"],
+        )
+
+    def test_single_extracted_menu_item_topped_up_is_mixed(self):
+        text = "# Acme Corp\n\nBusiness Hours: 10:00 AM - 08:00 PM (Mon-Sat)\n"
+        llm_part = {
+            "vertical": "it_software",
+            "menu_items": [
+                {"id": "price_list", "title": "Price List 2026", "description": "", "section": "", "action": "pricing"},
+            ],
+        }
+        staged = self._stage(text, llm_part)
+        # One document item + the vertical defaults the merge appended.
+        self.assertEqual(staged["section_sources"]["menu"], "mixed")
+        ids = [m["id"] for m in staged["menu_items"]]
+        self.assertIn("price_list", ids)
+        self.assertTrue(any(i.startswith("menu_") for i in ids))
+
+
 if __name__ == "__main__":
     unittest.main()
