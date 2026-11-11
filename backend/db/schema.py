@@ -698,15 +698,17 @@ def init_db():
         # ── Scheduled website re-crawling ──────────────────────────────────────
         # One row per tenant: the URL to re-scrape, how often, and the outcome of
         # the last run. The background scheduler in main.py polls for due rows.
-        # Defaults are weekly (168h) with max_pages=50; auto_publish is forced off
-        # so scheduled crawls land in the gated staging pipeline.
+        # Defaults are weekly (168h); auto_publish is forced off so scheduled
+        # crawls land in the gated staging pipeline. max_pages is a legacy
+        # column kept for backward compat — the page-count limit was removed
+        # (2026-11-11) and stored values are ignored at run time.
         conn.execute(
             """CREATE TABLE IF NOT EXISTS tenant_crawl_schedules (
                 id              INTEGER PRIMARY KEY AUTOINCREMENT,
                 tenant_id       TEXT NOT NULL UNIQUE,
                 url             TEXT NOT NULL,
                 interval_hours  INTEGER DEFAULT 168,
-                max_pages       INTEGER DEFAULT 50,
+                max_pages       INTEGER DEFAULT NULL,
                 auto_publish    INTEGER DEFAULT 0,
                 is_enabled      INTEGER DEFAULT 1,
                 last_crawled_at TIMESTAMP,

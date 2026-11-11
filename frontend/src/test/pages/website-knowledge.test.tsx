@@ -105,10 +105,13 @@ beforeAll(() => {
   URL.revokeObjectURL = vi.fn()
 })
 
-function renderPanel(identity: typeof ADMIN_IDENTITY | typeof SUPER_IDENTITY) {
+function renderPanel(
+  identity: typeof ADMIN_IDENTITY | typeof SUPER_IDENTITY,
+  runsBody: typeof RUNS = RUNS,
+) {
   let stagedStatus = 'staged'
   testState.respond('GET /api/auth/me', () => ({ body: identity }))
-  testState.respond('GET /api/admin/tenants/acme/crawl-runs', () => ({ body: RUNS }))
+  testState.respond('GET /api/admin/tenants/acme/crawl-runs', () => ({ body: runsBody }))
   testState.respond('GET /api/admin/tenants/acme/crawl-runs/7/staged', () => ({
     body: stagedBody(stagedStatus),
   }))
@@ -132,9 +135,11 @@ describe('Website Knowledge panel', () => {
     expect(await screen.findByRole('heading', { name: 'Website Knowledge' })).toBeTruthy()
     expect(screen.getAllByText(/acme\.example/).length).toBeGreaterThan(0)
 
-    // Run row: status + pages.
+    // Run row: status + pages. Crawls are unlimited, so a finished run that
+    // fetched everything it found reads "6 pages crawled" (no "of" framing).
     expect(screen.getByText('done')).toBeTruthy()
-    expect(screen.getByText(/6 of 6 pages crawled/)).toBeTruthy()
+    expect(screen.getByText(/6 pages crawled/)).toBeTruthy()
+    expect(screen.queryByText(/of 6 pages crawled/)).toBeNull()
 
     // KB tab is the default: the staged article shows.
     expect(await screen.findByText('About Acme')).toBeTruthy()
@@ -152,6 +157,21 @@ describe('Website Knowledge panel', () => {
 
     // Rule-1 note is visible: the PDF owns menu/brand/hours.
     expect(screen.getByText(/Your PDF stays in charge/)).toBeTruthy()
+  })
+
+  it('historic capped runs keep their recorded "X of Y" framing', async () => {
+    // Runs recorded under the old 50-page cap keep the counts they were
+    // stored with; only complete unlimited runs drop the "of" framing.
+    const cappedRun = {
+      ...RUN,
+      id: 3,
+      pages_found: 95,
+      pages_scraped: 50,
+      created_at: '2026-11-09 09:00:00',
+    }
+    await renderPanel(ADMIN_IDENTITY, { ...RUNS, history: [RUN, cappedRun] })
+    expect(await screen.findByText(/50 of 95 pages crawled/)).toBeTruthy()
+    expect(screen.getByText(/6 pages crawled/)).toBeTruthy()
   })
 
   it('download buttons call the export endpoint with the chosen format', async () => {

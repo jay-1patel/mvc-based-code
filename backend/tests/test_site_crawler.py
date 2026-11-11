@@ -353,10 +353,12 @@ class ScheduleDefaultsTests(unittest.TestCase):
         self.resolver_patch.stop()
         self.temp.cleanup()
 
-    def test_upsert_defaults_weekly_50_no_autopublish(self):
+    def test_upsert_defaults_weekly_unlimited_no_autopublish(self):
+        # Page-count limit removed (2026-11-11): a fresh schedule stores no
+        # max_pages (NULL = unlimited); the old default of 50 is gone.
         row = database.upsert_crawl_schedule("sched-t", "https://example.com")
         self.assertEqual(row["interval_hours"], 168)
-        self.assertEqual(row["max_pages"], 50)
+        self.assertIsNone(row["max_pages"])
         self.assertFalse(row["auto_publish"])
 
     def test_mark_finished_stores_pages_found(self):
@@ -692,6 +694,86 @@ class CrawlApiAndE2ETests(unittest.TestCase):
         self.assertGreaterEqual(res["pages_crawled_count"], 6)
         # pages_found counts inventory of discovered URLs (at least the 6 pages)
         self.assertGreaterEqual(res["pages_found"], 6)
+
+
+# ── Unlimited crawl (page-count limit removed) ────────────────────────
+
+BIG_SITE_PAGE_COUNT = 60  # > the old 50-page default cap
+
+
+def _build_big_fixture_html(base: str) -> dict:
+    """60-page site: home + /page-1 … /page-59, all listed in the sitemap."""
+    links = "\n".join(
+        f'<a href="/page-{i}">Page {i}</a>' for i in range(1, BIG_SITE_PAGE_COUNT)
+    )
+    home = f"""<!DOCTYPE html><html><head><title>Big Site Home</title></head><body>
+      <h1>Big Fixture Site</h1>
+      <p>A sixty page fixture used to prove crawls are no longer capped
+      at fifty pages. Every page is reachable from here and the sitemap.</p>
+      <nav>{links}</nav>
+      </body></html>"""
+    pages = {"/": ("text/html", home.encode())}
+    for i in range(1, BIG_SITE_PAGE_COUNT):
+        body = f"""<!DOCTYPE html><html><head><title>Page {i}</title></head><body>
+      <h1>Page {i}</h1>
+      <p>Content of page {i} on the big fixture site, with enough text for
+      extraction to treat it as a real content page.</p>
+      <a href="/">Home</a>
+      </body></html>"""
+        pages[f"/page-{i}"] = ("text/html", body.encode())
+    locs = "\n".join(
+        f"<url><loc>{base}{path}</loc></url>" for path in ["/"] + [
+            f"/page-{i}" for i in range(1, BIG_SITE_PAGE_COUNT)
+        ]
+    )
+    sitemap = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+        f"{locs}\n</urlset>"
+    )
+    pages["/sitemap.xml"] = ("application/xml", sitemap.encode())
+    pages["/robots.txt"] = (
+        "text/plain",
+        f"User-agent: *\nAllow: /\nSitemap: {base}/sitemap.xml\n".encode(),
+    )
+    return pages
+
+
+class UnlimitedCrawlTests(unittest.TestCase):
+    """No page-count limit: a >50-page site is crawled in full by default."""
+
+    def setUp(self):
+        self.env_patch = patch.dict(
+            os.environ, {"CRAWL_URL_ALLOWLIST": "127.0.0.1,localhost"}
+        )
+        self.env_patch.start()
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), _FixtureHandler)
+        host, port = self.server.server_address
+        self.base = f"http://127.0.0.1:{port}"
+        _FixtureHandler.pages = _build_big_fixture_html(self.base)
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
+
+    def tearDown(self):
+        self.server.shutdown()
+        self.env_patch.stop()
+
+    def test_no_max_pages_crawls_all_60_pages(self):
+        crawler = SiteCrawler(self.base, request_delay=0.0)  # no max_pages given
+        self.assertIsNone(crawler.max_pages)
+        res = crawler.crawl()
+        self.assertEqual(res["pages_crawled_count"], BIG_SITE_PAGE_COUNT, res)
+        self.assertEqual(res["pages_found"], BIG_SITE_PAGE_COUNT, res)
+        errors = {item.get("error") for item in res["inventory"]}
+        self.assertNotIn("not_fetched_max_pages", errors)
+
+    def test_explicit_cap_still_honoured(self):
+        # Backward compatibility: a caller that passes a cap still gets it.
+        crawler = SiteCrawler(self.base, max_pages=10, request_delay=0.0)
+        res = crawler.crawl()
+        self.assertEqual(res["pages_crawled_count"], 10, res)
+        errors = {item.get("error") for item in res["inventory"]}
+        self.assertIn("not_fetched_max_pages", errors)
 
 
 if __name__ == "__main__":
