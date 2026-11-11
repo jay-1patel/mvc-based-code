@@ -44,13 +44,19 @@ def upsert_crawl_schedule(
     tenant_id: str,
     url: str,
     interval_hours: int = 168,
-    max_pages: int = 50,
+    max_pages: int = None,
     auto_publish: bool = False,
     is_enabled: bool = True,
 ) -> dict:
-    """Upsert schedule. auto_publish is forced off — gated pipeline only."""
+    """Upsert schedule. auto_publish is forced off — gated pipeline only.
+
+    max_pages is retained on the row for backward compatibility but is no
+    longer applied: the crawler's page-count limit was removed (2026-11-11)
+    and scheduled runs ignore any stored value (see crawl_pipeline).
+    None is stored as NULL.
+    """
     interval_hours = max(1, int(interval_hours or 168))
-    max_pages = max(1, min(int(max_pages or 50), 100))
+    max_pages = max(1, int(max_pages)) if max_pages else None
     auto_publish = False  # scheduled crawls never auto-publish
     with get_db_context() as conn:
         conn.execute(

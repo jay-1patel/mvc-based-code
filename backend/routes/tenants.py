@@ -171,7 +171,9 @@ class UrlAutoOnboardRequest(BaseModel):
 class CrawlScheduleIn(BaseModel):
     url: str
     interval_hours: int = Field(default=168, ge=1, le=24 * 30)
-    max_pages: int = Field(default=50, ge=1, le=100)
+    # Kept for API compat; no longer applied — the crawler's page-count
+    # limit was removed (2026-11-11) and scheduled runs are unlimited.
+    max_pages: Optional[int] = Field(default=None, ge=1)
     # Kept for API compat; forced off — scheduled crawls use the gated pipeline.
     auto_publish: bool = False
     is_enabled: bool = True
@@ -842,7 +844,7 @@ def scrape_website_for_tenant(
 # A schedule stores the tenant's source URL and a refresh interval; the
 # background scheduler in main.py re-runs UrlAutoOnboarder when it is due.
 
-def _run_scheduled_crawl(tenant_id: str, url: str, auto_publish: bool = False, max_pages: int = 50) -> None:
+def _run_scheduled_crawl(tenant_id: str, url: str, auto_publish: bool = False, max_pages: Optional[int] = None) -> None:
     """Blocking crawl run — gated staging pipeline (never auto-publishes)."""
     try:
         from services.crawl_pipeline import enqueue_scheduled_crawl

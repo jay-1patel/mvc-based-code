@@ -62,7 +62,7 @@ def run_crawl_pipeline(
     url: str,
     run_id: int,
     trigger: str = "manual",
-    max_pages: int = 50,
+    max_pages: Optional[int] = None,
     max_depth: int = 4,
     actor: Optional[dict] = None,
 ) -> Dict[str, Any]:
@@ -153,6 +153,7 @@ def run_crawl_pipeline(
             "crawl": {
                 "root_url": crawl_res.get("root_url"),
                 "domain": crawl_res.get("domain"),
+                "max_pages": max_pages,  # None = unlimited (no page-count cap)
                 "pages_found": pages_found,
                 "pages_scraped": pages_scraped,
                 "pages": [
@@ -653,7 +654,10 @@ def enqueue_scheduled_crawl(schedule: dict) -> Optional[int]:
         url=schedule["url"],
         run_id=run["id"],
         trigger="schedule",
-        max_pages=int(schedule.get("max_pages") or 50),
+        # Stored schedule max_pages is deliberately IGNORED: the page-count
+        # limit was removed (2026-11-11), so legacy schedules (which carry
+        # the old default 50) also run unlimited instead of staying capped.
+        max_pages=None,
         actor={
             "username": "crawl_scheduler",
             "role": "system",

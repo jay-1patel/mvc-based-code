@@ -35,7 +35,10 @@ router = APIRouter(prefix="/api/admin/tenants", tags=["crawl"])
 
 class CrawlStartRequest(BaseModel):
     url: str = Field(..., min_length=1)
-    max_pages: int = Field(default=50, ge=1, le=100)
+    # No page-count limit (product decision 2026-11-11): omitted/None/0 =
+    # unlimited. An explicit positive value is still honoured for backward
+    # compatibility with callers that pass one.
+    max_pages: Optional[int] = Field(default=None, ge=1)
     max_depth: int = Field(default=4, ge=0, le=10)
 
 
@@ -43,7 +46,7 @@ def _bg_run_crawl(
     tenant_id: str,
     url: str,
     run_id: int,
-    max_pages: int,
+    max_pages: Optional[int],
     max_depth: int,
     actor: dict,
 ) -> None:

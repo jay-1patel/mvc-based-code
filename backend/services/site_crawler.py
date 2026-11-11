@@ -214,7 +214,7 @@ class SiteCrawler:
     def __init__(
         self,
         base_url: str,
-        max_pages: int = 50,
+        max_pages: Optional[int] = None,
         max_depth: int = 4,
         page_timeout: float = 12.0,
         total_timeout: float = 600.0,
@@ -223,7 +223,12 @@ class SiteCrawler:
         enable_js_render: Optional[bool] = None,
     ):
         self.root_url = canonicalize_url(base_url)
-        self.max_pages = max(1, int(max_pages or 50))
+        # Page-count limit removed by product decision (2026-11-11): None or
+        # 0 means UNLIMITED — fetch until the discovery queue is empty. An
+        # explicit positive value still caps the crawl (backward compat for
+        # callers that pass one). Depth, delay, robots, same-domain and SSRF
+        # safeguards are unaffected.
+        self.max_pages = max(1, int(max_pages)) if max_pages else None
         self.max_depth = max(0, int(max_depth if max_depth is not None else 4))
         self.page_timeout = float(page_timeout or 12.0)
         self.total_timeout = float(total_timeout or 600.0)
@@ -566,7 +571,9 @@ class SiteCrawler:
                 queue = [(u, s, d) for u, s, d in queue if u != self.root_url]
                 queue.insert(0, (self.root_url, "link", 0))
 
-            while queue and len(crawled_pages) < self.max_pages:
+            while queue and (
+                self.max_pages is None or len(crawled_pages) < self.max_pages
+            ):
                 if time.monotonic() - started > self.total_timeout:
                     logger.warning("SITE_CRAWL_TOTAL_TIMEOUT | root=%s", self.root_url)
                     break
@@ -637,16 +644,25 @@ class SiteCrawler:
                             continue
                         queue.append((link, "link", depth + 1))
 
-            # Record remaining queued URLs that were discovered but never fetched
-            # (capped by max_pages) so inventory reflects discovery completeness.
-            for u, source, depth in queue:
-                if u in visited:
-                    continue
-                visited.add(u)
-                self._record(
-                    u, source=source, success=False,
-                    error="not_fetched_max_pages", depth=depth,
+            # Record remaining queued URLs that were discovered but never
+            # fetched so inventory reflects discovery completeness. With an
+            # explicit cap the reason is the cap; on the unlimited path the
+            # only way pages remain queued is the total-timeout guard, so
+            # they are marked accordingly (never "not_fetched_max_pages").
+            if queue:
+                leftover_error = (
+                    "not_fetched_max_pages"
+                    if self.max_pages is not None
+                    else "not_fetched_timeout"
                 )
+                for u, source, depth in queue:
+                    if u in visited:
+                        continue
+                    visited.add(u)
+                    self._record(
+                        u, source=source, success=False,
+                        error=leftover_error, depth=depth,
+                    )
 
         successful = [p for p in self.inventory if p.get("success")]
         return {
