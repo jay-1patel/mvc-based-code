@@ -1,14 +1,12 @@
 import { useMemo, useState } from 'react'
-import { Bot, History, MessageSquare, Search } from 'lucide-react'
+import { Bot, History, Search } from 'lucide-react'
 import { useAsync } from '@/lib/hooks'
 import { conversationsApi, stripRoute } from '@/lib/conversations'
 import { formatDate, pluralise, relativeTime } from '@/lib/format'
 import { cn } from '@/lib/cn'
 import type { ChatTurn } from '@/lib/types'
-import { Badge } from '@/components/ui/badge'
-import { Card, CardBody, CardHeader } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
-import { Alert, EmptyState, LoadingBlock } from '@/components/ui/feedback'
+import { EmptyState, ErrorBanner, FieldSelect, Pill } from '@/components/remake/ui'
+import { LoadingBlock } from '@/components/ui/feedback'
 import { PageHeader } from '@/components/layout/page-header'
 
 const WINDOWS = [
@@ -67,13 +65,13 @@ export function ChatHistoryPanel({ tenantId }: { tenantId: string }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <PageHeader
-        title="Chat history"
+        title="Past chats"
         description="Every recorded exchange with this tenant's customers — what the bot answered and what agents said."
         meta={
           state.data && (
             <>
-              <Badge tone="accent">{pluralise(totalTurns, 'turn')}</Badge>
-              <Badge tone="muted">{pluralise(threads.length, 'conversation')}</Badge>
+              <Pill tone="ok">{pluralise(totalTurns, 'turn')}</Pill>
+              <Pill>{pluralise(threads.length, 'conversation')}</Pill>
             </>
           )
         }
@@ -85,26 +83,24 @@ export function ChatHistoryPanel({ tenantId }: { tenantId: string }) {
               setSearch(draft.trim())
             }}
           >
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
-              <Input
+            <label className="flex items-center gap-2 rounded-lg border border-line bg-inputbg px-3 py-2">
+              <Search className="h-4 w-4 shrink-0 text-txfaint" />
+              <input
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
                 placeholder="Search messages…"
-                className="w-56 pl-9"
+                className="w-56 bg-transparent text-sm text-tx placeholder:text-txfaint focus:outline-none"
               />
+            </label>
+            <div className="w-40">
+              <FieldSelect value={days} onChange={(e) => setDays(Number(e.target.value))} aria-label="Time window">
+                {WINDOWS.map((w) => (
+                  <option key={w.value} value={w.value}>
+                    {w.label}
+                  </option>
+                ))}
+              </FieldSelect>
             </div>
-            <select
-              value={days}
-              onChange={(e) => setDays(Number(e.target.value))}
-              className="h-[38px] rounded-lg bg-surface-raised px-3 text-sm text-slate-200 ring-1 ring-inset ring-surface-line focus:outline-none focus:ring-2 focus:ring-accent-500"
-            >
-              {WINDOWS.map((w) => (
-                <option key={w.value} value={w.value}>
-                  {w.label}
-                </option>
-              ))}
-            </select>
           </form>
         }
       />
@@ -116,20 +112,23 @@ export function ChatHistoryPanel({ tenantId }: { tenantId: string }) {
         the pane — the lists scroll inside them, the page does not.
       */}
       <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,13rem)_minmax(0,1fr)] grid-rows-[minmax(0,1fr)] gap-4 sm:grid-cols-[minmax(0,16rem)_minmax(0,1fr)] lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]">
-        <Card className="flex min-h-0 min-w-0 flex-col overflow-hidden">
-          <CardHeader title="Conversations" icon={<History className="h-4 w-4" />} />
+        <section className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-panel border border-line bg-card">
+          <div className="flex items-center gap-2 border-b border-linesoft px-4 py-3">
+            <span className="text-txmuted">
+              <History className="h-4 w-4" />
+            </span>
+            <h2 className="text-sm font-semibold text-tx">Conversations</h2>
+          </div>
           {state.loading && !threads.length ? (
             <LoadingBlock label="Loading history…" />
           ) : state.error ? (
-            <CardBody>
-              <Alert tone="danger" title="Could not load">
-                {state.error}
-              </Alert>
-            </CardBody>
+            <div className="p-4">
+              <ErrorBanner title="Could not load" message={state.error} />
+            </div>
           ) : threads.length === 0 ? (
             <EmptyState className="flex-1" title="No history" description="Nothing matches this window." />
           ) : (
-            <ul className="min-h-0 flex-1 divide-y divide-surface-line overflow-y-auto overflow-x-hidden scroll-overlay">
+            <ul className="min-h-0 flex-1 divide-y divide-linesoft overflow-y-auto overflow-x-hidden">
               {threads.map((thread) => (
                 <li key={thread.waId}>
                   <button
@@ -137,16 +136,16 @@ export function ChatHistoryPanel({ tenantId }: { tenantId: string }) {
                     onClick={() => setSelected(thread.waId)}
                     className={cn(
                       'w-full px-4 py-3 text-left transition',
-                      thread.waId === selected ? 'bg-accent-50' : 'hover:bg-surface-panel',
+                      thread.waId === selected ? 'bg-accsoft' : 'hover:bg-paper',
                     )}
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-100">
+                      <span className="min-w-0 flex-1 truncate text-sm font-medium text-tx">
                         {thread.name}
                       </span>
-                      <span className="shrink-0 text-2xs text-slate-500">{relativeTime(thread.lastAt)}</span>
+                      <span className="shrink-0 text-[11px] text-txfaint">{relativeTime(thread.lastAt)}</span>
                     </div>
-                    <p className="mt-1 text-2xs text-slate-600">
+                    <p className="mt-1 text-[11px] text-txmuted">
                       {pluralise(thread.turns.length, 'turn')} · {formatDate(thread.lastAt)}
                     </p>
                   </button>
@@ -154,59 +153,68 @@ export function ChatHistoryPanel({ tenantId }: { tenantId: string }) {
               ))}
             </ul>
           )}
-        </Card>
+        </section>
 
-        <Card className="flex min-h-0 min-w-0 flex-col overflow-hidden">
+        <section className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-panel border border-line bg-card">
           {!active ? (
             <EmptyState
               className="flex-1"
               title="Pick a conversation"
               description="Select a customer to read the full transcript."
-              icon={<MessageSquare className="h-6 w-6" />}
             />
           ) : (
             <>
-              <CardHeader
-                title={active.name}
-                description={`${active.waId} · ${pluralise(active.turns.length, 'turn')} in this window`}
-                icon={<Bot className="h-4 w-4" />}
-              />
-              <CardBody className="min-h-0 flex-1 space-y-3 overflow-y-auto overflow-x-hidden break-anywhere scroll-overlay">
+              <div className="flex items-center gap-2 border-b border-linesoft px-4 py-3">
+                <span className="text-txmuted">
+                  <Bot className="h-4 w-4" />
+                </span>
+                <div className="min-w-0">
+                  <h2 className="truncate text-sm font-semibold text-tx">{active.name}</h2>
+                  <p className="text-xs text-txmuted">
+                    {active.waId} · {pluralise(active.turns.length, 'turn')} in this window
+                  </p>
+                </div>
+              </div>
+              <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overflow-x-hidden break-words px-4 py-4">
                 {[...active.turns]
                   .sort((a, b) => a.created_at.localeCompare(b.created_at))
                   .map((turn) => (
                     <div key={turn.id} className="space-y-1.5">
                       {stripRoute(turn.message) && (
                         <div className="flex justify-start">
-                          <div className="min-w-0 max-w-[80%] rounded-xl bg-surface-panel px-3 py-2 text-sm text-slate-200 ring-1 ring-inset ring-surface-line">
-                            {stripRoute(turn.message)}
-                            <span className="mt-1 block text-2xs text-slate-600">{formatDate(turn.created_at)}</span>
+                          <div className="min-w-0 max-w-[80%]">
+                            <div className="rounded-panel rounded-bl-sm bg-bubblein px-3.5 py-2.5 text-sm text-tx">
+                              {stripRoute(turn.message)}
+                            </div>
+                            <p className="mt-1 text-[11px] text-txmuted">{formatDate(turn.created_at)}</p>
                           </div>
                         </div>
                       )}
                       {turn.response && (
                         <div className="flex justify-end">
-                          <div
-                            className={cn(
-                              'min-w-0 max-w-[80%] rounded-xl px-3 py-2 text-sm ring-1 ring-inset',
-                              turn.route === 'agent'
-                                ? 'bg-accent-600 text-white ring-accent-600'
-                                : 'bg-accent-50 text-accent-900 ring-accent-200',
-                            )}
-                          >
-                            {turn.response}
-                            <span className="mt-1 block text-2xs opacity-70">
-                              {turn.route === 'agent' ? 'agent' : `bot · ${turn.route}`}
-                            </span>
+                          <div className="min-w-0 max-w-[80%]">
+                            <div
+                              className={cn(
+                                'rounded-panel rounded-br-sm px-3.5 py-2.5 text-sm',
+                                turn.route === 'agent'
+                                  ? 'border border-dashed border-attline bg-card text-tx'
+                                  : 'bg-acc text-onacc',
+                              )}
+                            >
+                              {turn.response}
+                            </div>
+                            <p className="mt-1 text-right text-[11px] text-txmuted">
+                              {turn.route === 'agent' ? 'Team reply' : `Bot · ${turn.route}`}
+                            </p>
                           </div>
                         </div>
                       )}
                     </div>
                   ))}
-              </CardBody>
+              </div>
             </>
           )}
-        </Card>
+        </section>
       </div>
     </div>
   )

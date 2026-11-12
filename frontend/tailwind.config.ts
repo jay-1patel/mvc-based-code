@@ -1,6 +1,47 @@
 import type { Config } from 'tailwindcss'
 
 /**
+ * Remake semantic colours. Every value is a CSS variable from
+ * `src/theme/tokens.css` — the ONLY place colour literals live. These
+ * names are deliberately unlike the legacy palette below (`slate`,
+ * `surface`, `accent`) so the token test can scan for exactly this set
+ * and fail the build if one is ever used without a definition.
+ */
+const v = (name: string) => `rgb(var(--${name}) / <alpha-value>)`
+const semantic = {
+  paper: v('paper'),
+  card: v('card'),
+  sidebg: v('sidebg'),
+  inputbg: v('input-bg'),
+  tx: v('tx'),
+  txmuted: v('tx-muted'),
+  txfaint: v('tx-faint'),
+  line: v('line'),
+  linesoft: v('line-soft'),
+  acc: v('acc'),
+  accsoft: v('acc-soft'),
+  onacc: v('on-acc'),
+  attbg: v('att-bg'),
+  attline: v('att-line'),
+  attink: v('att-ink'),
+  badbg: v('bad-bg'),
+  badline: v('bad-line'),
+  badink: v('bad-ink'),
+  ok: v('ok'),
+  oksoft: v('ok-soft'),
+  chippdfbg: v('chip-pdf-bg'),
+  chippdfink: v('chip-pdf-ink'),
+  chipwebbg: v('chip-web-bg'),
+  chipwebink: v('chip-web-ink'),
+  chipmanbg: v('chip-man-bg'),
+  chipmanink: v('chip-man-ink'),
+  chipdefbg: v('chip-def-bg'),
+  chipdefink: v('chip-def-ink'),
+  bubblein: v('bubble-in'),
+  switchoff: v('switch-off'),
+}
+
+/**
  * Light theme: a light grey canvas with a purple cast, violet accents.
  *
  * Note the inverted `slate` scale: the numbers run dark → light instead of
@@ -15,6 +56,7 @@ export default {
   theme: {
     extend: {
       colors: {
+        ...semantic,
         slate: {
           100: '#1a1626', // strongest text — deep plum-black, never #000
           200: '#28213a', // headings
@@ -57,6 +99,9 @@ export default {
           800: '#5a1bb4',
           900: '#4a1a8f',
         },
+      },
+      borderRadius: {
+        panel: '14px',
       },
       fontFamily: {
         sans: ['Inter', 'Segoe UI', 'system-ui', 'sans-serif'],

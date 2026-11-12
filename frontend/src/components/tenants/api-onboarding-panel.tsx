@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import {
   Plus,
   Truck,
@@ -9,6 +9,7 @@ import {
   ShieldCheck,
   RefreshCw,
   Zap,
+  Loader2,
 } from 'lucide-react'
 import {
   apiOnboarding,
@@ -24,27 +25,35 @@ import {
 } from '@/lib/api-onboarding'
 import { useAsync, useAction } from '@/lib/hooks'
 import { formatDate } from '@/lib/format'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Card, CardBody, CardHeader } from '@/components/ui/card'
-import { Input, Textarea } from '@/components/ui/input'
-import { Select } from '@/components/ui/select'
-import { Alert } from '@/components/ui/feedback'
+import {
+  FieldInput,
+  FieldSelect,
+  FieldTextarea,
+  GhostButton,
+  Notice,
+  Panel,
+  Pill,
+  PrimaryButton,
+  type PillTone,
+} from '@/components/remake/ui'
 import { PageHeader } from '@/components/layout/page-header'
 import { useToast } from '@/components/ui/toast'
 import { useTenants } from '@/lib/tenants'
 import { useAuth } from '@/lib/auth'
 
-const STATUS_TONE: Record<ApiOnboardingStatus, 'warning' | 'success' | 'danger'> = {
-  pending: 'warning',
-  approved: 'success',
-  rejected: 'danger',
+const STATUS_TONE: Record<ApiOnboardingStatus, PillTone> = {
+  pending: 'warn',
+  approved: 'ok',
+  rejected: 'bad',
 }
 
 const API_LABEL: Record<ApiOnboardingType, string> = {
   payment_api: 'Payment Gateway API',
   order_api: 'Order & Shipping API',
 }
+
+/** The compact size the legacy `size="sm"` buttons had on this screen. */
+const smallBtn = 'px-3 py-1.5 text-xs'
 
 export function ApiOnboardingPanel() {
   const { identity } = useAuth()
@@ -240,6 +249,19 @@ export function ApiOnboardingPanel() {
 
   const activePresets = apiType === 'payment_api' ? PAYMENT_PROVIDERS : SHIPPING_PROVIDERS
 
+  const tabButton = (tab: 'connections' | 'simulator' | 'requests', icon: ReactNode, label: string) =>
+    activeTab === tab ? (
+      <PrimaryButton onClick={() => setActiveTab(tab)}>
+        {icon}
+        {label}
+      </PrimaryButton>
+    ) : (
+      <GhostButton onClick={() => setActiveTab(tab)}>
+        {icon}
+        {label}
+      </GhostButton>
+    )
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -247,27 +269,9 @@ export function ApiOnboardingPanel() {
         description="Connect real Payment Gateways (Stripe, Razorpay, Custom) and Shipping Logistics (Blue Dart, Xpressbees, Custom) to your WhatsApp bot."
         actions={
           <div className="flex gap-2">
-            <Button
-              variant={activeTab === 'connections' ? 'primary' : 'ghost'}
-              onClick={() => setActiveTab('connections')}
-              icon={<Zap className="h-4 w-4" />}
-            >
-              Live Providers
-            </Button>
-            <Button
-              variant={activeTab === 'simulator' ? 'primary' : 'ghost'}
-              onClick={() => setActiveTab('simulator')}
-              icon={<Play className="h-4 w-4" />}
-            >
-              Test Simulator
-            </Button>
-            <Button
-              variant={activeTab === 'requests' ? 'primary' : 'ghost'}
-              onClick={() => setActiveTab('requests')}
-              icon={<Plus className="h-4 w-4" />}
-            >
-              Requests ({requests.length})
-            </Button>
+            {tabButton('connections', <Zap className="h-4 w-4" />, 'Live Providers')}
+            {tabButton('simulator', <Play className="h-4 w-4" />, 'Test Simulator')}
+            {tabButton('requests', <Plus className="h-4 w-4" />, `Requests (${requests.length})`)}
           </div>
         }
       />
@@ -278,11 +282,11 @@ export function ApiOnboardingPanel() {
           {/* Payment Gateways Section */}
           <div>
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-base font-semibold text-slate-100 flex items-center gap-2">
-                <CreditCard className="h-5 w-5 text-emerald-400" />
+              <h2 className="flex items-center gap-2 text-base font-semibold text-tx">
+                <CreditCard className="h-5 w-5 text-ok" />
                 Payment Gateways (Stripe · Razorpay · Custom)
               </h2>
-              <Badge tone="accent">Checkout & UPI</Badge>
+              <Pill tone="ok">Checkout & UPI</Pill>
             </div>
 
             <div className="grid gap-4 sm:grid-cols-3">
@@ -324,11 +328,11 @@ export function ApiOnboardingPanel() {
           {/* Delivery & Shipping Section */}
           <div>
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-base font-semibold text-slate-100 flex items-center gap-2">
-                <Truck className="h-5 w-5 text-blue-400" />
+              <h2 className="flex items-center gap-2 text-base font-semibold text-tx">
+                <Truck className="h-5 w-5 text-chipwebink" />
                 Logistics & Delivery Carriers (Blue Dart · Xpressbees · Custom)
               </h2>
-              <Badge tone="accent">AWB & Real Tracking</Badge>
+              <Pill tone="ok">AWB & Real Tracking</Pill>
             </div>
 
             <div className="grid gap-4 sm:grid-cols-3">
@@ -369,32 +373,34 @@ export function ApiOnboardingPanel() {
 
           {/* CREDENTIALS CONFIGURATION MODAL / DRAWER */}
           {configuringProvider && (
-            <Card className="border-accent-300 bg-surface-card shadow-xl">
-              <CardHeader
-                title={`Configure & Connect ${configuringProvider.toUpperCase()}`}
-                description="Set your API keys, credentials, and webhook secrets. Test connectivity live before saving."
-                actions={
-                  <Button variant="ghost" onClick={() => setConfiguringProvider(null)}>
-                    Close
-                  </Button>
-                }
-              />
-              <CardBody className="space-y-4">
+            <Panel
+              title={`Configure & Connect ${configuringProvider.toUpperCase()}`}
+              className="shadow-lg"
+              action={
+                <GhostButton className={smallBtn} onClick={() => setConfiguringProvider(null)}>
+                  Close
+                </GhostButton>
+              }
+            >
+              <p className="-mt-1 mb-4 text-sm text-txmuted">
+                Set your API keys, credentials, and webhook secrets. Test connectivity live before saving.
+              </p>
+              <div className="space-y-4">
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <Select
+                  <FieldSelect
                     label="Environment"
                     value={environment}
                     onChange={(e) => setEnvironment(e.target.value as any)}
                   >
                     <option value="sandbox">Sandbox / Test Mode (Recommended for testing)</option>
                     <option value="production">Production Live Mode</option>
-                  </Select>
+                  </FieldSelect>
                 </div>
 
                 {/* STRIPE FIELDS */}
                 {configuringProvider.includes('stripe') && (
                   <div className="space-y-3">
-                    <Input
+                    <FieldInput
                       label="Stripe Secret Key (sk_test_... or sk_live_...)"
                       placeholder="sk_test_51Mz..."
                       type="password"
@@ -402,13 +408,13 @@ export function ApiOnboardingPanel() {
                       onChange={(e) => setCredsForm({ ...credsForm, secret_key: e.target.value })}
                       hint="Found in your Stripe Dashboard → Developers → API keys."
                     />
-                    <Input
+                    <FieldInput
                       label="Stripe Publishable Key (pk_test_...)"
                       placeholder="pk_test_51Mz..."
                       value={credsForm.publishable_key || ''}
                       onChange={(e) => setCredsForm({ ...credsForm, publishable_key: e.target.value })}
                     />
-                    <Input
+                    <FieldInput
                       label="Stripe Webhook Secret (whsec_...)"
                       placeholder="whsec_..."
                       type="password"
@@ -422,21 +428,21 @@ export function ApiOnboardingPanel() {
                 {/* RAZORPAY FIELDS */}
                 {configuringProvider.includes('razorpay') && (
                   <div className="space-y-3">
-                    <Input
+                    <FieldInput
                       label="Razorpay Key ID (rzp_test_... or rzp_live_...)"
                       placeholder="rzp_test_1DP5mmOlF5G5ag"
                       value={credsForm.key_id || credsForm.api_key || ''}
                       onChange={(e) => setCredsForm({ ...credsForm, key_id: e.target.value })}
                       hint="Found in Razorpay Dashboard → Settings → API Keys."
                     />
-                    <Input
+                    <FieldInput
                       label="Razorpay Key Secret"
                       placeholder="Enter Razorpay Key Secret"
                       type="password"
                       value={credsForm.key_secret || credsForm.secret || ''}
                       onChange={(e) => setCredsForm({ ...credsForm, key_secret: e.target.value })}
                     />
-                    <Input
+                    <FieldInput
                       label="Razorpay Webhook Secret"
                       placeholder="Optional Webhook Secret"
                       type="password"
@@ -449,20 +455,20 @@ export function ApiOnboardingPanel() {
                 {/* BLUE DART FIELDS */}
                 {configuringProvider.includes('bluedart') && (
                   <div className="space-y-3">
-                    <Input
+                    <FieldInput
                       label="Blue Dart Customer Code"
                       placeholder="e.g. 123456"
                       value={credsForm.customer_code || ''}
                       onChange={(e) => setCredsForm({ ...credsForm, customer_code: e.target.value })}
                     />
-                    <Input
+                    <FieldInput
                       label="Blue Dart License Key"
                       placeholder="Enter Blue Dart License Key"
                       type="password"
                       value={credsForm.license_key || ''}
                       onChange={(e) => setCredsForm({ ...credsForm, license_key: e.target.value })}
                     />
-                    <Input
+                    <FieldInput
                       label="Blue Dart Login ID"
                       placeholder="e.g. BD_USER"
                       value={credsForm.login_id || ''}
@@ -474,20 +480,20 @@ export function ApiOnboardingPanel() {
                 {/* XPRESSBEES FIELDS */}
                 {configuringProvider.includes('xpressbees') && (
                   <div className="space-y-3">
-                    <Input
+                    <FieldInput
                       label="Xpressbees Account Email"
                       placeholder="merchant@example.com"
                       value={credsForm.email || ''}
                       onChange={(e) => setCredsForm({ ...credsForm, email: e.target.value })}
                     />
-                    <Input
+                    <FieldInput
                       label="Xpressbees Password"
                       type="password"
                       placeholder="••••••••"
                       value={credsForm.password || ''}
                       onChange={(e) => setCredsForm({ ...credsForm, password: e.target.value })}
                     />
-                    <Input
+                    <FieldInput
                       label="Or Xpressbees API Token"
                       placeholder="Bearer token if using static token"
                       type="password"
@@ -500,20 +506,20 @@ export function ApiOnboardingPanel() {
                 {/* CUSTOM PROVIDER FIELDS */}
                 {configuringProvider.includes('custom') && (
                   <div className="space-y-3">
-                    <Input
+                    <FieldInput
                       label="Custom API Endpoint URL"
                       placeholder="https://api.mygateway.com/v1/checkout"
                       value={credsForm.endpoint_url || credsForm.api_url || ''}
                       onChange={(e) => setCredsForm({ ...credsForm, endpoint_url: e.target.value })}
                       hint="Must start with http:// or https://"
                     />
-                    <Input
+                    <FieldInput
                       label="Authorization Header / Bearer Token"
                       placeholder="Bearer your_secret_token"
                       value={credsForm.auth_header || credsForm.api_key || ''}
                       onChange={(e) => setCredsForm({ ...credsForm, auth_header: e.target.value })}
                     />
-                    <Input
+                    <FieldInput
                       label="Webhook Signing Secret"
                       placeholder="Secret for signature verification"
                       type="password"
@@ -525,34 +531,26 @@ export function ApiOnboardingPanel() {
 
                 {/* Test Result Box */}
                 {testResult && (
-                  <Alert
-                    tone={testResult.ok ? 'success' : 'danger'}
+                  <Notice
+                    tone={testResult.ok ? 'success' : 'bad'}
                     title={testResult.ok ? '✅ Connection Test Passed' : '❌ Connection Test Failed'}
                   >
                     {testResult.details?.message || testResult.details?.error || JSON.stringify(testResult.details)}
-                  </Alert>
+                  </Notice>
                 )}
 
                 <div className="flex gap-2 pt-2">
-                  <Button
-                    variant="primary"
-                    loading={action.busy}
-                    onClick={() => handleSaveConfig(configuringProvider)}
-                    icon={<ShieldCheck className="h-4 w-4" />}
-                  >
+                  <PrimaryButton disabled={action.busy} onClick={() => handleSaveConfig(configuringProvider)}>
+                    {action.busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
                     Save & Verify Connection
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    loading={action.busy}
-                    onClick={() => handleTestConnection(configuringProvider)}
-                    icon={<RefreshCw className="h-4 w-4" />}
-                  >
+                  </PrimaryButton>
+                  <GhostButton disabled={action.busy} onClick={() => handleTestConnection(configuringProvider)}>
+                    {action.busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
                     Test Live Connection
-                  </Button>
+                  </GhostButton>
                 </div>
-              </CardBody>
-            </Card>
+              </div>
+            </Panel>
           )}
         </div>
       )}
@@ -561,20 +559,19 @@ export function ApiOnboardingPanel() {
       {activeTab === 'simulator' && (
         <div className="grid gap-6 sm:grid-cols-2">
           {/* Payment Link Tester */}
-          <Card className="border-emerald-500/30">
-            <CardHeader
-              title="Payment Checkout Simulator"
-              description="Generate a real checkout link using Stripe, Razorpay, or Custom to test WhatsApp order checkout."
-              icon={<CreditCard className="h-5 w-5 text-emerald-400" />}
-            />
-            <CardBody className="space-y-4">
+          <Panel title="Payment Checkout Simulator">
+            <p className="-mt-1 mb-4 flex items-start gap-2 text-sm text-txmuted">
+              <CreditCard className="mt-0.5 h-5 w-5 shrink-0 text-ok" />
+              Generate a real checkout link using Stripe, Razorpay, or Custom to test WhatsApp order checkout.
+            </p>
+            <div className="space-y-4">
               <div className="grid gap-3 sm:grid-cols-2">
-                <Input
+                <FieldInput
                   label="Order ID"
                   value={demoOrderId}
                   onChange={(e) => setDemoOrderId(e.target.value)}
                 />
-                <Input
+                <FieldInput
                   label="Amount (INR ₹)"
                   type="number"
                   value={String(demoAmount)}
@@ -583,38 +580,29 @@ export function ApiOnboardingPanel() {
               </div>
 
               <div className="flex flex-wrap gap-2">
-                <Button
-                  variant="primary"
-                  loading={action.busy}
-                  onClick={() => handleCreateTestPayment('stripe')}
-                >
+                <PrimaryButton disabled={action.busy} onClick={() => handleCreateTestPayment('stripe')}>
+                  {action.busy && <Loader2 className="h-4 w-4 animate-spin" />}
                   💳 Test with Stripe
-                </Button>
-                <Button
-                  variant="primary"
-                  loading={action.busy}
-                  onClick={() => handleCreateTestPayment('razorpay')}
-                >
+                </PrimaryButton>
+                <PrimaryButton disabled={action.busy} onClick={() => handleCreateTestPayment('razorpay')}>
+                  {action.busy && <Loader2 className="h-4 w-4 animate-spin" />}
                   ⚡ Test with Razorpay
-                </Button>
-                <Button
-                  variant="ghost"
-                  loading={action.busy}
-                  onClick={() => handleCreateTestPayment('custom_payment')}
-                >
+                </PrimaryButton>
+                <GhostButton disabled={action.busy} onClick={() => handleCreateTestPayment('custom_payment')}>
+                  {action.busy && <Loader2 className="h-4 w-4 animate-spin" />}
                   🔧 Test with Custom
-                </Button>
+                </GhostButton>
               </div>
 
               {demoPaymentResult && (
-                <div className="rounded-lg border border-emerald-500/40 bg-emerald-950/30 p-4 space-y-2">
+                <div className="space-y-2 rounded-panel border border-line bg-oksoft p-4">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <span className="text-xs font-semibold uppercase text-emerald-300">
+                    <span className="text-xs font-semibold uppercase text-ok">
                       Payment Link Generated ({demoPaymentResult.provider})
                     </span>
-                    <Badge tone="success">Active</Badge>
+                    <Pill tone="ok">Active</Pill>
                   </div>
-                  <div className="text-xs text-slate-300 font-mono break-all bg-surface-panel ring-1 ring-inset ring-surface-line p-2 rounded">
+                  <div className="break-all rounded border border-line bg-card p-2 font-mono text-xs text-tx">
                     {demoPaymentResult.payment_url || 'No URL returned'}
                   </div>
                   {demoPaymentResult.payment_url && (
@@ -622,31 +610,30 @@ export function ApiOnboardingPanel() {
                       href={demoPaymentResult.payment_url}
                       target="_blank"
                       rel="noreferrer"
-                      className="inline-flex items-center gap-1.5 text-xs text-emerald-400 font-semibold hover:underline mt-1"
+                      className="mt-1 inline-flex items-center gap-1.5 text-xs font-semibold text-ok hover:underline"
                     >
                       Open Live Checkout Page <ExternalLink className="h-3.5 w-3.5" />
                     </a>
                   )}
                 </div>
               )}
-            </CardBody>
-          </Card>
+            </div>
+          </Panel>
 
           {/* Shipping & AWB Tester */}
-          <Card className="border-blue-500/30">
-            <CardHeader
-              title="Shipping & AWB Tracking Simulator"
-              description="Book express shipment with Blue Dart or Xpressbees and track live parcel status."
-              icon={<Truck className="h-5 w-5 text-blue-400" />}
-            />
-            <CardBody className="space-y-4">
+          <Panel title="Shipping & AWB Tracking Simulator">
+            <p className="-mt-1 mb-4 flex items-start gap-2 text-sm text-txmuted">
+              <Truck className="mt-0.5 h-5 w-5 shrink-0 text-chipwebink" />
+              Book express shipment with Blue Dart or Xpressbees and track live parcel status.
+            </p>
+            <div className="space-y-4">
               <div className="grid gap-3 sm:grid-cols-2">
-                <Input
+                <FieldInput
                   label="Origin Pincode"
                   value={demoOriginPin}
                   onChange={(e) => setDemoOriginPin(e.target.value)}
                 />
-                <Input
+                <FieldInput
                   label="Destination Pincode"
                   value={demoDestPin}
                   onChange={(e) => setDemoDestPin(e.target.value)}
@@ -654,40 +641,34 @@ export function ApiOnboardingPanel() {
               </div>
 
               <div className="flex flex-wrap gap-2">
-                <Button
-                  variant="primary"
-                  loading={action.busy}
-                  onClick={() => handleBookTestShipment('bluedart')}
-                >
+                <PrimaryButton disabled={action.busy} onClick={() => handleBookTestShipment('bluedart')}>
+                  {action.busy && <Loader2 className="h-4 w-4 animate-spin" />}
                   🚚 Book with Blue Dart
-                </Button>
-                <Button
-                  variant="primary"
-                  loading={action.busy}
-                  onClick={() => handleBookTestShipment('xpressbees')}
-                >
+                </PrimaryButton>
+                <PrimaryButton disabled={action.busy} onClick={() => handleBookTestShipment('xpressbees')}>
+                  {action.busy && <Loader2 className="h-4 w-4 animate-spin" />}
                   📦 Book with Xpressbees
-                </Button>
+                </PrimaryButton>
               </div>
 
               {demoAwbResult && (
-                <div className="rounded-lg border border-blue-500/40 bg-blue-950/30 p-4 space-y-2">
+                <div className="space-y-2 rounded-panel border border-line bg-chipwebbg p-4">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <span className="text-xs font-semibold uppercase text-blue-300">
+                    <span className="text-xs font-semibold uppercase text-chipwebink">
                       AWB Generated: {demoAwbResult.awb_number} ({demoAwbResult.provider})
                     </span>
-                    <Badge tone="accent">Booked</Badge>
+                    <Pill tone="ok">Booked</Pill>
                   </div>
                   <div className="flex gap-2">
-                    <Button variant="ghost" className="text-xs" onClick={handleTrackAwb}>
+                    <GhostButton className={smallBtn} onClick={handleTrackAwb}>
                       Track Live Status
-                    </Button>
+                    </GhostButton>
                     {demoAwbResult.tracking_url && (
                       <a
                         href={demoAwbResult.tracking_url}
                         target="_blank"
                         rel="noreferrer"
-                        className="inline-flex items-center gap-1 text-xs text-blue-400 font-semibold hover:underline"
+                        className="inline-flex items-center gap-1 text-xs font-semibold text-chipwebink hover:underline"
                       >
                         Carrier Portal <ExternalLink className="h-3.5 w-3.5" />
                       </a>
@@ -697,15 +678,15 @@ export function ApiOnboardingPanel() {
               )}
 
               {trackResult && (
-                <div className="rounded-lg border border-surface-line bg-surface-panel p-3 space-y-1 text-xs">
-                  <div className="font-semibold text-slate-200">
-                    Carrier: {trackResult.carrier} · Status: <span className="text-emerald-700">{trackResult.status}</span>
+                <div className="space-y-1 rounded-panel border border-line bg-paper p-3 text-xs">
+                  <div className="font-semibold text-tx">
+                    Carrier: {trackResult.carrier} · Status: <span className="text-ok">{trackResult.status}</span>
                   </div>
-                  <div className="text-slate-400">AWB: {trackResult.awb}</div>
+                  <div className="text-txmuted">AWB: {trackResult.awb}</div>
                 </div>
               )}
-            </CardBody>
-          </Card>
+            </div>
+          </Panel>
         </div>
       )}
 
@@ -713,25 +694,25 @@ export function ApiOnboardingPanel() {
       {activeTab === 'requests' && (
         <div className="space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-400">
+            <h3 className="text-sm font-semibold uppercase tracking-wider text-txmuted">
               Submitted Integration Requests ({requests.length})
             </h3>
             {!creating && (
-              <Button variant="primary" icon={<Plus className="h-4 w-4" />} onClick={() => setCreating(true)}>
+              <PrimaryButton onClick={() => setCreating(true)}>
+                <Plus className="h-4 w-4" />
                 New Request
-              </Button>
+              </PrimaryButton>
             )}
           </div>
 
           {creating && (
-            <Card className="border-indigo-500/30">
-              <CardHeader
-                title="Request New Integration Access"
-                description="Select provider and submit for superadmin approval."
-              />
-              <CardBody className="space-y-4">
+            <Panel title="Request New Integration Access">
+              <p className="-mt-1 mb-4 text-sm text-txmuted">
+                Select provider and submit for superadmin approval.
+              </p>
+              <div className="space-y-4">
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <Select
+                  <FieldSelect
                     label="Integration Category"
                     value={apiType}
                     onChange={(event) => {
@@ -743,9 +724,9 @@ export function ApiOnboardingPanel() {
                   >
                     <option value="payment_api">💳 Payment Gateway API</option>
                     <option value="order_api">🚚 Delivery & Shipping API</option>
-                  </Select>
+                  </FieldSelect>
 
-                  <Select
+                  <FieldSelect
                     label="Choose Integration Provider"
                     value={selectedPresetId}
                     onChange={(event) => {
@@ -766,11 +747,11 @@ export function ApiOnboardingPanel() {
                         <option value="custom_shipping">🛠️ Custom Courier / Delivery Provider (Specify your own)</option>
                       </>
                     )}
-                  </Select>
+                  </FieldSelect>
                 </div>
 
                 {selectedPresetId.includes('custom') && (
-                  <Input
+                  <FieldInput
                     label="Custom Provider Name"
                     placeholder="e.g. PayPal, FedEx, Delhivery..."
                     value={customProvider}
@@ -781,7 +762,7 @@ export function ApiOnboardingPanel() {
                   />
                 )}
 
-                <Textarea
+                <FieldTextarea
                   label="Business Purpose"
                   value={purpose}
                   rows={3}
@@ -789,20 +770,19 @@ export function ApiOnboardingPanel() {
                 />
 
                 <div className="flex gap-2">
-                  <Button
-                    variant="primary"
-                    loading={action.busy}
-                    disabled={purpose.trim().length < 10}
+                  <PrimaryButton
+                    disabled={action.busy || purpose.trim().length < 10}
                     onClick={submit}
                   >
+                    {action.busy && <Loader2 className="h-4 w-4 animate-spin" />}
                     Submit Request
-                  </Button>
-                  <Button variant="ghost" onClick={() => setCreating(false)}>
+                  </PrimaryButton>
+                  <GhostButton onClick={() => setCreating(false)}>
                     Cancel
-                  </Button>
+                  </GhostButton>
                 </div>
-              </CardBody>
-            </Card>
+              </div>
+            </Panel>
           )}
 
           {requests.map((req) => (
@@ -836,55 +816,50 @@ function ProviderConfigCard({
   const isError = integration?.status === 'error'
 
   return (
-    <Card className={`border transition-all ${isVerified ? 'border-emerald-200 bg-emerald-50' : 'border-surface-line bg-surface-card'}`}>
-      <CardBody className="space-y-3">
+    <div
+      className={`rounded-panel border p-4 transition-all sm:p-5 ${
+        isVerified ? 'border-line bg-oksoft' : 'border-line bg-card'
+      }`}
+    >
+      <div className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="text-2xl">{icon}</span>
           {isVerified ? (
-            <Badge tone="success">Connected ✅</Badge>
+            <Pill tone="ok">Connected ✅</Pill>
           ) : isConfigured ? (
-            <Badge tone="accent">Configured ⚙️</Badge>
+            <Pill tone="warn">Configured ⚙️</Pill>
           ) : isError ? (
-            <Badge tone="danger">Connection Error ❌</Badge>
+            <Pill tone="bad">Connection Error ❌</Pill>
           ) : (
-            <Badge tone="muted">Not Configured</Badge>
+            <Pill>Not Configured</Pill>
           )}
         </div>
 
         <div>
-          <div className="font-semibold text-slate-100">{name}</div>
-          <div className="text-xs text-slate-400">{category}</div>
+          <div className="font-semibold text-tx">{name}</div>
+          <div className="text-xs text-txmuted">{category}</div>
         </div>
 
         {integration?.last_tested_at && (
-          <div className="text-[11px] text-slate-500">
+          <div className="text-[11px] text-txfaint">
             Last verified: {formatDate(integration.last_tested_at)}
           </div>
         )}
 
         <div className="flex gap-2 pt-1">
-          <Button
-            variant="primary"
-            className="flex-1 text-xs"
-            icon={<Settings2 className="h-3.5 w-3.5" />}
-            onClick={onConfigure}
-          >
+          <PrimaryButton className="flex-1 px-3 py-1.5 text-xs" onClick={onConfigure}>
+            <Settings2 className="h-3.5 w-3.5" />
             Configure
-          </Button>
+          </PrimaryButton>
           {integration?.has_credentials && (
-            <Button
-              variant="ghost"
-              className="text-xs"
-              loading={busy}
-              icon={<RefreshCw className="h-3.5 w-3.5" />}
-              onClick={onTest}
-            >
+            <GhostButton className="px-3 py-1.5 text-xs" disabled={busy} onClick={onTest}>
+              {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
               Test
-            </Button>
+            </GhostButton>
           )}
         </div>
-      </CardBody>
-    </Card>
+      </div>
+    </div>
   )
 }
 
@@ -904,35 +879,40 @@ function RequestCard({ request }: { request: ApiOnboardingRequest }) {
   ) : isXpressbees ? (
     <span className="text-lg">📦</span>
   ) : request.api_type === 'payment_api' ? (
-    <CreditCard className="h-4 w-4 text-emerald-400" />
+    <CreditCard className="h-4 w-4 text-ok" />
   ) : (
-    <Truck className="h-4 w-4 text-blue-400" />
+    <Truck className="h-4 w-4 text-chipwebink" />
   )
 
   return (
-    <Card>
-      <CardHeader
-        title={`${API_LABEL[request.api_type]}${request.provider ? ` · ${request.provider}` : ''}`}
-        description={`Submitted ${formatDate(request.created_at)} · ${request.environment.toUpperCase()} mode`}
-        icon={icon}
-        actions={<Badge tone={STATUS_TONE[request.status]}>{request.status}</Badge>}
-      />
-      <CardBody className="space-y-3">
-        <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-300">{request.purpose}</p>
+    <Panel
+      title={`${API_LABEL[request.api_type]}${request.provider ? ` · ${request.provider}` : ''}`}
+      action={
+        <span className="flex items-center gap-2">
+          {icon}
+          <Pill tone={STATUS_TONE[request.status]}>{request.status}</Pill>
+        </span>
+      }
+    >
+      <p className="-mt-1 mb-4 text-sm text-txmuted">
+        Submitted {formatDate(request.created_at)} · {request.environment.toUpperCase()} mode
+      </p>
+      <div className="space-y-3">
+        <p className="whitespace-pre-wrap text-sm leading-relaxed text-tx">{request.purpose}</p>
         {request.status === 'approved' ? (
-          <Alert tone="success" title="Approved & Ready">
+          <Notice tone="success" title="Approved & Ready">
             Approved by {request.reviewer_username || 'a superadmin'}. You can now configure credentials in the Live Providers tab.
-          </Alert>
+          </Notice>
         ) : request.status === 'rejected' ? (
-          <Alert tone="danger" title="Request rejected">
+          <Notice tone="bad" title="Request rejected">
             {request.decision_note || 'No additional note was provided.'}
-          </Alert>
+          </Notice>
         ) : (
-          <Alert tone="info" title="Awaiting review">
+          <Notice tone="info" title="Awaiting review">
             This request is pending review by a superadmin.
-          </Alert>
+          </Notice>
         )}
-      </CardBody>
-    </Card>
+      </div>
+    </Panel>
   )
 }

@@ -1,22 +1,30 @@
 import { useState } from 'react'
-import { Check, X } from 'lucide-react'
+import { Check, Loader2, X } from 'lucide-react'
 import { apiOnboarding, type ApiOnboardingRequest, type ApiOnboardingStatus } from '@/lib/api-onboarding'
 import { useAsync, useAction } from '@/lib/hooks'
 import { formatDate } from '@/lib/format'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Card, CardBody, CardHeader } from '@/components/ui/card'
-import { Textarea } from '@/components/ui/input'
-import { Select } from '@/components/ui/select'
-import { Alert, EmptyState, LoadingBlock } from '@/components/ui/feedback'
+import {
+  Card,
+  DangerButton,
+  EmptyState,
+  ErrorBanner,
+  FieldSelect,
+  FieldTextarea,
+  Notice,
+  Panel,
+  Pill,
+  PrimaryButton,
+  type PillTone,
+} from '@/components/remake/ui'
+import { LoadingBlock } from '@/components/ui/feedback'
 import { PageHeader } from '@/components/layout/page-header'
 import { useToast } from '@/components/ui/toast'
 
 const LABELS = { payment_api: 'Payment Gateway API', order_api: 'Order & Shipping API' } as const
-const TONES: Record<ApiOnboardingStatus, 'warning' | 'success' | 'danger'> = {
-  pending: 'warning',
-  approved: 'success',
-  rejected: 'danger',
+const TONES: Record<ApiOnboardingStatus, PillTone> = {
+  pending: 'warn',
+  approved: 'ok',
+  rejected: 'bad',
 }
 
 export function ApiOnboardingReview() {
@@ -38,44 +46,47 @@ export function ApiOnboardingReview() {
   return (
     <div>
       <PageHeader
-        title="API access requests"
+        title="API requests"
         description="Review tenant requests for external Payment API and Order API access. Approval grants eligibility only; it does not configure credentials or enable live traffic."
-        meta={<Badge tone="accent">Superadmin review</Badge>}
+        meta={<Pill tone="ok">Superadmin review</Pill>}
       />
 
-      <Alert tone="info" title="Approval is not live activation" className="mb-4">
+      <Notice tone="info" title="Approval is not live activation" className="mb-4">
         Approved requests still require secure credential provisioning before any API connection can be enabled. Never ask tenants to send API secrets through this queue.
-      </Alert>
+      </Notice>
 
       <div className="mb-4 max-w-xs">
-        <Select label="Request status" value={filter} onChange={(event) => setFilter(event.target.value as ApiOnboardingStatus | 'all')}>
+        <FieldSelect label="Request status" value={filter} onChange={(event) => setFilter(event.target.value as ApiOnboardingStatus | 'all')}>
           <option value="pending">Pending</option>
           <option value="approved">Approved</option>
           <option value="rejected">Rejected</option>
           <option value="all">All requests</option>
-        </Select>
+        </FieldSelect>
       </div>
 
-      {action.error && <Alert tone="danger" title="Could not update request" className="mb-4">{action.error}</Alert>}
+      {action.error && <ErrorBanner title="Could not update request" message={action.error} className="mb-4" />}
       {state.loading && <LoadingBlock label="Loading API requests…" />}
-      {state.error && <Alert tone="danger" title="Could not load API requests">{state.error}</Alert>}
+      {state.error && <ErrorBanner title="Could not load API requests" message={state.error} />}
       {state.data?.length === 0 && !state.loading && (
         <Card><EmptyState title="No requests" description="There are no API access requests in this status." /></Card>
       )}
       {state.data && state.data.length > 0 && (
         <div className="space-y-3">
           {state.data.map((request: ApiOnboardingRequest) => (
-            <Card key={request.id}>
-              <CardHeader
-                title={`${LABELS[request.api_type as keyof typeof LABELS]} · ${request.tenant_id}`}
-                description={`Submitted by ${request.requester_username} on ${formatDate(request.created_at)}${request.provider ? ` · ${request.provider}` : ''} · ${request.environment}`}
-                actions={<Badge tone={TONES[request.status as ApiOnboardingStatus]}>{request.status}</Badge>}
-              />
-              <CardBody className="space-y-4">
-                <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-300">{request.purpose}</p>
+            <Panel
+              key={request.id}
+              title={`${LABELS[request.api_type as keyof typeof LABELS]} · ${request.tenant_id}`}
+              action={<Pill tone={TONES[request.status as ApiOnboardingStatus]}>{request.status}</Pill>}
+            >
+              <p className="-mt-1 mb-4 text-sm text-txmuted">
+                Submitted by {request.requester_username} on {formatDate(request.created_at)}
+                {request.provider ? ` · ${request.provider}` : ''} · {request.environment}
+              </p>
+              <div className="space-y-4">
+                <p className="whitespace-pre-wrap text-sm leading-relaxed text-tx">{request.purpose}</p>
                 {request.status === 'pending' ? (
                   <>
-                    <Textarea
+                    <FieldTextarea
                       label="Decision note (optional)"
                       rows={2}
                       maxLength={2000}
@@ -84,23 +95,25 @@ export function ApiOnboardingReview() {
                       hint="Visible to the tenant admin. Do not include credentials or secrets."
                     />
                     <div className="flex flex-wrap gap-2">
-                      <Button variant="primary" loading={action.busy} icon={<Check className="h-4 w-4" />} onClick={() => decide(request, 'approved')}>
+                      <PrimaryButton disabled={action.busy} onClick={() => decide(request, 'approved')}>
+                        {action.busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
                         Approve eligibility
-                      </Button>
-                      <Button variant="danger" loading={action.busy} icon={<X className="h-4 w-4" />} onClick={() => decide(request, 'rejected')}>
+                      </PrimaryButton>
+                      <DangerButton disabled={action.busy} onClick={() => decide(request, 'rejected')}>
+                        {action.busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <X className="h-4 w-4" />}
                         Reject request
-                      </Button>
+                      </DangerButton>
                     </div>
                   </>
                 ) : (
-                  <div className="rounded-lg bg-surface-panel p-3 text-xs text-slate-400">
+                  <div className="rounded-lg border border-line bg-paper p-3 text-xs text-txmuted">
                     Reviewed by {request.reviewer_username || 'superadmin'}{request.decided_at ? ` on ${formatDate(request.decided_at)}` : ''}
-                    {request.decision_note && <p className="mt-1 whitespace-pre-wrap text-slate-300">{request.decision_note}</p>}
-                    {request.status === 'approved' && <p className="mt-2 text-emerald-700">{request.eligible ? 'Eligibility granted.' : 'Eligibility was not recorded; contact engineering.'} Secure setup is still required before live API use.</p>}
+                    {request.decision_note && <p className="mt-1 whitespace-pre-wrap text-tx">{request.decision_note}</p>}
+                    {request.status === 'approved' && <p className="mt-2 text-ok">{request.eligible ? 'Eligibility granted.' : 'Eligibility was not recorded; contact engineering.'} Secure setup is still required before live API use.</p>}
                   </div>
                 )}
-              </CardBody>
-            </Card>
+              </div>
+            </Panel>
           ))}
         </div>
       )}

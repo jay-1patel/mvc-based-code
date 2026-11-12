@@ -1,13 +1,12 @@
+import { useState } from 'react'
+import { Check, Copy, RefreshCw } from 'lucide-react'
 import { api } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
 import { useAsync } from '@/lib/hooks'
 import { formatDate } from '@/lib/format'
-import { Card, CardBody } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Alert, EmptyState, LoadingBlock } from '@/components/ui/feedback'
+import { Card, EmptyState, ErrorBanner, GhostButton, Pill } from '@/components/remake/ui'
+import { LoadingBlock } from '@/components/ui/feedback'
 import { PageHeader } from '@/components/layout/page-header'
-import { RefreshCw } from 'lucide-react'
 
 interface ApiErrorRow {
   id: number
@@ -20,6 +19,33 @@ interface ApiErrorRow {
   tenant_id?: string | null
   request_id?: string | null
   http_status?: number | null
+}
+
+/** The request id, with a one-click copy — this is the id support quotes. */
+function RequestId({ value }: { value: string }) {
+  const [copied, setCopied] = useState(false)
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(value)
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1500)
+    } catch {
+      /* clipboard unavailable — the id stays visible to copy by hand */
+    }
+  }
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      Request: <code className="font-mono text-tx">{value}</code>
+      <button
+        type="button"
+        onClick={copy}
+        className="inline-flex items-center gap-1 rounded-md border border-line bg-card px-1.5 py-0.5 font-medium text-tx transition hover:bg-paper"
+      >
+        {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+        {copied ? 'Copied' : 'Copy'}
+      </button>
+    </span>
+  )
 }
 
 /**
@@ -44,49 +70,51 @@ export function ErrorsPanel() {
   return (
     <div className="space-y-4">
       <PageHeader
-        title="Errors"
+        title="Errors & health"
         description={
           scopedTenant
             ? 'Recent API and runtime errors for your tenant. Read-only — quote the request id when reporting a problem.'
             : 'Recent API and runtime errors across all tenants. Read-only — quote the request id when reporting a problem.'
         }
         actions={
-          <Button variant="secondary" size="sm" icon={<RefreshCw className="h-4 w-4" />} onClick={state.reload} disabled={state.loading}>
+          <GhostButton onClick={state.reload} disabled={state.loading}>
+            <RefreshCw className="h-4 w-4" />
             Refresh
-          </Button>
+          </GhostButton>
         }
       />
-      {state.error && <Alert tone="danger" title="Could not load errors">{state.error}</Alert>}
+      {state.error && <ErrorBanner title="Could not load errors" message={state.error} />}
       {state.loading && <LoadingBlock label="Loading errors…" />}
       {!state.loading && !state.error && rows.length === 0 && (
         <Card>
-          <CardBody>
-            <EmptyState title="No errors recorded" description="Nothing has failed recently — or the error reporter has not persisted anything yet." />
-          </CardBody>
+          <EmptyState
+            title="No errors recorded"
+            description="Nothing has failed recently — or the error reporter has not persisted anything yet."
+          />
         </Card>
       )}
       <div className="space-y-3">
         {rows.map((row) => (
-          <Card key={row.id} className="bg-surface-panel border-surface-line">
-            <CardBody className="space-y-2">
-              <div className="flex flex-wrap items-center gap-2 text-sm text-slate-200">
+          <Card key={row.id} className="p-4 sm:p-5">
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center gap-2 text-sm text-tx">
                 <span className="font-medium">{row.api || 'Unknown API'}</span>
-                {row.provider && <Badge tone="neutral">{row.provider}</Badge>}
-                {row.http_status ? <Badge tone="danger">HTTP {row.http_status}</Badge> : null}
-                {row.severity && <Badge tone="muted">{row.severity}</Badge>}
-                <span className="text-xs text-slate-500">{formatDate(row.created_at)}</span>
+                {row.provider && <Pill>{row.provider}</Pill>}
+                {row.http_status ? <Pill tone="bad">HTTP {row.http_status}</Pill> : null}
+                {row.severity && <Pill>{row.severity}</Pill>}
+                <span className="text-xs text-txfaint">{formatDate(row.created_at)}</span>
               </div>
-              {row.message && <p className="text-sm text-slate-300">{row.message}</p>}
-              <div className="flex flex-wrap gap-3 text-xs text-slate-500">
+              {row.message && <p className="text-sm text-tx">{row.message}</p>}
+              <div className="flex flex-wrap items-center gap-3 text-xs text-txmuted">
                 <span>Tenant: {row.tenant_id || 'Platform'}</span>
-                {row.request_id && <span>Request: {row.request_id}</span>}
+                {row.request_id && <RequestId value={row.request_id} />}
               </div>
               {row.detail && (
-                <pre className="max-h-40 overflow-auto scroll-thin rounded-lg bg-surface p-3 font-mono text-xs leading-relaxed text-slate-400">
+                <pre className="max-h-40 overflow-auto scroll-thin rounded-lg border border-line bg-paper p-3 font-mono text-xs leading-relaxed text-txmuted">
                   {row.detail}
                 </pre>
               )}
-            </CardBody>
+            </div>
           </Card>
         ))}
       </div>

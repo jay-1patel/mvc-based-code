@@ -1,15 +1,20 @@
 import { useEffect, useRef, useState } from 'react'
-import { MessageSquare, Paperclip, Send, Trash2, Users, Wifi, WifiOff } from 'lucide-react'
+import { Paperclip, Send, Trash2, Users, Wifi, WifiOff } from 'lucide-react'
 import { api, getToken } from '@/lib/api'
 import { attachmentsApi, ATTACHMENT_ACCEPT, ATTACHMENT_TYPES_LABEL, MAX_ATTACHMENT_LABEL, type Attachment } from '@/lib/attachments'
 import { useAuth } from '@/lib/auth'
 import { formatDate } from '@/lib/format'
 import { cn } from '@/lib/cn'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Card, CardBody, CardHeader } from '@/components/ui/card'
-import { Textarea } from '@/components/ui/input'
-import { Alert, EmptyState, LoadingBlock } from '@/components/ui/feedback'
+import {
+  EmptyState,
+  ErrorBanner,
+  FieldTextarea,
+  IconButton,
+  Notice,
+  Pill,
+  PrimaryButton,
+} from '@/components/remake/ui'
+import { LoadingBlock } from '@/components/ui/feedback'
 import { PageHeader } from '@/components/layout/page-header'
 import { AttachmentBubble, AttachmentChip } from './chat-attachment'
 
@@ -207,10 +212,10 @@ export function AdminChatPanel({ tenantId }: { tenantId: string }) {
   if (!can('chat')) {
     return (
       <div>
-        <PageHeader title="Team chat" />
-        <Alert tone="warning" title="Not permitted">
+        <PageHeader title="Admin chat" />
+        <Notice tone="warn" title="Not permitted">
           The internal chat needs the <strong>chat</strong> permission.
-        </Alert>
+        </Notice>
       </div>
     )
   }
@@ -220,36 +225,39 @@ export function AdminChatPanel({ tenantId }: { tenantId: string }) {
   return (
     <div>
       <PageHeader
-        title="Team chat"
+        title="Admin chat"
         description="Talk to the other admins of this tenant. Messages are private to this brand."
         meta={
           <>
-            <Badge tone={connected ? 'success' : 'danger'}>
-              <span className="flex items-center gap-1">
+            <Pill tone={connected ? 'ok' : 'bad'}>
+              <span className="inline-flex items-center gap-1">
                 {connected ? <Wifi className="h-3 w-3" /> : <WifiOff className="h-3 w-3" />}
                 {connected ? 'live' : 'reconnecting'}
               </span>
-            </Badge>
-            <Badge tone="muted">{online.length} online</Badge>
+            </Pill>
+            <Pill>{online.length} online</Pill>
           </>
         }
       />
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,16rem)_minmax(0,1fr)]">
-        <Card className="overflow-hidden">
-          <CardHeader title="People" icon={<Users className="h-4 w-4" />} />
+        <section className="overflow-hidden rounded-panel border border-line bg-card">
+          <div className="flex items-center gap-2 border-b border-linesoft px-4 py-3">
+            <span className="text-txmuted">
+              <Users className="h-4 w-4" />
+            </span>
+            <h2 className="text-sm font-semibold text-tx">People</h2>
+          </div>
           {loading ? (
             <LoadingBlock label="Loading admins…" />
           ) : loadError ? (
-            <CardBody>
-              <Alert tone="danger" title="Could not load">
-                {loadError}
-              </Alert>
-            </CardBody>
+            <div className="p-4">
+              <ErrorBanner title="Could not load" message={loadError} />
+            </div>
           ) : users.length === 0 ? (
             <EmptyState title="No one else yet" description="Add another admin to start a conversation." />
           ) : (
-            <ul className="divide-y divide-surface-line">
+            <ul className="divide-y divide-linesoft">
               {users.map((user) => {
                 const isOnline = online.includes(user.username)
                 return (
@@ -259,19 +267,19 @@ export function AdminChatPanel({ tenantId }: { tenantId: string }) {
                       onClick={() => setSelected(user.username)}
                       className={cn(
                         'w-full px-4 py-3 text-left transition',
-                        user.username === selected ? 'bg-accent-50' : 'hover:bg-surface-panel',
+                        user.username === selected ? 'bg-accsoft' : 'hover:bg-paper',
                       )}
                     >
                       <div className="flex items-center gap-2">
                         <span
-                          className={cn('h-1.5 w-1.5 shrink-0 rounded-full', isOnline ? 'bg-emerald-500' : 'bg-slate-600')}
+                          className={cn('h-1.5 w-1.5 shrink-0 rounded-full', isOnline ? 'bg-ok' : 'bg-line')}
                         />
-                        <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-100">
+                        <span className="min-w-0 flex-1 truncate text-sm font-medium text-tx">
                           {user.username}
                         </span>
                       </div>
                       {user.last_message && (
-                        <p className="mt-1 truncate text-2xs text-slate-500">{user.last_message.message}</p>
+                        <p className="mt-1 truncate text-[11px] text-txmuted">{user.last_message.message}</p>
                       )}
                     </button>
                   </li>
@@ -279,21 +287,24 @@ export function AdminChatPanel({ tenantId }: { tenantId: string }) {
               })}
             </ul>
           )}
-        </Card>
+        </section>
 
-        <Card className="flex min-h-[26rem] flex-col">
+        <section className="flex min-h-[26rem] flex-col rounded-panel border border-line bg-card">
           {!selected ? (
             <EmptyState
+              className="flex-1"
               title="Pick someone"
               description="Choose a teammate to open the conversation."
-              icon={<MessageSquare className="h-6 w-6" />}
             />
           ) : (
             <>
-              <CardHeader title={selected} description={connected ? 'Connected' : 'Reconnecting…'} />
-              <CardBody className="flex-1 space-y-2 overflow-y-auto scroll-thin">
+              <div className="border-b border-linesoft px-4 py-3 sm:px-5">
+                <h2 className="truncate text-sm font-semibold text-tx">{selected}</h2>
+                <p className="text-xs text-txmuted">{connected ? 'Connected' : 'Reconnecting…'}</p>
+              </div>
+              <div className="flex-1 space-y-2 overflow-y-auto px-4 py-4">
                 {messages.length === 0 ? (
-                  <p className="py-8 text-center text-sm text-slate-500">No messages yet. Say hello.</p>
+                  <p className="py-8 text-center text-sm text-txmuted">No messages yet. Say hello.</p>
                 ) : (
                   messages.map((msg) => {
                     const mine = msg.username === username
@@ -301,20 +312,20 @@ export function AdminChatPanel({ tenantId }: { tenantId: string }) {
                       <div key={msg.id} className={cn('group flex', mine ? 'justify-end' : 'justify-start')}>
                         <div
                           className={cn(
-                            'max-w-[75%] rounded-xl px-3 py-2 text-sm ring-1 ring-inset',
+                            'max-w-[75%] rounded-panel px-3.5 py-2.5 text-sm',
                             mine
-                              ? 'bg-accent-600 text-white ring-accent-600'
-                              : 'bg-surface-panel text-slate-200 ring-surface-line',
+                              ? 'rounded-br-sm bg-acc text-onacc'
+                              : 'rounded-bl-sm bg-bubblein text-tx',
                           )}
                         >
-                          {!mine && <p className="mb-0.5 text-2xs font-medium opacity-70">{msg.username}</p>}
+                          {!mine && <p className="mb-0.5 text-[11px] font-medium opacity-70">{msg.username}</p>}
                           {msg.attachment?.url && (
                             <div className={cn(msg.message && 'mb-1.5')}>
                               <AttachmentBubble attachment={msg.attachment} mine={mine} />
                             </div>
                           )}
                           {msg.message && <p className="whitespace-pre-wrap break-words">{msg.message}</p>}
-                          <span className="mt-1 flex items-center justify-between gap-2 text-2xs opacity-70">
+                          <span className="mt-1 flex items-center justify-between gap-2 text-[11px] opacity-70">
                             {formatDate(msg.created_at)}
                             {mine && (
                               <button
@@ -332,9 +343,9 @@ export function AdminChatPanel({ tenantId }: { tenantId: string }) {
                     )
                   })
                 )}
-              </CardBody>
-              <div className="border-t border-surface-line p-4">
-                {uploadError && <p className="mb-2 text-xs text-rose-400">{uploadError}</p>}
+              </div>
+              <div className="border-t border-linesoft p-4">
+                {uploadError && <p className="mb-2 text-xs text-badink">{uploadError}</p>}
                 {pending && (
                   <div className="mb-2">
                     <AttachmentChip attachment={pending} onRemove={() => setPending(null)} />
@@ -348,17 +359,15 @@ export function AdminChatPanel({ tenantId }: { tenantId: string }) {
                     accept={ATTACHMENT_ACCEPT}
                     onChange={(e) => void pickFile(e.target.files?.[0])}
                   />
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    icon={<Paperclip className={cn('h-4 w-4', uploading && 'animate-pulse')} />}
+                  <IconButton
                     onClick={() => fileInput.current?.click()}
                     disabled={uploading}
                     title="Attach a file"
-                    aria-label="Attach a file"
-                  />
+                  >
+                    <Paperclip className={cn('h-4 w-4', uploading && 'animate-pulse')} />
+                  </IconButton>
                   <div className="flex-1">
-                    <Textarea
+                    <FieldTextarea
                       rows={2}
                       value={draft}
                       placeholder={`Message ${selected}…`}
@@ -371,22 +380,21 @@ export function AdminChatPanel({ tenantId }: { tenantId: string }) {
                       }}
                     />
                   </div>
-                  <Button
-                    variant="primary"
-                    icon={<Send className="h-4 w-4" />}
+                  <PrimaryButton
                     onClick={send}
                     disabled={(!draft.trim() && !pending) || uploading}
                   >
+                    <Send className="h-4 w-4" />
                     Send
-                  </Button>
+                  </PrimaryButton>
                 </div>
-                <p className="mt-1 text-2xs text-slate-600">
+                <p className="mt-1 text-[11px] text-txmuted">
                   {ATTACHMENT_TYPES_LABEL} · Max {MAX_ATTACHMENT_LABEL} per file
                 </p>
               </div>
             </>
           )}
-        </Card>
+        </section>
       </div>
     </div>
   )

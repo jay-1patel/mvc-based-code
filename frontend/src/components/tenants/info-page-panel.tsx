@@ -1,16 +1,24 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { Check, ListTree, MessageSquareQuote, Pencil, Plus, Send, X } from 'lucide-react'
+import { Check, Loader2, Pencil, Plus, Send, X } from 'lucide-react'
 import { useAction } from '@/lib/hooks'
 import { useAuth } from '@/lib/auth'
 import { tenantsApi } from '@/lib/tenants'
 import type { IntentSpec } from '@/lib/types'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Card, CardBody, CardHeader } from '@/components/ui/card'
-import { Input, Textarea } from '@/components/ui/input'
-import { Switch } from '@/components/ui/switch'
-import { TagInput } from '@/components/ui/tags'
-import { Alert, EmptyState, LoadingBlock } from '@/components/ui/feedback'
+import {
+  EmptyState,
+  ErrorBanner,
+  FieldInput,
+  FieldTextarea,
+  GhostButton,
+  IconButton,
+  Notice,
+  Panel,
+  Pill,
+  PrimaryButton,
+  TagField,
+  Toggle,
+} from '@/components/remake/ui'
+import { LoadingBlock } from '@/components/ui/feedback'
 import { PageHeader } from '@/components/layout/page-header'
 import { useToast } from '@/components/ui/toast'
 import { useResolved } from '@/components/tenants/hooks'
@@ -96,9 +104,7 @@ export function InfoPagePanel({ tenantId, page }: { tenantId: string; page: Info
     return (
       <div>
         <PageHeader title={spec.title} description={spec.description} />
-        <Alert tone="danger" title="Could not load the page">
-          {error}
-        </Alert>
+        <ErrorBanner title="Could not load the page" message={error} />
       </div>
     )
   }
@@ -106,11 +112,11 @@ export function InfoPagePanel({ tenantId, page }: { tenantId: string; page: Info
     return (
       <div>
         <PageHeader title={spec.title} description={spec.description} />
-        <Alert tone="warning" title="No answer configured">
+        <Notice tone="warn" title="No answer configured">
           This tenant's profile has no <code>{page}</code> intent, so the bot never
           answers questions about {spec.subject}. It has to come from the vertical
           defaults or a published profile version first.
-        </Alert>
+        </Notice>
       </div>
     )
   }
@@ -156,104 +162,97 @@ export function InfoPagePanel({ tenantId, page }: { tenantId: string; page: Info
         description={spec.description}
         meta={
           <>
-            <Badge tone={isActive ? 'success' : 'muted'}>
+            <Pill tone={isActive ? 'ok' : 'neutral'}>
               {isActive ? 'the bot answers this' : 'hidden from the bot'}
-            </Badge>
+            </Pill>
             {menuButton ? (
-              <Badge tone="accent">
+              <Pill tone="ok">
                 menu row: “{menuButton.title}” in {menuButton.section}
-              </Badge>
+              </Pill>
             ) : (
-              <Badge tone="warning">no menu row points here</Badge>
+              <Pill tone="warn">no menu row points here</Pill>
             )}
           </>
         }
         actions={
           !editing ? (
             canEdit ? (
-              <Button
-                variant="primary"
-                icon={<Pencil className="h-4 w-4" />}
-                onClick={() => setEditing(true)}
-              >
+              <PrimaryButton onClick={() => setEditing(true)}>
+                <Pencil className="h-4 w-4" />
                 Edit answer
-              </Button>
+              </PrimaryButton>
             ) : undefined
           ) : (
             <>
-              <Button
-                variant="ghost"
-                icon={<X className="h-4 w-4" />}
+              <GhostButton
                 onClick={() => {
                   setEditing(false)
                   setForm(toForm(intent))
                   setWarnings([])
                 }}
               >
+                <X className="h-4 w-4" />
                 Cancel
-              </Button>
-              <Button
-                variant="secondary"
-                icon={<Check className="h-4 w-4" />}
-                loading={action.busy}
-                disabled={!dirty}
-                onClick={() => save(false)}
-              >
+              </GhostButton>
+              <GhostButton disabled={!dirty || action.busy} onClick={() => save(false)}>
+                {action.busy ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Check className="h-4 w-4" />
+                )}
                 Save draft
-              </Button>
-              <Button
-                variant="primary"
-                icon={<Send className="h-4 w-4" />}
-                loading={action.busy}
-                disabled={!dirty}
-                onClick={() => save(true)}
-              >
-                Save & publish
-              </Button>
+              </GhostButton>
+              <PrimaryButton disabled={!dirty || action.busy} onClick={() => save(true)}>
+                {action.busy ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Send className="h-4 w-4" />
+                )}
+                Save &amp; publish
+              </PrimaryButton>
             </>
           )
         }
       />
 
       {!canEdit && (
-        <Alert tone="warning" title="Read-only" className="mb-4">
+        <Notice tone="warn" title="Read-only" className="mb-4">
           Editing this page needs the <strong>{spec.permission}</strong> permission —
           a super admin can grant it under Team &amp; permissions.
-        </Alert>
+        </Notice>
       )}
       {action.error && (
-        <Alert tone="danger" title="Action failed" className="mb-4">
-          {action.error}
-        </Alert>
+        <ErrorBanner title="Action failed" message={action.error} className="mb-4" />
       )}
       {warnings.length > 0 && (
-        <Alert tone="warning" title="Draft saved with warnings" className="mb-4">
+        <Notice tone="warn" title="Draft saved with warnings" className="mb-4">
           <ul className="list-disc space-y-1 pl-4">
             {warnings.map((w) => (
               <li key={w}>{w}</li>
             ))}
           </ul>
-        </Alert>
+        </Notice>
       )}
       {draftSaved && !editing && (
-        <Alert tone="info" title="Saved to the working draft" className="mb-4">
+        <Notice tone="info" title="Saved to the working draft" className="mb-4">
           The draft carries a newer answer for this page. It goes live when the draft
           is published — from here, or from the Profile or Versions screen.
-        </Alert>
+        </Notice>
       )}
 
       {editing && form ? (
-        <Card>
-          <CardHeader
-            title={`Edit the ${spec.title.toLowerCase()} answer`}
-            description="Saving writes the working draft. Publishing validates it, versions it and swaps the live profile — publishing is the only thing the bot ever sees."
-            actions={
-              <Badge tone={form.enabled ? 'success' : 'muted'}>
-                {form.enabled ? 'will answer' : 'will not answer'}
-              </Badge>
-            }
-          />
-          <CardBody className="space-y-5">
+        <Panel
+          title={`Edit the ${spec.title.toLowerCase()} answer`}
+          action={
+            <Pill tone={form.enabled ? 'ok' : 'neutral'}>
+              {form.enabled ? 'will answer' : 'will not answer'}
+            </Pill>
+          }
+        >
+          <p className="-mt-1 mb-4 text-sm text-txmuted">
+            Saving writes the working draft. Publishing validates it, versions it and swaps the live profile — publishing is the only thing the bot ever sees.
+          </p>
+          <div className="space-y-5">
             {page === 'careers' ? (
               <CareersEditor
                 value={form.answer}
@@ -265,7 +264,7 @@ export function InfoPagePanel({ tenantId, page }: { tenantId: string; page: Info
                 onChange={(answer) => setForm((f) => (f ? { ...f, answer } : f))}
               />
             ) : (
-            <Textarea
+            <FieldTextarea
               label="Answer text"
               rows={8}
               value={form.answer}
@@ -273,69 +272,61 @@ export function InfoPagePanel({ tenantId, page }: { tenantId: string; page: Info
               hint='What the bot sends, verbatim. One bullet per line starting with "• "; *stars* make a word bold. Leave empty to stop answering directly — questions then fall through to the knowledge-base pipeline.'
               />
             )}
-            <TagInput
-              value={form.keywords}
-              onChange={(keywords) => setForm((f) => (f ? { ...f, keywords } : f))}
-              placeholder="Add a keyword and press Enter"
-            />
-            <p className="hint">
-              Phrases that route a question to this answer. The classifier only ever
-              picks intents the tenant has switched on.
-            </p>
-            <Switch
+            <div>
+              <TagField
+                value={form.keywords}
+                onChange={(keywords) => setForm((f) => (f ? { ...f, keywords } : f))}
+                placeholder="Add a keyword and press Enter"
+              />
+              <p className="mt-1 text-xs leading-relaxed text-txmuted">
+                Phrases that route a question to this answer. The classifier only ever
+                picks intents the tenant has switched on.
+              </p>
+            </div>
+            <Toggle
               checked={form.enabled}
               onChange={(enabled) => setForm((f) => (f ? { ...f, enabled } : f))}
               label="The bot answers questions about this page"
               description="Turn off to keep the text but stop the intent from winning — the menu row disappears too."
             />
-            <p className="text-2xs text-slate-500">
+            <p className="text-2xs text-txmuted">
               {dirty ? 'Unsaved changes will be written as a draft, not published.' : 'No changes yet.'}
             </p>
-          </CardBody>
-        </Card>
+          </div>
+        </Panel>
       ) : (
         <div className="grid gap-4 lg:grid-cols-3">
-          <Card className="lg:col-span-2">
-            <CardHeader
-              title="What the bot replies"
-              description={`The live answer for questions about ${spec.subject}.`}
-              icon={<MessageSquareQuote className="h-4 w-4" />}
-            />
-            <CardBody>
-              <AnswerPreview text={intent.answer ?? ''} />
-            </CardBody>
-          </Card>
-          <Card>
-            <CardHeader
-              title="How customers reach it"
-              description="Routing and entry points."
-              icon={<ListTree className="h-4 w-4" />}
-            />
-            <CardBody className="space-y-4">
+          <Panel title="What the bot replies" className="lg:col-span-2">
+            <p className="-mt-1 mb-3 text-sm text-txmuted">
+              The live answer for questions about {spec.subject}.
+            </p>
+            <AnswerPreview text={intent.answer ?? ''} />
+          </Panel>
+          <Panel title="How customers reach it">
+            <p className="-mt-1 mb-3 text-sm text-txmuted">Routing and entry points.</p>
+            <div className="space-y-4">
               {intent.keywords?.length ? (
                 <div>
-                  <p className="mb-1.5 text-2xs font-semibold uppercase tracking-wider text-slate-500">
+                  <p className="mb-1.5 text-2xs font-semibold uppercase tracking-wider text-txmuted">
                     Keywords
                   </p>
                   <div className="flex flex-wrap gap-1.5">
                     {intent.keywords.map((k) => (
-                      <Badge key={k} tone="neutral">
-                        {k}
-                      </Badge>
+                      <Pill key={k}>{k}</Pill>
                     ))}
                   </div>
                 </div>
               ) : (
-                <p className="text-xs text-slate-500">No keywords routed to this answer.</p>
+                <p className="text-xs text-txmuted">No keywords routed to this answer.</p>
               )}
               {intent.examples?.length ? (
                 <div>
-                  <p className="mb-1.5 text-2xs font-semibold uppercase tracking-wider text-slate-500">
+                  <p className="mb-1.5 text-2xs font-semibold uppercase tracking-wider text-txmuted">
                     Phrases it answers
                   </p>
                   <ul className="space-y-1">
                     {intent.examples.map((ex) => (
-                      <li key={ex} className="text-xs italic leading-relaxed text-slate-600">
+                      <li key={ex} className="text-xs italic leading-relaxed text-txmuted">
                         “{ex}”
                       </li>
                     ))}
@@ -343,23 +334,23 @@ export function InfoPagePanel({ tenantId, page }: { tenantId: string; page: Info
                 </div>
               ) : null}
               <div>
-                <p className="mb-1.5 text-2xs font-semibold uppercase tracking-wider text-slate-500">
+                <p className="mb-1.5 text-2xs font-semibold uppercase tracking-wider text-txmuted">
                   Menu row
                 </p>
                 {menuButton ? (
-                  <p className="text-xs leading-relaxed text-slate-400">
+                  <p className="text-xs leading-relaxed text-tx">
                     “{menuButton.title}” in the {menuButton.section} section of the
                     bot's menu{isActive ? '' : ' — currently hidden because the intent is off'}.
                   </p>
                 ) : (
-                  <p className="text-xs leading-relaxed text-slate-500">
+                  <p className="text-xs leading-relaxed text-txmuted">
                     No menu button points here — customers only reach this answer by
                     asking in their own words.
                   </p>
                 )}
               </div>
-            </CardBody>
-          </Card>
+            </div>
+          </Panel>
         </div>
       )}
     </div>
@@ -394,7 +385,6 @@ function AnswerPreview({ text }: { text: string }) {
       <EmptyState
         title="No answer configured"
         description="Questions about this page fall through to the knowledge-base pipeline instead of a fixed reply."
-        icon={<MessageSquareQuote className="h-6 w-6" />}
       />
     )
   }
@@ -405,8 +395,8 @@ function AnswerPreview({ text }: { text: string }) {
         const bullet = line.startsWith('•')
         const body = bullet ? line.slice(1).trim() : line
         return (
-          <li key={i} className="flex gap-2.5 text-sm leading-relaxed text-slate-300">
-            {bullet && <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-accent-400" />}
+          <li key={i} className="flex gap-2.5 text-sm leading-relaxed text-tx">
+            {bullet && <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-acc" />}
             <span>{renderInline(body)}</span>
           </li>
         )
@@ -418,7 +408,7 @@ function AnswerPreview({ text }: { text: string }) {
 function renderInline(text: string): ReactNode[] {
   return text.split(/\*([^*]+)\*/g).map((part, i) =>
     i % 2 === 1 ? (
-      <strong key={i} className="font-semibold text-slate-100">
+      <strong key={i} className="font-semibold text-tx">
         {part}
       </strong>
     ) : (
@@ -466,7 +456,7 @@ function CareersEditor({ value, onChange }: { value: string; onChange: (v: strin
 
   return (
     <div className="space-y-4">
-      <Input
+      <FieldInput
         label="Heading line"
         value={shape.intro}
         onChange={(e) => emit({ ...shape, intro: e.target.value })}
@@ -477,47 +467,44 @@ function CareersEditor({ value, onChange }: { value: string; onChange: (v: strin
         {shape.openings.map((o, i) => (
           <div
             key={i}
-            className="grid items-end gap-2 rounded-xl bg-surface-panel p-3 ring-1 ring-inset ring-surface-line sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]"
+            className="grid items-end gap-2 rounded-panel border border-line bg-paper p-3 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]"
           >
-            <Input
+            <FieldInput
               label="Role"
               value={o.role}
               onChange={(e) => update(i, { role: e.target.value })}
               placeholder="Sales Executive"
             />
-            <Input
+            <FieldInput
               label="Department"
               value={o.dept}
               onChange={(e) => update(i, { dept: e.target.value })}
               placeholder="Sales"
             />
-            <Input
+            <FieldInput
               label="Experience"
               value={o.exp}
               onChange={(e) => update(i, { exp: e.target.value })}
               placeholder="2-4 yrs"
             />
-            <Input
+            <FieldInput
               label="Location"
               value={o.location}
               onChange={(e) => update(i, { location: e.target.value })}
               placeholder="Mumbai"
             />
-            <Button
-              variant="ghost"
-              size="sm"
-              icon={<X className="h-4 w-4" />}
-              onClick={() => remove(i)}
-              aria-label="Remove role"
-            />
+            <IconButton onClick={() => remove(i)} aria-label="Remove role">
+              <X className="h-4 w-4" />
+            </IconButton>
           </div>
         ))}
-        <Button variant="secondary" size="sm" icon={<Plus className="h-4 w-4" />} onClick={add}>
+        <GhostButton className="px-2.5 py-1.5 text-xs" onClick={add}>
+          <Plus className="h-4 w-4" />
           Add role
-        </Button>
+        </GhostButton>
       </div>
 
-      <Input
+      <FieldInput
         label="Closing line"
         value={shape.closing}
         onChange={(e) => emit({ ...shape, closing: e.target.value })}
@@ -525,10 +512,10 @@ function CareersEditor({ value, onChange }: { value: string; onChange: (v: strin
       />
 
       <div>
-        <p className="mb-1.5 text-2xs font-semibold uppercase tracking-wider text-slate-500">
+        <p className="mb-1.5 text-2xs font-semibold uppercase tracking-wider text-txmuted">
           Preview — what the bot sends
         </p>
-        <div className="rounded-xl bg-surface-panel p-3.5 ring-1 ring-inset ring-surface-line">
+        <div className="rounded-panel border border-line bg-paper p-3.5">
           <AnswerPreview text={serializeOpenings(shape)} />
         </div>
       </div>
@@ -628,7 +615,7 @@ function BulletsEditor({ value, onChange }: { value: string; onChange: (v: strin
 
   return (
     <div className="space-y-4">
-      <Input
+      <FieldInput
         label="Heading line"
         value={shape.intro}
         onChange={(e) => emit({ ...shape, intro: e.target.value })}
@@ -640,35 +627,32 @@ function BulletsEditor({ value, onChange }: { value: string; onChange: (v: strin
         {shape.rows.map((r, i) => (
           <div
             key={i}
-            className="grid items-end gap-2 rounded-xl bg-surface-panel p-3 ring-1 ring-inset ring-surface-line sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)_auto]"
+            className="grid items-end gap-2 rounded-panel border border-line bg-paper p-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)_auto]"
           >
-            <Input
+            <FieldInput
               label="Bold label"
               value={r.label}
               onChange={(e) => update(i, { label: e.target.value })}
               placeholder="Frontend"
             />
-            <Input
+            <FieldInput
               label="Details"
               value={r.details}
               onChange={(e) => update(i, { details: e.target.value })}
               placeholder="modern JavaScript frameworks and UI systems"
             />
-            <Button
-              variant="ghost"
-              size="sm"
-              icon={<X className="h-4 w-4" />}
-              onClick={() => remove(i)}
-              aria-label="Remove bullet"
-            />
+            <IconButton onClick={() => remove(i)} aria-label="Remove bullet">
+              <X className="h-4 w-4" />
+            </IconButton>
           </div>
         ))}
-        <Button variant="secondary" size="sm" icon={<Plus className="h-4 w-4" />} onClick={add}>
+        <GhostButton className="px-2.5 py-1.5 text-xs" onClick={add}>
+          <Plus className="h-4 w-4" />
           Add bullet
-        </Button>
+        </GhostButton>
       </div>
 
-      <Input
+      <FieldInput
         label="Closing line"
         value={shape.closing}
         onChange={(e) => emit({ ...shape, closing: e.target.value })}
@@ -677,10 +661,10 @@ function BulletsEditor({ value, onChange }: { value: string; onChange: (v: strin
       />
 
       <div>
-        <p className="mb-1.5 text-2xs font-semibold uppercase tracking-wider text-slate-500">
+        <p className="mb-1.5 text-2xs font-semibold uppercase tracking-wider text-txmuted">
           Preview — what the bot sends
         </p>
-        <div className="rounded-xl bg-surface-panel p-3.5 ring-1 ring-inset ring-surface-line">
+        <div className="rounded-panel border border-line bg-paper p-3.5">
           <AnswerPreview text={serializeBullets(shape)} />
         </div>
       </div>

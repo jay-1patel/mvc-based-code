@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Layers, Package, Pencil, Plus, Trash2, X } from 'lucide-react'
+import { Loader2, Pencil, Plus, Trash2, X } from 'lucide-react'
 import { useAction } from '@/lib/hooks'
 import { useAuth } from '@/lib/auth'
 import { contentWritePerms } from '@/lib/permissions'
@@ -8,14 +8,25 @@ import { useTenants } from '@/lib/tenants'
 import { getVertical } from '@/lib/verticals'
 import type { Offering, OfferingInput } from '@/lib/types'
 import { cn } from '@/lib/cn'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Card, CardBody, CardHeader } from '@/components/ui/card'
-import { Input, Textarea } from '@/components/ui/input'
-import { Switch } from '@/components/ui/switch'
-import { Alert, EmptyState, LoadingBlock } from '@/components/ui/feedback'
+import {
+  DangerButton,
+  EmptyState,
+  ErrorBanner,
+  FieldInput,
+  FieldTextarea,
+  GhostButton,
+  Notice,
+  Panel,
+  Pill,
+  PrimaryButton,
+  Toggle,
+} from '@/components/remake/ui'
+import { LoadingBlock } from '@/components/ui/feedback'
 import { PageHeader } from '@/components/layout/page-header'
 import { useToast } from '@/components/ui/toast'
+
+/** The compact size the legacy `size="sm"` buttons had on this screen. */
+const smallBtn = 'px-3 py-1.5 text-xs'
 
 /**
  * The tenant's content panel: what the bot can list, describe and quote.
@@ -70,9 +81,9 @@ export function OfferingsPanel({ tenantId }: { tenantId: string }) {
     return (
       <div>
         <PageHeader title={content.label} description="What this tenant sells, offers or lists." />
-        <Alert tone="warning" title="Not permitted">
+        <Notice tone="warn" title="Not permitted">
           Viewing {content.label.toLowerCase()} needs the <strong>view_products</strong> permission.
-        </Alert>
+        </Notice>
       </div>
     )
   }
@@ -84,28 +95,23 @@ export function OfferingsPanel({ tenantId }: { tenantId: string }) {
         description={`Add, edit and delete what ${active?.display_name || 'this tenant'} offers. The bot answers from these — a ${content.singular} listed here is one the bot can describe, price and quote.`}
         actions={
           canAdd ? (
-            <Button
-              variant="primary"
-              icon={<Plus className="h-4 w-4" />}
+            <PrimaryButton
               disabled={creating || editing !== null}
               onClick={() => setCreating(true)}
             >
+              <Plus className="h-4 w-4" />
               Add a {content.singular}
-            </Button>
+            </PrimaryButton>
           ) : undefined
         }
       />
 
-      {action.error && (
-        <Alert tone="danger" title="Action failed" className="mb-4">
-          {action.error}
-        </Alert>
-      )}
+      {action.error && <ErrorBanner title="Action failed" message={action.error} className="mb-4" />}
       {!canEdit && (
-        <Alert tone="warning" title="Read-only" className="mb-4">
+        <Notice tone="warn" title="Read-only" className="mb-4">
           Adding, editing and deleting needs the catalogue write permissions for
           this tenant's vertical.
-        </Alert>
+        </Notice>
       )}
 
       {creating && (
@@ -141,29 +147,24 @@ export function OfferingsPanel({ tenantId }: { tenantId: string }) {
         />
       )}
 
-      <Card className="mt-4">
-        <CardHeader
-          title={`${offerings.length} ${offerings.length === 1 ? content.singular : content.label.toLowerCase()}`}
-          icon={<Package className="h-4 w-4" />}
-          actions={
-            <div className="w-56">
-              <Switch
-                size="sm"
-                checked={showInactive}
-                onChange={setShowInactive}
-                label="Show removed"
-              />
-            </div>
-          }
-        />
+      <Panel
+        title={`${offerings.length} ${offerings.length === 1 ? content.singular : content.label.toLowerCase()}`}
+        className="mt-4"
+        action={
+          <div className="w-56">
+            <Toggle
+              size="sm"
+              checked={showInactive}
+              onChange={setShowInactive}
+              label="Show removed"
+            />
+          </div>
+        }
+      >
         {loading ? (
           <LoadingBlock label={`Loading ${content.label.toLowerCase()}…`} />
         ) : error ? (
-          <CardBody>
-            <Alert tone="danger" title="Could not load">
-              {error}
-            </Alert>
-          </CardBody>
+          <ErrorBanner title="Could not load" message={error} />
         ) : offerings.length === 0 ? (
           <EmptyState
             title={`No ${content.label.toLowerCase()} yet`}
@@ -172,27 +173,26 @@ export function OfferingsPanel({ tenantId }: { tenantId: string }) {
                 ? `Add the first ${content.singular} and the bot can start answering questions about it.`
                 : 'Nothing has been added for this tenant yet.'
             }
-            icon={<Layers className="h-6 w-6" />}
           />
         ) : (
-          <CardBody className="space-y-5">
+          <div className="space-y-5">
             {groups.map(([category, items]) => (
               <div key={category}>
-                <p className="mb-2 text-2xs font-semibold uppercase tracking-wider text-slate-500">
+                <p className="mb-2 text-2xs font-semibold uppercase tracking-wider text-txmuted">
                   {category}
                 </p>
-                <div className="divide-y divide-surface-line rounded-lg ring-1 ring-surface-line">
+                <div className="divide-y divide-linesoft rounded-panel border border-line">
                   {items.map((item) => (
                     <div key={item.id} className="flex flex-wrap items-start gap-3 px-4 py-3">
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-sm font-medium text-slate-100">{item.name}</span>
-                          {!item.is_active && <Badge tone="neutral">removed</Badge>}
-                          {item.short_label && <Badge tone="accent">{item.short_label}</Badge>}
-                          {item.price && <span className="text-xs text-slate-500">{item.price}</span>}
+                          <span className="text-sm font-medium text-tx">{item.name}</span>
+                          {!item.is_active && <Pill>removed</Pill>}
+                          {item.short_label && <Pill tone="ok">{item.short_label}</Pill>}
+                          {item.price && <span className="text-xs text-txfaint">{item.price}</span>}
                         </div>
                         {item.short_description && (
-                          <p className="mt-1 text-xs leading-relaxed text-slate-500">
+                          <p className="mt-1 text-xs leading-relaxed text-txmuted">
                             {item.short_description}
                           </p>
                         )}
@@ -203,7 +203,7 @@ export function OfferingsPanel({ tenantId }: { tenantId: string }) {
                               .map(([k, v]) => (
                                 <span
                                   key={k}
-                                  className="rounded bg-surface-panel px-1.5 py-0.5 text-2xs text-slate-500 ring-1 ring-inset ring-surface-line"
+                                  className="rounded bg-paper px-1.5 py-0.5 text-2xs text-txmuted ring-1 ring-inset ring-line"
                                 >
                                   {k.replace(/_/g, ' ')}: {v}
                                 </span>
@@ -214,53 +214,50 @@ export function OfferingsPanel({ tenantId }: { tenantId: string }) {
                       {(canEditRow || canRemove) && (
                         <div className="flex shrink-0 items-center gap-2">
                           {canEditRow && (
-                            <Button
-                              size="sm"
-                              variant="secondary"
-                              icon={<Pencil className="h-3.5 w-3.5" />}
+                            <GhostButton
+                              className={smallBtn}
                               onClick={() => setEditing(item)}
                             >
+                              <Pencil className="h-3.5 w-3.5" />
                               Edit
-                            </Button>
+                            </GhostButton>
                           )}
                           {canRemove && item.is_active &&
                             (confirmDelete === item.id ? (
                               <>
-                                <Button
-                                  size="sm"
-                                  variant="danger"
-                                  loading={action.busy}
+                                <DangerButton
+                                  className={smallBtn}
+                                  disabled={action.busy}
                                   onClick={() => remove(item.id, true)}
                                 >
+                                  {action.busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                                   Delete forever
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
+                                </DangerButton>
+                                <GhostButton
+                                  className={smallBtn}
                                   onClick={() => setConfirmDelete(null)}
                                 >
                                   Cancel
-                                </Button>
+                                </GhostButton>
                               </>
                             ) : (
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                icon={<Trash2 className="h-3.5 w-3.5" />}
+                              <GhostButton
+                                className={smallBtn}
                                 onClick={() => setConfirmDelete(item.id)}
                               >
+                                <Trash2 className="h-3.5 w-3.5" />
                                 Remove
-                              </Button>
+                              </GhostButton>
                             ))}
                           {canEditRow && !item.is_active && (
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              loading={action.busy}
+                            <GhostButton
+                              className={smallBtn}
+                              disabled={action.busy}
                               onClick={() => action.run(() => offeringsApi.update(tenantId, item.id, { is_active: true })).then((r) => r && reload())}
                             >
+                              {action.busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                               Restore
-                            </Button>
+                            </GhostButton>
                           )}
                         </div>
                       )}
@@ -269,9 +266,9 @@ export function OfferingsPanel({ tenantId }: { tenantId: string }) {
                 </div>
               </div>
             ))}
-          </CardBody>
+          </div>
         )}
-      </Card>
+      </Panel>
     </div>
   )
 }
@@ -345,30 +342,31 @@ function OfferingForm({
   }
 
   return (
-    <Card className="mt-4">
-      <CardHeader
-        title={initial ? `Edit ${initial.name}` : `Add a ${content.singular}`}
-        description={
-          content.extraFields.length
-            ? `Everything except ${content.extraFields.map((f) => f.label.toLowerCase()).join(', ')} is shared with the bot's answers.`
-            : undefined
-        }
-        actions={
-          <Button size="sm" variant="ghost" icon={<X className="h-3.5 w-3.5" />} onClick={onCancel}>
-            Close
-          </Button>
-        }
-      />
-      <CardBody className="space-y-4">
+    <Panel
+      title={initial ? `Edit ${initial.name}` : `Add a ${content.singular}`}
+      className="mt-4"
+      action={
+        <GhostButton className={smallBtn} onClick={onCancel}>
+          <X className="h-3.5 w-3.5" />
+          Close
+        </GhostButton>
+      }
+    >
+      {content.extraFields.length > 0 && (
+        <p className="-mt-1 mb-4 text-sm text-txmuted">
+          {`Everything except ${content.extraFields.map((f) => f.label.toLowerCase()).join(', ')} is shared with the bot's answers.`}
+        </p>
+      )}
+      <div className="space-y-4">
         <div className="grid gap-4 sm:grid-cols-2">
-          <Input
+          <FieldInput
             label={`${content.label} name`}
             value={form.name}
             error={nameMissing ? 'A name is required' : undefined}
             onChange={(e) => set('name', e.target.value)}
             placeholder={content.singular === 'service' ? 'Web development' : 'Name'}
           />
-          <Input
+          <FieldInput
             label="Group"
             value={form.category}
             onChange={(e) => set('category', e.target.value)}
@@ -392,8 +390,8 @@ function OfferingForm({
                 className={cn(
                   'rounded-md px-2 py-1 text-xs ring-1 ring-inset transition',
                   form.category === c
-                    ? 'bg-accent-500/15 font-medium text-accent-800 ring-accent-200'
-                    : 'text-slate-400 ring-surface-line hover:bg-accent-50 hover:text-slate-100',
+                    ? 'bg-accsoft font-medium text-acc ring-line'
+                    : 'text-txmuted ring-line hover:bg-paper hover:text-tx',
                 )}
               >
                 {c}
@@ -402,14 +400,14 @@ function OfferingForm({
           </div>
         )}
 
-        <Input
+        <FieldInput
           label="Short description"
           value={form.short_description}
           onChange={(e) => set('short_description', e.target.value)}
           hint="One line. This is what the bot replies with in a chat."
         />
 
-        <Textarea
+        <FieldTextarea
           label="Full description"
           rows={4}
           value={form.description}
@@ -419,7 +417,7 @@ function OfferingForm({
 
         <div className="grid gap-4 sm:grid-cols-2">
           {content.priceLabel && (
-            <Input
+            <FieldInput
               label={content.priceLabel}
               value={form.price}
               onChange={(e) => set('price', e.target.value)}
@@ -427,13 +425,13 @@ function OfferingForm({
               prefix="₹"
             />
           )}
-          <Input
+          <FieldInput
             label="Short label"
             value={form.short_label}
             onChange={(e) => set('short_label', e.target.value)}
             hint="Shown as a small tag, e.g. “Popular”."
           />
-          <Input
+          <FieldInput
             label="Link"
             value={form.detail_url}
             onChange={(e) => set('detail_url', e.target.value)}
@@ -444,7 +442,7 @@ function OfferingForm({
         {content.extraFields.length > 0 && (
           <div className="grid gap-4 sm:grid-cols-3">
             {content.extraFields.map((field) => (
-              <Input
+              <FieldInput
                 key={field.key}
                 label={field.label}
                 value={form.attrs[field.key] ?? ''}
@@ -455,7 +453,7 @@ function OfferingForm({
           </div>
         )}
 
-        <Switch
+        <Toggle
           checked={form.is_active}
           onChange={(v) => set('is_active', v)}
           label="Visible to the bot"
@@ -463,14 +461,15 @@ function OfferingForm({
         />
 
         <div className="flex items-center gap-2">
-          <Button variant="primary" loading={busy} onClick={submit}>
+          <PrimaryButton disabled={busy} onClick={submit}>
+            {busy && <Loader2 className="h-4 w-4 animate-spin" />}
             {initial ? 'Save changes' : `Add ${content.singular}`}
-          </Button>
-          <Button variant="ghost" onClick={onCancel}>
+          </PrimaryButton>
+          <GhostButton onClick={onCancel}>
             Cancel
-          </Button>
+          </GhostButton>
         </div>
-      </CardBody>
-    </Card>
+      </div>
+    </Panel>
   )
 }

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ArrowLeft, KeyRound, Pencil, Plus, ShieldCheck, Trash2, UserRound, X } from 'lucide-react'
+import { ArrowLeft, KeyRound, Loader2, Pencil, Plus, ShieldCheck, Trash2, UserRound, X } from 'lucide-react'
 import { adminsApi, type AdminRecord } from '@/lib/admins'
 import { navigate } from '@/lib/router'
 import {
@@ -15,13 +15,23 @@ import {
 import { useTenants } from '@/lib/tenants'
 import { useAction, useAsync } from '@/lib/hooks'
 import { formatDate, initials } from '@/lib/format'
-import { Button } from '@/components/ui/button'
-import { Card, CardBody, CardHeader, SectionTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { Input } from '@/components/ui/input'
-import { Select } from '@/components/ui/select'
-import { Switch } from '@/components/ui/switch'
-import { Alert, EmptyState, LoadingBlock } from '@/components/ui/feedback'
+import { cn } from '@/lib/cn'
+import {
+  Card,
+  DangerButton,
+  EmptyState,
+  ErrorBanner,
+  FieldInput,
+  FieldSelect,
+  GhostButton,
+  IconButton,
+  Notice,
+  Panel,
+  Pill,
+  PrimaryButton,
+  Toggle,
+} from '@/components/remake/ui'
+import { LoadingBlock } from '@/components/ui/feedback'
 import { PageHeader } from '@/components/layout/page-header'
 import { useToast } from '@/components/ui/toast'
 
@@ -33,6 +43,9 @@ type Draft = {
   role: 'super_admin' | 'admin' | 'sub_admin'
   permissions: Record<string, boolean>
 }
+
+/** The compact size the legacy `size="sm"` buttons had on this screen. */
+const smallBtn = 'px-3 py-1.5 text-xs'
 
 export function TeamScreen() {
   const { identity, isSuperAdmin, canManageTeam } = usePermissions()
@@ -64,9 +77,9 @@ export function TeamScreen() {
 
   if (!canManageTeam) {
     return (
-      <Alert tone="warning" title="Not permitted">
+      <Notice tone="warn" title="Not permitted">
         Your account does not hold the manage_admins permission, so the team screen is not available.
-      </Alert>
+      </Notice>
     )
   }
 
@@ -152,75 +165,73 @@ export function TeamScreen() {
         description="Every admin sees this console through their own permissions: a screen or an action they do not hold is never offered. The server re-checks all of it — this is the operator's view, not the enforcement point."
         actions={
           <div className="flex items-center gap-2">
-            <Button
-              size="sm"
-              variant="ghost"
-              icon={<ArrowLeft className="h-4 w-4" />}
+            <GhostButton
+              className={smallBtn}
               onClick={() => navigate(backTarget)}
             >
+              <ArrowLeft className="h-4 w-4" />
               Back
-            </Button>
-            <Button
-              variant="primary"
-              size="sm"
-              icon={<Plus className="h-4 w-4" />}
+            </GhostButton>
+            <PrimaryButton
+              className={smallBtn}
               onClick={() => {
                 setCreating((v) => !v)
                 setDraft(emptyDraft())
               }}
             >
+              <Plus className="h-4 w-4" />
               New admin
-            </Button>
+            </PrimaryButton>
           </div>
         }
         meta={
-          <Badge tone="accent">
+          <Pill tone={isSuperAdmin ? 'ok' : 'neutral'}>
             {isSuperAdmin ? 'You are a super admin — full control' : 'You are a sub admin'}
-          </Badge>
+          </Pill>
         }
       />
 
-      {action.error && (
-        <Alert tone="danger" title="Action failed" className="mb-4">
-          {action.error}
-        </Alert>
-      )}
+      {action.error && <ErrorBanner title="Action failed" message={action.error} className="mb-4" />}
 
       {creating && (
-        <Card className="mb-4">
-          <CardHeader
-            title="New admin"
-            description="A sub admin gets exactly the switches you turn on here."
-            icon={<UserRound className="h-4 w-4" />}
-            actions={
-              <Button size="sm" variant="ghost" onClick={() => setCreating(false)} icon={<X className="h-4 w-4" />} />
-            }
-          />
-          <CardBody className="space-y-4">
+        <Panel
+          title="New admin"
+          className="mb-4"
+          action={
+            <IconButton onClick={() => setCreating(false)} title="Close">
+              <X className="h-4 w-4" />
+            </IconButton>
+          }
+        >
+          <p className="-mt-1 mb-4 flex items-center gap-2 text-sm text-txmuted">
+            <UserRound className="h-4 w-4" />
+            A sub admin gets exactly the switches you turn on here.
+          </p>
+          <div className="space-y-4">
             <div className="grid gap-4 sm:grid-cols-3">
-              <Input
+              <FieldInput
                 label="Username"
                 value={draft.username}
                 onChange={(e) => setDraft({ ...draft, username: e.target.value })}
                 autoFocus
               />
-              <Input
+              <FieldInput
                 label="Email"
                 type="email"
                 value={draft.email}
                 onChange={(e) => setDraft({ ...draft, email: e.target.value })}
                 hint="Required in valid format"
               />
-                    <Input
-                      label="New password"
-                      type="password"
-                      value={draft.password}
-                      onChange={(e) => setDraft({ ...draft, password: e.target.value })}
-                      placeholder="Enter new password"
-                      hint="At least 12 chars with upper/lower/digit/special char"
-                    />
+              <FieldInput
+                label="New password"
+                type="password"
+                value={draft.password}
+                onChange={(e) => setDraft({ ...draft, password: e.target.value })}
+                placeholder="Enter new password"
+                hint="At least 12 chars with upper/lower/digit/special char"
+              />
             </div>
-            <Select
+            <FieldSelect
               label="Tenant"
               value={isSuperAdmin ? draft.tenantId : ownTenantId}
               onChange={(e) => setDraft({ ...draft, tenantId: e.target.value })}
@@ -243,17 +254,17 @@ export function TeamScreen() {
               ) : (
                 <option value={ownTenantId}>{ownTenantId || 'Your account has no tenant'}</option>
               )}
-            </Select>
-            <Select
+            </FieldSelect>
+            <FieldSelect
               label="Role"
               value={draft.role}
               onChange={(e) => setDraft({ ...draft, role: e.target.value as Draft['role'] })}
               hint={isSuperAdmin ? undefined : (identity?.role === 'admin' ? 'Admin can create sub-admin only' : 'Only a super admin can grant super/admin roles.')}
               disabled={identity?.role === 'sub_admin'}
             >
-              <option value="sub_admin">Sub admin �?" permissions apply</option>
-              {isSuperAdmin && <option value="admin">Admin �?" all permissions for their tenant</option>}
-            </Select>
+              <option value="sub_admin">Sub admin — permissions apply</option>
+              {isSuperAdmin && <option value="admin">Admin — all permissions for their tenant</option>}
+            </FieldSelect>
 
             {draft.role === 'sub_admin' && (
               <>
@@ -270,24 +281,24 @@ export function TeamScreen() {
             )}
 
             <div className="flex justify-end gap-2">
-              <Button variant="ghost" onClick={() => setCreating(false)}>
+              <GhostButton onClick={() => setCreating(false)}>
                 Cancel
-              </Button>
-              <Button
-                variant="primary"
-                loading={action.busy}
+              </GhostButton>
+              <PrimaryButton
                 disabled={
+                  action.busy ||
                   !draft.username.trim() ||
                   !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(draft.email.trim()) ||
                   !/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).{12,}$/.test(draft.password)
                 }
                 onClick={create}
               >
+                {action.busy && <Loader2 className="h-4 w-4 animate-spin" />}
                 Create admin
-              </Button>
+              </PrimaryButton>
             </div>
-          </CardBody>
-        </Card>
+          </div>
+        </Panel>
       )}
 
       {admins.loading ? (
@@ -306,112 +317,125 @@ export function TeamScreen() {
             return (
               <Card key={admin.username} className="p-5">
                 <div className="flex flex-wrap items-start gap-4">
-                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-accent-50 text-sm font-semibold text-accent-700 ring-1 ring-inset ring-accent-200">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-accsoft text-sm font-semibold text-acc ring-1 ring-inset ring-line">
                     {initials(admin.username)}
                   </div>
 
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-base font-semibold text-slate-100">{admin.username}</span>
+                      <span className="text-base font-semibold text-tx">{admin.username}</span>
                       {admin.role === 'super_admin' ? (
-                        <Badge tone="accent">
-                          <ShieldCheck className="h-3 w-3" />
-                          super admin
-                        </Badge>
+                        <Pill tone="ok">
+                          <span className="inline-flex items-center gap-1">
+                            <ShieldCheck className="h-3 w-3" />
+                            super admin
+                          </span>
+                        </Pill>
                       ) : admin.role === 'admin' ? (
-                        <Badge tone="accent">admin</Badge>
+                        <Pill tone="ok">admin</Pill>
                       ) : (
-                        <Badge tone="neutral">sub admin</Badge>
+                        <Pill>sub admin</Pill>
                       )}
-                      {isSelf && <Badge tone="muted">you</Badge>}
+                      {isSelf && <Pill>you</Pill>}
                     </div>
-                    <p className="mt-1 text-xs text-slate-500">
+                    <p className="mt-1 text-xs text-txfaint">
                       {admin.email || 'no email'} · joined {formatDate(admin.created_at)}{admin.tenant_id ? ` · ${admin.tenant_id}` : ''}
                     </p>
                     <div className="mt-2.5 flex flex-wrap gap-1.5">
                       {admin.role === 'super_admin' ? (
-                        <span className="text-xs text-slate-500">All permissions, by role.</span>
+                        <span className="text-xs text-txmuted">All permissions, by role.</span>
                       ) : granted.length ? (
                         granted.map((p) => (
-                          <Badge key={p} tone="muted">
+                          <Pill key={p}>
                             {PERMISSION_LABELS[p]}
-                          </Badge>
+                          </Pill>
                         ))
                       ) : (
-                        <span className="text-xs text-amber-700">No permissions — this admin cannot do anything.</span>
+                        <span className="text-xs text-attink">No permissions — this admin cannot do anything.</span>
                       )}
                     </div>
                   </div>
 
                   <div className="flex shrink-0 items-center gap-2">
                     {!isSelf && (admin.role === 'sub_admin' || (admin.role === 'admin' && isSuperAdmin)) && (
-                      <Button size="sm" variant="secondary" onClick={() => startEdit(admin)} icon={<Pencil className="h-4 w-4" />}>
+                      <GhostButton className={smallBtn} onClick={() => startEdit(admin)}>
+                        <Pencil className="h-4 w-4" />
                         Edit
-                      </Button>
+                      </GhostButton>
                     )}
                     {resetting === admin.username ? (
                       <>
-                        <Input
-                          type="password"
-                          value={newPassword}
-                          onChange={(e) => setNewPassword(e.target.value)}
-                          placeholder="New password"
-                          className="w-48"
-                        />
-                        <Button size="sm" variant="primary" loading={action.busy} disabled={!/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).{12,}$/.test(newPassword)} onClick={() => reset(admin.username)}>
+                        <div className="w-48">
+                          <FieldInput
+                            type="password"
+                            value={newPassword}
+                            onChange={(e) => setNewPassword(e.target.value)}
+                            placeholder="New password"
+                          />
+                        </div>
+                        <PrimaryButton
+                          className={smallBtn}
+                          disabled={action.busy || !/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).{12,}$/.test(newPassword)}
+                          onClick={() => reset(admin.username)}
+                        >
+                          {action.busy && <Loader2 className="h-4 w-4 animate-spin" />}
                           Save
-                        </Button>
-                        <Button size="sm" variant="ghost" onClick={() => setResetting(null)}>
+                        </PrimaryButton>
+                        <GhostButton className={smallBtn} onClick={() => setResetting(null)}>
                           Cancel
-                        </Button>
+                        </GhostButton>
                       </>
                     ) : (
                       !isSelf && (
-                        <Button size="sm" variant="ghost" onClick={() => setResetting(admin.username)} icon={<KeyRound className="h-4 w-4" />}>
+                        <GhostButton className={smallBtn} onClick={() => setResetting(admin.username)}>
+                          <KeyRound className="h-4 w-4" />
                           Password
-                        </Button>
+                        </GhostButton>
                       )
                     )}
                     {(admin.role === 'sub_admin' || (admin.role === 'admin' && isSuperAdmin)) &&
                       (deleting === admin.username ? (
                         <>
-                          <Button size="sm" variant="danger" loading={action.busy} onClick={() => remove(admin.username)}>
+                          <DangerButton className={smallBtn} disabled={action.busy} onClick={() => remove(admin.username)}>
+                            {action.busy && <Loader2 className="h-4 w-4 animate-spin" />}
                             Confirm
-                          </Button>
-                          <Button size="sm" variant="ghost" onClick={() => setDeleting(null)}>
+                          </DangerButton>
+                          <GhostButton className={smallBtn} onClick={() => setDeleting(null)}>
                             Cancel
-                          </Button>
+                          </GhostButton>
                         </>
                       ) : (
                         !isSelf && (
-                          <Button size="sm" variant="ghost" onClick={() => setDeleting(admin.username)} icon={<Trash2 className="h-4 w-4" />} />
+                          <IconButton danger title={`Remove ${admin.username}`} onClick={() => setDeleting(admin.username)}>
+                            <Trash2 className="h-4 w-4" />
+                          </IconButton>
                         )
                       ))}
                   </div>
                 </div>
 
                 {isSelf && (
-                  <p className="mt-4 text-xs text-slate-500">
+                  <p className="mt-4 text-xs text-txmuted">
                     Your own role and permissions are locked — ask another admin with manage_admins to change them.
                   </p>
                 )}
 
                 {isEditing && (
-                  <div className="mt-4 border-t border-surface-line pt-4">
+                  <div className="mt-4 border-t border-linesoft pt-4">
                     <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                      <SectionTitle>Edit {admin.username}</SectionTitle>
+                      <h3 className="text-base font-semibold text-tx">Edit {admin.username}</h3>
                       <div className="flex gap-2">
-                        <Button size="sm" variant="ghost" onClick={() => setEditPerms(Object.fromEntries(ALL_PERMISSIONS.map((p) => [p, true])))}>
+                        <GhostButton className={smallBtn} onClick={() => setEditPerms(Object.fromEntries(ALL_PERMISSIONS.map((p) => [p, true])))}>
                           All on
-                        </Button>
-                        <Button size="sm" variant="ghost" onClick={() => setEditPerms(Object.fromEntries(ALL_PERMISSIONS.map((p) => [p, false])))}>
+                        </GhostButton>
+                        <GhostButton className={smallBtn} onClick={() => setEditPerms(Object.fromEntries(ALL_PERMISSIONS.map((p) => [p, false])))}>
                           All off
-                        </Button>
+                        </GhostButton>
                       </div>
                     </div>
                     {isSuperAdmin ? (
                       <div className="mb-4 max-w-sm">
-                        <Select
+                        <FieldSelect
                           label="Tenant"
                           value={editTenant}
                           onChange={(e) => setEditTenant(e.target.value)}
@@ -423,10 +447,10 @@ export function TeamScreen() {
                               {tenant.display_name || tenant.id}
                             </option>
                           ))}
-                        </Select>
+                        </FieldSelect>
                       </div>
                     ) : (
-                      <p className="mb-4 text-xs text-slate-500">
+                      <p className="mb-4 text-xs text-txmuted">
                         Tenant is fixed to yours ({ownTenantId || 'none'}) — only a super admin can re-scope an admin.
                       </p>
                     )}
@@ -439,12 +463,13 @@ export function TeamScreen() {
                       onChange={setEditPerms}
                     />
                     <div className="mt-4 flex justify-end gap-2">
-                      <Button variant="ghost" onClick={() => setEditing(null)}>
+                      <GhostButton onClick={() => setEditing(null)}>
                         Cancel
-                      </Button>
-                      <Button variant="primary" loading={action.busy} onClick={() => saveEdit(admin)}>
+                      </GhostButton>
+                      <PrimaryButton disabled={action.busy} onClick={() => saveEdit(admin)}>
+                        {action.busy && <Loader2 className="h-4 w-4 animate-spin" />}
                         Save changes
-                      </Button>
+                      </PrimaryButton>
                     </div>
                   </div>
                 )}
@@ -474,19 +499,24 @@ function PresetRow({
   const active = matchingPreset(value)
   return (
     <div className="mb-3 flex flex-wrap items-center gap-2">
-      <span className="text-xs text-slate-500">Preset:</span>
+      <span className="text-xs text-txmuted">Preset:</span>
       {SUB_ADMIN_PRESETS.map((preset) => (
-        <Button
+        <button
           key={preset.id}
-          size="sm"
-          variant={active === preset.id ? 'primary' : 'secondary'}
+          type="button"
           title={preset.description}
           onClick={() => onChange(presetPermissions(preset.id))}
+          className={cn(
+            'inline-flex items-center justify-center gap-2 rounded-lg px-3 py-1.5 text-xs font-medium transition',
+            active === preset.id
+              ? 'bg-acc font-semibold text-onacc hover:opacity-90'
+              : 'border border-line bg-card font-medium text-tx hover:bg-paper',
+          )}
         >
           {preset.label}
-        </Button>
+        </button>
       ))}
-      <span className="text-xs text-slate-500">
+      <span className="text-xs text-txmuted">
         {active === 'custom' ? 'Custom — tick the switches yourself.' : 'Pre-ticked switches — adjust any of them before saving.'}
       </span>
     </div>
@@ -504,13 +534,13 @@ function PermissionMatrix({
   onChange: (next: Record<string, boolean>) => void
 }) {
   return (
-    <div className="grid gap-4 rounded-lg bg-surface-panel p-4 ring-1 ring-inset ring-surface-line sm:grid-cols-2 lg:grid-cols-3">
+    <div className="grid gap-4 rounded-panel border border-line bg-paper p-4 sm:grid-cols-2 lg:grid-cols-3">
       {groups.map((group) => (
         <div key={group.label}>
-          <SectionTitle>{group.label}</SectionTitle>
+          <h3 className="mb-2 text-sm font-semibold text-tx">{group.label}</h3>
           <div className="space-y-2">
             {group.permissions.map((permission) => (
-              <Switch
+              <Toggle
                 key={permission}
                 size="sm"
                 checked={Boolean(value[permission])}

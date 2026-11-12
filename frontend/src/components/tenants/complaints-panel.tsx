@@ -1,37 +1,44 @@
 import { useState } from 'react'
-import { AlertTriangle, MessageSquareWarning, Send, Trash2 } from 'lucide-react'
+import { AlertTriangle, Loader2, MessageSquareWarning, Send, Trash2 } from 'lucide-react'
 import { useAction, useAsync } from '@/lib/hooks'
 import { useAuth } from '@/lib/auth'
 import { COMPLAINT_PRIORITIES, COMPLAINT_STATUSES, conversationsApi, stripRoute } from '@/lib/conversations'
 import { formatDate, relativeTime } from '@/lib/format'
 import { cn } from '@/lib/cn'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Card, CardBody, CardHeader } from '@/components/ui/card'
-import { Input, Textarea } from '@/components/ui/input'
-import { Alert, EmptyState, LoadingBlock } from '@/components/ui/feedback'
+import {
+  Check,
+  DangerButton,
+  EmptyState,
+  ErrorBanner,
+  FieldInput,
+  FieldSelect,
+  FieldTextarea,
+  NeedRow,
+  Panel,
+  Pill,
+  PrimaryButton,
+  type PillTone,
+} from '@/components/remake/ui'
+import { LoadingBlock } from '@/components/ui/feedback'
 import { PageHeader } from '@/components/layout/page-header'
 import { useToast } from '@/components/ui/toast'
 import { useConfirm } from '@/components/ui/confirm'
 
 const FILTERS = ['all', ...COMPLAINT_STATUSES]
 
-const SELECT =
-  'rounded-lg bg-surface-raised px-2.5 py-1.5 text-xs text-slate-200 ring-1 ring-inset ring-surface-line focus:outline-none focus:ring-2 focus:ring-accent-500'
-
-const STATUS_TONE: Record<string, 'neutral' | 'accent' | 'success' | 'warning' | 'danger' | 'muted'> = {
-  open: 'danger',
-  in_progress: 'warning',
-  awaiting_info: 'accent',
-  resolved: 'success',
-  closed: 'muted',
+const STATUS_TONE: Record<string, PillTone> = {
+  open: 'bad',
+  in_progress: 'warn',
+  awaiting_info: 'ok',
+  resolved: 'ok',
+  closed: 'neutral',
 }
 
-const PRIORITY_TONE: Record<string, 'neutral' | 'accent' | 'success' | 'warning' | 'danger' | 'muted'> = {
-  low: 'muted',
+const PRIORITY_TONE: Record<string, PillTone> = {
+  low: 'neutral',
   normal: 'neutral',
-  high: 'warning',
-  urgent: 'danger',
+  high: 'warn',
+  urgent: 'bad',
 }
 
 /**
@@ -56,6 +63,7 @@ export function ComplaintsPanel({ tenantId }: { tenantId: string }) {
 
   const complaints = state.data?.complaints ?? []
   const active = complaints.find((c) => c.ticket_id === selected) ?? null
+  const openLoaded = complaints.filter((c) => c.status === 'open').length
 
   const refresh = () => state.reload()
 
@@ -102,19 +110,28 @@ export function ComplaintsPanel({ tenantId }: { tenantId: string }) {
   return (
     <div>
       <PageHeader
-        title="Complaints"
+        title="Help requests"
         description="Issues customers raised through the bot. Reply to reopen the conversation, or move the ticket through to resolved."
         meta={
           state.data && (
             <>
-              <Badge tone={state.data.open_count ? 'danger' : 'success'}>
+              <Pill tone={state.data.open_count ? 'bad' : 'ok'}>
                 {state.data.open_count} open
-              </Badge>
-              <Badge tone="muted">{state.data.count} shown</Badge>
+              </Pill>
+              <Pill>{state.data.count} shown</Pill>
             </>
           )
         }
       />
+
+      {openLoaded > 0 && (
+        <Panel title="Needs you" className="mb-4">
+          <NeedRow icon={<AlertTriangle className="h-4 w-4" />}>
+            <strong>{openLoaded}</strong> {openLoaded === 1 ? 'complaint is' : 'complaints are'} still open in the
+            list below — open one to reply or move it forward.
+          </NeedRow>
+        </Panel>
+      )}
 
       <div className="mb-4 flex flex-wrap items-center gap-1.5">
         {FILTERS.map((filter) => (
@@ -128,8 +145,8 @@ export function ComplaintsPanel({ tenantId }: { tenantId: string }) {
             className={cn(
               'rounded-lg px-3 py-1.5 text-xs font-medium capitalize transition',
               status === filter
-                ? 'bg-accent-100 text-accent-800'
-                : 'text-slate-400 hover:bg-surface-panel hover:text-slate-200',
+                ? 'bg-acc text-onacc'
+                : 'text-txmuted hover:bg-paper hover:text-tx',
             )}
           >
             {filter.replace(/_/g, ' ')}
@@ -137,27 +154,26 @@ export function ComplaintsPanel({ tenantId }: { tenantId: string }) {
         ))}
       </div>
 
-      {action.error && (
-        <Alert tone="danger" title="Action failed" className="mb-4">
-          {action.error}
-        </Alert>
-      )}
+      {action.error && <ErrorBanner title="Action failed" message={action.error} className="mb-4" />}
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)]">
-        <Card className="overflow-hidden">
-          <CardHeader title="Tickets" icon={<MessageSquareWarning className="h-4 w-4" />} />
+        <section className="overflow-hidden rounded-panel border border-line bg-card">
+          <div className="flex items-center gap-2 border-b border-linesoft px-4 py-3">
+            <span className="text-txmuted">
+              <MessageSquareWarning className="h-4 w-4" />
+            </span>
+            <h2 className="text-sm font-semibold text-tx">Tickets</h2>
+          </div>
           {state.loading && !complaints.length ? (
             <LoadingBlock label="Loading complaints…" />
           ) : state.error ? (
-            <CardBody>
-              <Alert tone="danger" title="Could not load">
-                {state.error}
-              </Alert>
-            </CardBody>
+            <div className="p-4">
+              <ErrorBanner title="Could not load" message={state.error} />
+            </div>
           ) : complaints.length === 0 ? (
             <EmptyState title="No complaints" description="Nothing matches this filter." />
           ) : (
-            <ul className="max-h-[70vh] divide-y divide-surface-line overflow-y-auto scroll-thin">
+            <ul className="max-h-[70vh] divide-y divide-linesoft overflow-y-auto">
               {complaints.map((item) => (
                 <li key={item.ticket_id}>
                   <button
@@ -165,110 +181,124 @@ export function ComplaintsPanel({ tenantId }: { tenantId: string }) {
                     onClick={() => setSelected(item.ticket_id)}
                     className={cn(
                       'w-full px-4 py-3 text-left transition',
-                      item.ticket_id === selected ? 'bg-accent-50' : 'hover:bg-surface-panel',
+                      item.ticket_id === selected ? 'bg-accsoft' : 'hover:bg-paper',
                     )}
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-100">
+                      <span className="min-w-0 flex-1 truncate text-sm font-medium text-tx">
                         {item.subject || item.complaint_type || item.ticket_id}
                       </span>
-                      <span className="shrink-0 text-2xs text-slate-500">{relativeTime(item.created_at)}</span>
+                      <span className="shrink-0 text-[11px] text-txfaint">{relativeTime(item.created_at)}</span>
                     </div>
-                    <p className="mt-0.5 truncate text-2xs text-slate-500">{item.ticket_id}</p>
+                    <p className="mt-0.5 truncate text-[11px] text-txmuted">{item.ticket_id}</p>
                     <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                      <Badge tone={STATUS_TONE[item.status] ?? 'neutral'}>{item.status.replace(/_/g, ' ')}</Badge>
-                      <Badge tone={PRIORITY_TONE[item.priority] ?? 'neutral'}>{item.priority}</Badge>
-                      {item.assigned_to && <Badge tone="accent">{item.assigned_to}</Badge>}
+                      <Pill tone={STATUS_TONE[item.status] ?? 'neutral'}>{item.status.replace(/_/g, ' ')}</Pill>
+                      <Pill tone={PRIORITY_TONE[item.priority] ?? 'neutral'}>{item.priority}</Pill>
+                      {item.assigned_to && <Pill tone="ok">{item.assigned_to}</Pill>}
                     </div>
                   </button>
                 </li>
               ))}
             </ul>
           )}
-        </Card>
+        </section>
 
-        <Card className="flex min-h-[24rem] flex-col">
+        <section className="flex min-h-[24rem] flex-col rounded-panel border border-line bg-card">
           {!active ? (
             <EmptyState
+              className="flex-1"
               title="Pick a ticket"
               description="Select a complaint to read it and act on it."
-              icon={<MessageSquareWarning className="h-6 w-6" />}
             />
           ) : (
             <>
-              <CardHeader
-                title={active.subject || active.complaint_type || active.ticket_id}
-                description={`${active.ticket_id} · ${active.wa_id || 'no customer'} · raised ${formatDate(active.created_at)}`}
-                icon={<AlertTriangle className="h-4 w-4" />}
-                actions={
-                  canManage && (
-                    <Button size="sm" variant="danger" icon={<Trash2 className="h-4 w-4" />} onClick={remove} loading={action.busy}>
-                      Delete
-                    </Button>
-                  )
-                }
-              />
+              <div className="flex flex-wrap items-start justify-between gap-3 border-b border-linesoft px-4 py-3 sm:px-5">
+                <div className="flex min-w-0 items-center gap-2">
+                  <span className="text-txmuted">
+                    <AlertTriangle className="h-4 w-4" />
+                  </span>
+                  <div className="min-w-0">
+                    <h2 className="truncate text-sm font-semibold text-tx">
+                      {active.subject || active.complaint_type || active.ticket_id}
+                    </h2>
+                    <p className="text-xs text-txmuted">
+                      {active.ticket_id} · {active.wa_id || 'no customer'} · raised {formatDate(active.created_at)}
+                    </p>
+                  </div>
+                </div>
+                {canManage && (
+                  <DangerButton onClick={remove} disabled={action.busy} className="px-3 py-1.5 text-xs">
+                    {action.busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                    Delete
+                  </DangerButton>
+                )}
+              </div>
 
-              <CardBody className="flex-1 space-y-4 overflow-y-auto scroll-thin">
+              <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4 sm:px-5">
                 <div className="flex flex-wrap items-center gap-2">
-                  <Badge tone={STATUS_TONE[active.status] ?? 'neutral'}>{active.status.replace(/_/g, ' ')}</Badge>
-                  <Badge tone={PRIORITY_TONE[active.priority] ?? 'neutral'}>{active.priority} priority</Badge>
-                  {active.complaint_type && <Badge tone="neutral">{active.complaint_type}</Badge>}
+                  <Pill tone={STATUS_TONE[active.status] ?? 'neutral'}>{active.status.replace(/_/g, ' ')}</Pill>
+                  <Pill tone={PRIORITY_TONE[active.priority] ?? 'neutral'}>{active.priority} priority</Pill>
+                  {active.complaint_type && <Pill>{active.complaint_type}</Pill>}
                 </div>
 
-                <div className="rounded-xl bg-surface-panel p-3.5 text-sm leading-relaxed text-slate-200 ring-1 ring-inset ring-surface-line">
+                <div className="rounded-panel bg-paper p-3.5 text-sm leading-relaxed text-tx">
                   {active.description || 'No description recorded.'}
                 </div>
 
                 {active.last_user_message && (
-                  <p className="text-xs text-slate-500">
+                  <p className="text-xs text-txmuted">
                     Last from customer: {stripRoute(active.last_user_message)}
                   </p>
                 )}
 
                 {canManage && (
-                  <div className="flex flex-wrap items-center gap-3">
-                    <label className="flex items-center gap-2 text-xs text-slate-400">
-                      Status
-                      <select value={active.status} onChange={(e) => patch({ status: e.target.value })} className={SELECT}>
+                  <div className="flex flex-wrap items-end gap-3">
+                    <div className="w-44">
+                      <FieldSelect
+                        label="Status"
+                        value={active.status}
+                        onChange={(e) => patch({ status: e.target.value })}
+                      >
                         {COMPLAINT_STATUSES.map((s) => (
                           <option key={s} value={s}>
                             {s.replace(/_/g, ' ')}
                           </option>
                         ))}
-                      </select>
-                    </label>
-                    <label className="flex items-center gap-2 text-xs text-slate-400">
-                      Priority
-                      <select value={active.priority} onChange={(e) => patch({ priority: e.target.value })} className={SELECT}>
+                      </FieldSelect>
+                    </div>
+                    <div className="w-40">
+                      <FieldSelect
+                        label="Priority"
+                        value={active.priority}
+                        onChange={(e) => patch({ priority: e.target.value })}
+                      >
                         {COMPLAINT_PRIORITIES.map((p) => (
                           <option key={p} value={p}>
                             {p}
                           </option>
                         ))}
-                      </select>
-                    </label>
-                    <label className="flex items-center gap-2 text-xs text-slate-400">
-                      Assignee
-                      <Input
+                      </FieldSelect>
+                    </div>
+                    <div className="w-44">
+                      <FieldInput
+                        label="Assignee"
                         defaultValue={active.assigned_to ?? ''}
                         placeholder="unassigned"
-                        className="h-[30px] w-40 py-0 text-xs"
                         onBlur={(e) => {
                           if (e.target.value !== (active.assigned_to ?? '')) patch({ assigned_to: e.target.value })
                         }}
                       />
-                    </label>
+                    </div>
                   </div>
                 )}
-              </CardBody>
+              </div>
 
               {canManage && active.wa_id && (
                 <ComplaintReply busy={action.busy} onSend={reply} />
               )}
             </>
           )}
-        </Card>
+        </section>
       </div>
     </div>
   )
@@ -294,26 +324,19 @@ function ComplaintReply({
   }
 
   return (
-    <div className="border-t border-surface-line p-4">
-      <Textarea
+    <div className="border-t border-linesoft p-4">
+      <FieldTextarea
         rows={2}
         value={draft}
         placeholder="Reply to the customer…"
         onChange={(e) => setDraft(e.target.value)}
       />
       <div className="mt-2 flex items-center justify-between gap-2">
-        <label className="flex items-center gap-2 text-xs text-slate-400">
-          <input
-            type="checkbox"
-            checked={resolve}
-            onChange={(e) => setResolve(e.target.checked)}
-            className="rounded border-surface-line bg-surface-raised text-accent-600 focus:ring-accent-500"
-          />
-          Mark resolved after sending
-        </label>
-        <Button variant="primary" icon={<Send className="h-4 w-4" />} loading={busy} onClick={send} disabled={!draft.trim()}>
+        <Check checked={resolve} onChange={setResolve} label="Mark resolved after sending" />
+        <PrimaryButton onClick={send} disabled={!draft.trim() || busy}>
+          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
           Send reply
-        </Button>
+        </PrimaryButton>
       </div>
     </div>
   )

@@ -1,13 +1,18 @@
 import { useState } from 'react'
 import { useAsync } from '@/lib/hooks'
-import { Download } from 'lucide-react'
+import { AlertTriangle, Download, Search } from 'lucide-react'
 import { downloadCustomerExport, money, operationsApi } from '@/lib/operations'
 import { relativeTime } from '@/lib/format'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Card, CardBody } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
-import { Alert, EmptyState, LoadingBlock } from '@/components/ui/feedback'
+import {
+  Card,
+  EmptyState,
+  ErrorBanner,
+  GhostButton,
+  NeedRow,
+  Panel,
+  Pill,
+} from '@/components/remake/ui'
+import { LoadingBlock } from '@/components/ui/feedback'
 import { PageHeader } from '@/components/layout/page-header'
 import { useToast } from '@/components/ui/toast'
 
@@ -37,6 +42,7 @@ export function CustomersPanel({ tenantId }: { tenantId: string }) {
   )
 
   const customers = state.data?.customers ?? []
+  const withOpenComplaints = customers.filter((c) => c.open_complaints > 0).length
 
   return (
     <div className="min-w-0">
@@ -45,49 +51,50 @@ export function CustomersPanel({ tenantId }: { tenantId: string }) {
         description="Customer details aggregated across orders, complaints and chat history, keyed by WhatsApp number."
         actions={
           <div className="flex flex-wrap items-center gap-2">
-            <Button
-              size="sm"
-              icon={<Download className="h-4 w-4" />}
-              onClick={() => exportFile('csv')}
-              loading={exporting === 'csv'}
-            >
-              CSV
-            </Button>
-            <Button
-              size="sm"
-              icon={<Download className="h-4 w-4" />}
-              onClick={() => exportFile('xlsx')}
-              loading={exporting === 'xlsx'}
-            >
-              Excel
-            </Button>
+            <GhostButton onClick={() => exportFile('csv')} disabled={exporting !== null}>
+              <Download className="h-4 w-4" />
+              {exporting === 'csv' ? 'Exporting…' : 'CSV'}
+            </GhostButton>
+            <GhostButton onClick={() => exportFile('xlsx')} disabled={exporting !== null}>
+              <Download className="h-4 w-4" />
+              {exporting === 'xlsx' ? 'Exporting…' : 'Excel'}
+            </GhostButton>
           </div>
         }
         meta={
           state.data && (
             <>
-              <Badge tone="muted">{state.data.count} shown</Badge>
-              <Badge tone="accent">{customers.filter((c) => c.open_complaints > 0).length} with open complaints</Badge>
+              <Pill>{state.data.count} shown</Pill>
+              {withOpenComplaints > 0 && <Pill tone="warn">{withOpenComplaints} with open complaints</Pill>}
             </>
           )
         }
       />
 
+      {withOpenComplaints > 0 && (
+        <Panel title="Needs you" className="mb-4">
+          <NeedRow icon={<AlertTriangle className="h-4 w-4" />}>
+            <strong>{withOpenComplaints}</strong> {withOpenComplaints === 1 ? 'customer has' : 'customers have'}{' '}
+            open complaints — they are marked in the list below.
+          </NeedRow>
+        </Panel>
+      )}
+
       <div className="mb-4 max-w-sm">
-        <Input
-          label="Search"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Name, mobile or WhatsApp ID"
-        />
+        <label className="flex items-center gap-2 rounded-lg border border-line bg-inputbg px-3 py-2">
+          <Search className="h-4 w-4 shrink-0 text-txfaint" />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Name, mobile or WhatsApp ID"
+            aria-label="Search"
+            className="w-full bg-transparent text-sm text-tx outline-none placeholder:text-txfaint"
+          />
+        </label>
       </div>
 
       {state.loading && <LoadingBlock label="Reading customers…" />}
-      {state.error && (
-        <Alert tone="danger" title="Could not read customers">
-          {state.error}
-        </Alert>
-      )}
+      {state.error && <ErrorBanner title="Could not read customers" message={state.error} />}
 
       {state.data && customers.length === 0 && (
         <Card>
@@ -99,19 +106,19 @@ export function CustomersPanel({ tenantId }: { tenantId: string }) {
       )}
 
       {customers.length > 0 && (
-        <Card className="min-w-0">
-          <CardBody className="divide-y divide-surface-line">
+        <Card className="min-w-0 px-4 py-2 sm:px-5">
+          <div className="divide-y divide-linesoft">
             {customers.map((customer) => (
               <div
                 key={customer.wa_id}
-                className="flex flex-col gap-2 py-3 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:gap-3"
+                className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:gap-3"
               >
                 {/* Full width on mobile (badges drop below); beside the badges from sm up. */}
                 <div className="min-w-0 sm:flex-1">
-                  <p className="break-words text-sm font-medium text-slate-100 sm:truncate">
+                  <p className="break-words text-sm font-medium text-tx sm:truncate">
                     {customer.name || customer.wa_id}
                   </p>
-                  <p className="mt-0.5 break-words text-xs text-slate-500 sm:truncate">
+                  <p className="mt-0.5 break-words text-xs text-txmuted sm:truncate">
                     {customer.wa_id}
                     {customer.mobile && customer.mobile !== customer.wa_id ? ` · ${customer.mobile}` : ''}
                     {customer.city ? ` · ${customer.city}` : ''}
@@ -121,17 +128,17 @@ export function CustomersPanel({ tenantId }: { tenantId: string }) {
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-1.5 sm:shrink-0 sm:justify-end">
-                  <Badge tone="accent">{customer.total_orders} orders</Badge>
+                  <Pill tone="ok">{customer.total_orders} orders</Pill>
                   {customer.total_complaints > 0 && (
-                    <Badge tone={customer.open_complaints > 0 ? 'danger' : 'muted'}>
+                    <Pill tone={customer.open_complaints > 0 ? 'bad' : 'neutral'}>
                       {customer.total_complaints} complaints
-                    </Badge>
+                    </Pill>
                   )}
-                  <Badge tone="success">{money(customer.total_spent)} spent</Badge>
+                  <Pill tone="ok">{money(customer.total_spent)} spent</Pill>
                 </div>
               </div>
             ))}
-          </CardBody>
+          </div>
         </Card>
       )}
     </div>

@@ -9,6 +9,7 @@
     "preview": "vite preview --port 5173",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "check:tokens": "node scripts/check-tokens.mjs",
     "test:watch": "vitest"
   },
   "dependencies": {

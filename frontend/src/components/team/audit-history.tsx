@@ -1,20 +1,58 @@
-import { useState, useMemo, useEffect, useCallback } from 'react'
+import { useState, useMemo, useEffect, useCallback, type ReactNode } from 'react'
 import { useAsync } from '@/lib/hooks'
 import { useAuth } from '@/lib/auth'
 import { formatDate, relativeTime } from '@/lib/format'
 import { auditApiExtended } from '@/lib/audit.extended'
-import { Card, CardHeader, CardBody } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Select } from '@/components/ui/select'
-import { Alert, EmptyState, LoadingBlock, Toast } from '@/components/ui/feedback'
+import { cn } from '@/lib/cn'
+import {
+  Card,
+  EmptyState,
+  ErrorBanner,
+  FieldInput,
+  FieldSelect,
+  GhostButton,
+  Notice,
+  Panel,
+  Pill,
+  PrimaryButton,
+  StatCard,
+} from '@/components/remake/ui'
+import { LoadingBlock } from '@/components/ui/feedback'
 import { PageHeader } from '@/components/layout/page-header'
 import { ChevronLeft, ChevronRight, RefreshCw, Table2, Grid3X3, LineChart, Filter, Download, X } from 'lucide-react'
 import type { AuditEventExtended, AuditFiltersExtended, AuditPageState, ViewMode, FilterPreset, AuditStatistics, AuditOutcome } from './audit-history.types'
 import { LABELS, ACTION_CATEGORIES, getPresetDates, formatEventForDisplay, debounce, saveFiltersToStorage, loadFiltersFromStorage, getDefaultExportColumns } from './audit-history.utils'
 
 const PAGE_SIZE = 50
+
+/** Small toggle chip: accent-filled when active, outlined when not. */
+function ChipButton({
+  active,
+  onClick,
+  children,
+  className,
+}: {
+  active?: boolean
+  onClick: () => void
+  children: ReactNode
+  className?: string
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        'inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-xs transition',
+        active
+          ? 'bg-acc font-semibold text-onacc hover:opacity-90'
+          : 'border border-line bg-card font-medium text-tx hover:bg-paper',
+        className,
+      )}
+    >
+      {children}
+    </button>
+  )
+}
 
 // Filter Presets Component
 const FilterPresets = ({ onApplyPreset }: { onApplyPreset: (preset: Record<string, unknown>) => void }) => {
@@ -32,12 +70,12 @@ const FilterPresets = ({ onApplyPreset }: { onApplyPreset: (preset: Record<strin
 
   return (
     <div className="relative">
-      <Button variant="secondary" size="sm" onClick={() => setIsOpen(!isOpen)}>
+      <GhostButton className="px-3 py-1.5 text-xs" onClick={() => setIsOpen(!isOpen)}>
         <Filter className="h-4 w-4" />
         Presets
-      </Button>
+      </GhostButton>
       {isOpen && (
-        <div className="absolute right-0 z-50 mt-2 w-48 rounded-lg bg-surface-overlay shadow-lg ring-1 ring-surface-line">
+        <div className="absolute right-0 z-50 mt-2 w-48 rounded-lg border border-line bg-card shadow-lg">
           <div className="py-1">
             {presets.map((preset) => (
               <button
@@ -46,7 +84,7 @@ const FilterPresets = ({ onApplyPreset }: { onApplyPreset: (preset: Record<strin
                   onApplyPreset({ ...preset.filters, preset: preset.name.toLowerCase().replace(/\s+/g, '_') })
                   setIsOpen(false)
                 }}
-                className="block w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+                className="block w-full px-4 py-2 text-left text-sm text-tx hover:bg-paper"
               >
                 {preset.name}
               </button>
@@ -92,27 +130,27 @@ const ExportMenu = ({ events, filters, onExportSuccess, onExportError }: { event
 
   return (
     <div className="relative">
-      <Button variant="secondary" size="sm" onClick={() => setIsOpen(!isOpen)} disabled={isExporting || events.length === 0}>
+      <GhostButton className="px-3 py-1.5 text-xs" onClick={() => setIsOpen(!isOpen)} disabled={isExporting || events.length === 0}>
         <Download className="h-4 w-4" />
         Export
-      </Button>
+      </GhostButton>
       {isOpen && (
-        <div className="absolute right-0 z-50 mt-2 w-40 rounded-lg bg-surface-overlay shadow-lg ring-1 ring-surface-line p-2">
+        <div className="absolute right-0 z-50 mt-2 w-40 rounded-lg border border-line bg-card p-2 shadow-lg">
           <button
             onClick={() => handleExport('csv')}
-            className="block w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+            className="block w-full rounded-md px-3 py-2 text-left text-sm text-tx hover:bg-paper"
           >
             Export as CSV
           </button>
           <button
             onClick={() => handleExport('pdf')}
-            className="block w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+            className="block w-full rounded-md px-3 py-2 text-left text-sm text-tx hover:bg-paper"
           >
             Export as PDF
           </button>
           <button
             onClick={() => handleExport('json')}
-            className="block w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+            className="block w-full rounded-md px-3 py-2 text-left text-sm text-tx hover:bg-paper"
           >
             Export as JSON
           </button>
@@ -132,19 +170,18 @@ const DateRangePicker = ({ startDate, endDate, preset, onChange }: { startDate: 
   return (
     <div className="flex flex-wrap gap-1">
       {(['today', 'last_7_days', 'last_30_days', 'last_90_days'] as FilterPreset[]).map((p) => (
-        <Button
+        <ChipButton
           key={p}
-          size="sm"
-          variant={preset === p ? 'primary' : 'secondary'}
+          active={preset === p}
           onClick={() => handlePresetChange(p)}
         >
           {p.replace(/_/g, ' ')}
-        </Button>
+        </ChipButton>
       ))}
       {preset === 'custom' && (
         <div className="flex gap-2">
-          <Input type="date" value={startDate} onChange={(e) => onChange('custom', e.target.value, endDate)} />
-          <Input type="date" value={endDate} onChange={(e) => onChange('custom', startDate, e.target.value)} />
+          <FieldInput type="date" value={startDate} onChange={(e) => onChange('custom', e.target.value, endDate)} />
+          <FieldInput type="date" value={endDate} onChange={(e) => onChange('custom', startDate, e.target.value)} />
         </div>
       )}
     </div>
@@ -154,7 +191,7 @@ const DateRangePicker = ({ startDate, endDate, preset, onChange }: { startDate: 
 // Audit Event Details Component
 const AuditEventDetails = ({ event }: { event: AuditEventExtended }) => {
   const details = event.details || {}
-  
+
   // Format detail values for display
   const formatDetailValue = (value: unknown): string => {
     if (value === null || value === undefined || value === '') return '—'
@@ -171,7 +208,7 @@ const AuditEventDetails = ({ event }: { event: AuditEventExtended }) => {
   // Check for specific detail fields to highlight
   const getHighlightedDetails = () => {
     const parts: string[] = []
-    
+
     if (details.name || details.title) {
       parts.push(`Name: ${details.name || details.title}`)
     }
@@ -211,19 +248,19 @@ const AuditEventDetails = ({ event }: { event: AuditEventExtended }) => {
     if (details.label) {
       parts.push(`Label: ${details.label}`)
     }
-    
+
     // Fallback: show all details if no specific ones matched
     if (parts.length === 0 && Object.keys(details).length > 0) {
       return Object.entries(details)
         .map(([key, value]) => `${key.replace(/_/g, ' ')}: ${formatDetailValue(value)}`)
         .join(' | ')
     }
-    
+
     return parts.join(' | ') || 'No additional details'
   }
 
   return (
-    <div className="text-sm text-slate-400">
+    <div className="text-sm text-txmuted">
       {getHighlightedDetails()}
     </div>
   )
@@ -236,57 +273,60 @@ const TableView = ({ events, sortBy, sortOrder, onSort }: { events: AuditEventEx
     return sortOrder === 'asc' ? '↑' : '↓'
   }
 
+  const thClass = 'px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-txmuted'
+  const sortableTh = `${thClass} cursor-pointer hover:bg-paper`
+
   return (
-    <div className="overflow-x-auto">
+    <div className="overflow-x-auto rounded-panel border border-line bg-card">
       <table className="w-full">
-        <thead className="bg-surface-panel">
+        <thead className="bg-paper">
           <tr>
-            <th onClick={() => onSort('created_at')} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-300 cursor-pointer hover:bg-surface-panel">
+            <th onClick={() => onSort('created_at')} className={sortableTh}>
               Date/Time {getSortIcon('created_at')}
             </th>
-            <th onClick={() => onSort('action')} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-300 cursor-pointer hover:bg-surface-panel">
+            <th onClick={() => onSort('action')} className={sortableTh}>
               Action {getSortIcon('action')}
             </th>
-            <th onClick={() => onSort('actor_username')} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-300 cursor-pointer hover:bg-surface-panel">
+            <th onClick={() => onSort('actor_username')} className={sortableTh}>
               Actor {getSortIcon('actor_username')}
             </th>
-            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-300">
+            <th className={thClass}>
               Target
             </th>
-            <th onClick={() => onSort('tenant_label')} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-300 cursor-pointer hover:bg-surface-panel">
+            <th onClick={() => onSort('tenant_label')} className={sortableTh}>
               Tenant {getSortIcon('tenant_label')}
             </th>
-            <th onClick={() => onSort('outcome')} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-300 cursor-pointer hover:bg-surface-panel">
+            <th onClick={() => onSort('outcome')} className={sortableTh}>
               Outcome {getSortIcon('outcome')}
             </th>
           </tr>
         </thead>
-        <tbody className="bg-surface-raised divide-y divide-surface-line">
+        <tbody className="divide-y divide-linesoft bg-card">
           {events.map((event) => {
             const formattedEvent = formatEventForDisplay(event)
             return (
-              <tr key={event.id} className="hover:bg-surface-panel">
-                <td className="px-4 py-3 whitespace-nowrap text-sm text-slate-200">
+              <tr key={event.id} className="hover:bg-paper">
+                <td className="px-4 py-3 whitespace-nowrap text-sm text-tx">
                   {formattedEvent.formatted_date}
-                  <div className="text-xs text-slate-500">{formattedEvent.relative_time}</div>
+                  <div className="text-xs text-txfaint">{formattedEvent.relative_time}</div>
                 </td>
-                <td className="px-4 py-3 whitespace-nowrap text-sm text-slate-200">
+                <td className="px-4 py-3 whitespace-nowrap text-sm text-tx">
                   {LABELS[event.action] || event.action.replace(/_/g, ' ')}
                 </td>
-                <td className="px-4 py-3 whitespace-nowrap text-sm text-slate-200">
+                <td className="px-4 py-3 whitespace-nowrap text-sm text-tx">
                   {event.actor_label || event.actor_username || 'System'}
-                  {event.actor_role && <div className="text-xs text-slate-500">{event.actor_role}</div>}
+                  {event.actor_role && <div className="text-xs text-txfaint">{event.actor_role}</div>}
                 </td>
-                <td className="px-4 py-3 whitespace-nowrap text-sm text-slate-200">
+                <td className="px-4 py-3 whitespace-nowrap text-sm text-tx">
                   {event.target_username || '—'}
                 </td>
-                <td className="px-4 py-3 whitespace-nowrap text-sm text-slate-200">
+                <td className="px-4 py-3 whitespace-nowrap text-sm text-tx">
                   {formattedEvent.tenant_label}
                 </td>
                 <td className="px-4 py-3 whitespace-nowrap">
-                  <Badge tone={event.outcome === 'success' ? 'success' : 'danger'}>
+                  <Pill tone={event.outcome === 'success' ? 'ok' : 'bad'}>
                     {event.outcome}
-                  </Badge>
+                  </Pill>
                 </td>
               </tr>
             )
@@ -300,44 +340,33 @@ const TableView = ({ events, sortBy, sortOrder, onSort }: { events: AuditEventEx
 // Statistics View Component
 const StatisticsView = ({ statistics, events }: { statistics: AuditStatistics; events: AuditEventExtended[] }) => {
   return (
-    <Card className="mb-4">
-      <CardHeader title="Audit Statistics" />
-      <CardBody>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="text-center">
-            <div className="text-2xl font-bold text-slate-200">{statistics.total_events.toLocaleString()}</div>
-            <div className="text-sm text-slate-500">Total Events</div>
-          </div>
-          <div className="text-center">
-            <div className="text-2xl font-bold text-emerald-600">{statistics.by_outcome.success.toLocaleString()}</div>
-            <div className="text-sm text-slate-500">Success</div>
-          </div>
-          <div className="text-center">
-            <div className="text-2xl font-bold text-rose-600">{statistics.by_outcome.failure.toLocaleString()}</div>
-            <div className="text-sm text-slate-500">Failures</div>
-          </div>
-          <div className="text-center">
-            <div className="text-2xl font-bold text-slate-200">{Object.keys(statistics.by_actor || {}).length}</div>
-            <div className="text-sm text-slate-500">Unique Actors</div>
+    <Panel title="Audit Statistics" className="mb-4">
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+        <StatCard value={statistics.total_events.toLocaleString()} label="Total Events" />
+        <StatCard value={statistics.by_outcome.success.toLocaleString()} label="Success" />
+        <StatCard
+          value={statistics.by_outcome.failure.toLocaleString()}
+          label="Failures"
+          tone={statistics.by_outcome.failure ? 'failure' : 'normal'}
+        />
+        <StatCard value={Object.keys(statistics.by_actor || {}).length} label="Unique Actors" />
+      </div>
+      {events.length > 0 && (
+        <div className="mt-4 border-t border-linesoft pt-4">
+          <h4 className="mb-2 text-sm font-semibold text-tx">Top Actions</h4>
+          <div className="flex flex-wrap gap-2">
+            {Object.entries(statistics.by_action || {})
+              .sort(([, a], [, b]) => (b as number) - (a as number))
+              .slice(0, 5)
+              .map(([action, count]) => (
+                <Pill key={action}>
+                  {LABELS[action as keyof typeof LABELS] || action.replace(/_/g, ' ')}: {count}
+                </Pill>
+              ))}
           </div>
         </div>
-        {events.length > 0 && (
-          <div className="mt-4 pt-4 border-t border-surface-line">
-            <h4 className="text-sm font-semibold text-slate-300 mb-2">Top Actions</h4>
-            <div className="flex flex-wrap gap-2">
-              {Object.entries(statistics.by_action || {})
-                .sort(([, a], [, b]) => (b as number) - (a as number))
-                .slice(0, 5)
-                .map(([action, count]) => (
-                  <Badge key={action} tone="neutral">
-                    {LABELS[action as keyof typeof LABELS] || action.replace(/_/g, ' ')}: {count}
-                  </Badge>
-                ))}
-            </div>
-          </div>
-        )}
-      </CardBody>
-    </Card>
+      )}
+    </Panel>
   )
 }
 
@@ -356,27 +385,33 @@ const TimelineView = ({ events }: { events: AuditEventExtended[] }) => {
     <div className="space-y-8">
       {Object.entries(eventsByDate).map(([date, dateEvents]) => (
         <section key={date} className="space-y-3">
-          <h3 className="text-lg font-semibold text-slate-200">
-            {date} <span className="text-xs font-normal text-slate-500">{dateEvents.length} events</span>
+          <h3 className="text-lg font-semibold text-tx">
+            {date} <span className="text-xs font-normal text-txfaint">{dateEvents.length} events</span>
           </h3>
-          <div className="space-y-3 border-l border-surface-line pl-4">
+          <div className="space-y-3 border-l border-line pl-4">
             {dateEvents.map(event => {
               const formattedEvent = formatEventForDisplay(event)
               return (
-                <Card key={event.id} className="bg-surface-panel border-surface-line">
-                  <CardHeader 
-                    title={LABELS[event.action] || event.action.replace(/_/g, ' ')} 
-                    description={`${event.actor_label || event.actor_username || 'System'}${event.actor_role ? ` · ${event.actor_role}` : ''} · ${relativeTime(event.created_at)}`} 
-                    actions={<Badge tone={event.outcome === 'success' ? 'success' : 'danger'}>{event.outcome}</Badge>}
-                  />
-                  <CardBody className="space-y-3">
-                    <div className="flex flex-wrap gap-3 text-xs text-slate-400">
+                <Card key={event.id} className="p-4 sm:p-5">
+                  <div className="mb-2 flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <h4 className="text-base font-semibold text-tx">
+                        {LABELS[event.action] || event.action.replace(/_/g, ' ')}
+                      </h4>
+                      <p className="mt-0.5 text-sm text-txmuted">
+                        {`${event.actor_label || event.actor_username || 'System'}${event.actor_role ? ` · ${event.actor_role}` : ''} · ${relativeTime(event.created_at)}`}
+                      </p>
+                    </div>
+                    <Pill tone={event.outcome === 'success' ? 'ok' : 'bad'}>{event.outcome}</Pill>
+                  </div>
+                  <div className="space-y-3">
+                    <div className="flex flex-wrap gap-3 text-xs text-txmuted">
                       <span>Tenant: {formattedEvent.tenant_label || event.tenant_name || event.tenant_id || 'Platform'}{event.tenant_slug ? ` · ${event.tenant_slug}` : ''}</span>
                       <span>IP: {event.ip_address || '—'}</span>
                       <span>Resource: {event.resource_type || '—'}{event.resource_id ? `/${event.resource_id}` : ''}</span>
                     </div>
                     <AuditEventDetails event={event} />
-                  </CardBody>
+                  </div>
                 </Card>
               )
             })}
@@ -394,11 +429,11 @@ export function AuditHistory() {
   // item 12): the filter is forced here and enforced again by the API.
   const scopedTenant = identity?.role === 'admin' ? identity.tenant_id ?? '' : ''
   const [exportError, setExportError] = useState<string | null>(null)
-  const [filters, setFilters] = useState<AuditFiltersExtended>({ 
-    limit: PAGE_SIZE, 
-    offset: 0, 
-    sort_by: 'created_at', 
-    sort_order: 'desc' 
+  const [filters, setFilters] = useState<AuditFiltersExtended>({
+    limit: PAGE_SIZE,
+    offset: 0,
+    sort_by: 'created_at',
+    sort_order: 'desc'
   })
   const [draft, setDraft] = useState({
     search: '',
@@ -451,8 +486,8 @@ export function AuditHistory() {
   const formattedEvents = useMemo(() => events.map(formatEventForDisplay), [events])
 
   // Fetch statistics
-  const statistics = useAsync(() => 
-    auditApiExtended.getStatistics(filters) as Promise<AuditStatistics>, 
+  const statistics = useAsync(() =>
+    auditApiExtended.getStatistics(filters) as Promise<AuditStatistics>,
     [JSON.stringify(filters)]
   )
 
@@ -499,16 +534,16 @@ export function AuditHistory() {
   }
 
   const clearFilters = () => {
-    const clean = { 
-      search: '', 
-      actor: '', 
-      action: '', 
-      category: '', 
-      tenant_id: '', 
-      outcome: '' as AuditOutcome | '', 
-      start_date: '', 
-      end_date: '', 
-      preset: 'last_7_days' as FilterPreset 
+    const clean = {
+      search: '',
+      actor: '',
+      action: '',
+      category: '',
+      tenant_id: '',
+      outcome: '' as AuditOutcome | '',
+      start_date: '',
+      end_date: '',
+      preset: 'last_7_days' as FilterPreset
     }
     setDraft(clean)
     setFilters({ limit: PAGE_SIZE, offset: 0, sort_by: 'created_at', sort_order: 'desc' })
@@ -536,7 +571,7 @@ export function AuditHistory() {
   return (
     <div className="space-y-4">
       <PageHeader
-        title="Audit History"
+        title="Activity log"
         description={scopedTenant
           ? 'Activity in your tenant only, with actor, client, request and change details.'
           : 'Review administrator activity across tenants, with actor, client, request and change details.'}
@@ -544,94 +579,86 @@ export function AuditHistory() {
           <div className="flex flex-wrap gap-2">
             <FilterPresets onApplyPreset={applyPreset} />
             <ExportMenu events={formattedEvents} filters={requestFilters} onExportSuccess={notifyExport} onExportError={setExportError} />
-            <Button 
-              variant="secondary" 
-              icon={<RefreshCw className={`h-4 w-4 ${showRefreshing ? 'animate-spin' : ''}`} />}
+            <GhostButton
+              className="px-3 py-1.5 text-xs"
               onClick={refresh}
               disabled={state.loading}
             >
+              <RefreshCw className={`h-4 w-4 ${showRefreshing ? 'animate-spin' : ''}`} />
               Refresh
-            </Button>
+            </GhostButton>
           </div>
         }
       />
-      
-      {toastMessage && <Toast>{toastMessage}</Toast>}
-      {exportError && <Alert tone="danger" title="Export failed">{exportError}</Alert>}
-      {state.error && <Alert tone="danger" title="Could not load audit history">{String(state.error)}</Alert>}
+
+      {toastMessage && <Notice tone="success">{toastMessage}</Notice>}
+      {exportError && <ErrorBanner title="Export failed" message={exportError} />}
+      {state.error && <ErrorBanner title="Could not load audit history" message={String(state.error)} />}
       {state.loading && <LoadingBlock label="Loading audit history..." />}
 
       {/* Filter Card */}
-      <Card>
-        <CardHeader 
-          title="Filters" 
-          description="Search actors, clients, IP addresses, user agents and safe event details."
-          actions={
-            <Button size="sm" variant="ghost" onClick={() => setShowAdvancedFilters(v => !v)}>
-              {showAdvancedFilters ? 'Hide' : 'More'} filters
-            </Button>
-          }
-        />
-        <CardBody className="space-y-4">
+      <Panel
+        title="Filters"
+        action={
+          <GhostButton className="px-3 py-1.5 text-xs" onClick={() => setShowAdvancedFilters(v => !v)}>
+            {showAdvancedFilters ? 'Hide' : 'More'} filters
+          </GhostButton>
+        }
+      >
+        <p className="-mt-1 mb-4 text-sm text-txmuted">
+          Search actors, clients, IP addresses, user agents and safe event details.
+        </p>
+        <div className="space-y-4">
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <Input 
-              label="Search" 
-              placeholder="Filename, IP, actor, change..." 
-              value={draft.search} 
-              onChange={e => { 
-                updateDraft('search', e.target.value); 
-                debouncedSearch(e.target.value) 
-              }} 
+            <FieldInput
+              label="Search"
+              placeholder="Filename, IP, actor, change..."
+              value={draft.search}
+              onChange={e => {
+                updateDraft('search', e.target.value);
+                debouncedSearch(e.target.value)
+              }}
             />
-            <Input 
-              label="Actor" 
-              placeholder="Username" 
-              value={draft.actor} 
-              onChange={e => updateDraft('actor', e.target.value)} 
+            <FieldInput
+              label="Actor"
+              placeholder="Username"
+              value={draft.actor}
+              onChange={e => updateDraft('actor', e.target.value)}
             />
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-1">Action</label>
-              <Select 
-                value={draft.action} 
-                onChange={e => updateDraft('action', e.target.value)}
-                className="w-full"
-              >
-                <option value="">All actions</option>
-                {Object.entries(LABELS).map(([action, label]) => (
-                  <option key={action} value={action}>{label}</option>
-                ))}
-              </Select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-1">Outcome</label>
-              <Select 
-                value={draft.outcome} 
-                onChange={e => updateDraft('outcome', e.target.value as AuditOutcome | '')}
-                className="w-full"
-              >
-                <option value="">All outcomes</option>
-                <option value="success">Success</option>
-                <option value="failure">Failure</option>
-              </Select>
-            </div>
+            <FieldSelect
+              label="Action"
+              value={draft.action}
+              onChange={e => updateDraft('action', e.target.value)}
+            >
+              <option value="">All actions</option>
+              {Object.entries(LABELS).map(([action, label]) => (
+                <option key={action} value={action}>{label}</option>
+              ))}
+            </FieldSelect>
+            <FieldSelect
+              label="Outcome"
+              value={draft.outcome}
+              onChange={e => updateDraft('outcome', e.target.value as AuditOutcome | '')}
+            >
+              <option value="">All outcomes</option>
+              <option value="success">Success</option>
+              <option value="failure">Failure</option>
+            </FieldSelect>
           </div>
-          
+
           {showAdvancedFilters && (
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1">Category</label>
-                <Select 
-                  value={draft.category} 
-                  onChange={e => updateDraft('category', e.target.value)}
-                  className="w-full"
-                >
-                  <option value="">All categories</option>
-                  {Object.entries(ACTION_CATEGORIES).map(([key, value]) => (
-                    <option key={key} value={key}>{value.label}</option>
-                  ))}
-                </Select>
-              </div>
-              <Input
+              <FieldSelect
+                label="Category"
+                value={draft.category}
+                onChange={e => updateDraft('category', e.target.value)}
+              >
+                <option value="">All categories</option>
+                {Object.entries(ACTION_CATEGORIES).map(([key, value]) => (
+                  <option key={key} value={key}>{value.label}</option>
+                ))}
+              </FieldSelect>
+              <FieldInput
                 label="Tenant / client ID"
                 placeholder="Tenant ID"
                 value={scopedTenant || draft.tenant_id}
@@ -649,25 +676,24 @@ export function AuditHistory() {
                 />
               </div>
               <div className="flex items-end gap-2">
-                <Button variant="primary" onClick={() => applyFilters()}>
+                <PrimaryButton onClick={() => applyFilters()}>
                   Apply filters
-                </Button>
-                <Button variant="ghost" onClick={clearFilters}>
+                </PrimaryButton>
+                <GhostButton onClick={clearFilters}>
                   <X className="h-4 w-4" /> Clear
-                </Button>
+                </GhostButton>
               </div>
             </div>
           )}
-          
+
           {!showAdvancedFilters && (
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs text-slate-500">Date range</span>
+              <span className="text-xs text-txmuted">Date range</span>
               {(['today', 'last_7_days', 'last_30_days', 'last_90_days'] as FilterPreset[]).map(preset => (
-                <Button 
-                  key={preset} 
-                  size="sm" 
-                  variant={draft.preset === preset ? 'primary' : 'secondary'} 
-                  onClick={() => { 
+                <ChipButton
+                  key={preset}
+                  active={draft.preset === preset}
+                  onClick={() => {
                     const dates = getPresetDates(preset)
                     const next = { ...draft, preset, ...dates }
                     setDraft(next)
@@ -675,44 +701,41 @@ export function AuditHistory() {
                   }}
                 >
                   {preset.replace(/_/g, ' ')}
-                </Button>
+                </ChipButton>
               ))}
             </div>
           )}
-        </CardBody>
-      </Card>
+        </div>
+      </Panel>
 
       {/* View Mode Toggle */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <Button 
-            size="sm" 
-            variant={viewMode === 'table' ? 'primary' : 'secondary'} 
-            icon={<Table2 className="h-4 w-4" />} 
+          <ChipButton
+            active={viewMode === 'table'}
             onClick={() => setViewMode('table')}
           >
+            <Table2 className="h-4 w-4" />
             Table
-          </Button>
-          <Button 
-            size="sm" 
-            variant={viewMode === 'cards' ? 'primary' : 'secondary'} 
-            icon={<Grid3X3 className="h-4 w-4" />} 
+          </ChipButton>
+          <ChipButton
+            active={viewMode === 'cards'}
             onClick={() => setViewMode('cards')}
           >
+            <Grid3X3 className="h-4 w-4" />
             Cards
-          </Button>
-          <Button 
-            size="sm" 
-            variant={viewMode === 'timeline' ? 'primary' : 'secondary'} 
-            icon={<LineChart className="h-4 w-4" />} 
+          </ChipButton>
+          <ChipButton
+            active={viewMode === 'timeline'}
             onClick={() => setViewMode('timeline')}
           >
+            <LineChart className="h-4 w-4" />
             Timeline
-          </Button>
+          </ChipButton>
         </div>
-        <Button size="sm" variant="ghost" onClick={() => setShowStats(v => !v)}>
+        <GhostButton className="px-3 py-1.5 text-xs" onClick={() => setShowStats(v => !v)}>
           {showStats ? 'Hide' : 'Show'} summary
-        </Button>
+        </GhostButton>
       </div>
 
       {/* Statistics Summary */}
@@ -723,26 +746,24 @@ export function AuditHistory() {
       {/* Empty State */}
       {page?.events.length === 0 && !state.loading && (
         <Card>
-          <CardBody>
-            <EmptyState title="No activity found" description="Try changing the filters or date range." />
-          </CardBody>
+          <EmptyState title="No activity found" description="Try changing the filters or date range." />
         </Card>
       )}
 
       {/* Results */}
       {page && page.events.length > 0 && (
         <>
-          <div className="flex items-center justify-between text-xs text-slate-500">
+          <div className="flex items-center justify-between text-xs text-txmuted">
             <span>Showing {start}–{end} of {page.total.toLocaleString()} events</span>
             <span>Sort: {filters.sort_by || 'Date'} ({filters.sort_order})</span>
           </div>
-          
+
           {viewMode === 'table' && (
-            <TableView 
-              events={formattedEvents} 
-              sortBy={filters.sort_by || ''} 
-              sortOrder={filters.sort_order || 'desc'} 
-              onSort={handleSort} 
+            <TableView
+              events={formattedEvents}
+              sortBy={filters.sort_by || ''}
+              sortOrder={filters.sort_order || 'desc'}
+              onSort={handleSort}
             />
           )}
 
@@ -750,15 +771,19 @@ export function AuditHistory() {
             <div className="space-y-3">
               {formattedEvents.map(event => {
                 return (
-                  <Card key={event.id} className="bg-surface-panel border-surface-line">
-                    <CardHeader 
-                      title={LABELS[event.action] || event.action.replace(/_/g, ' ')} 
-                      description={`${event.actor_label || event.actor_username || 'System'}${event.actor_role ? ` · ${event.actor_role}` : ''} · ${formatDate(event.created_at)}`}
-                      actions={<Badge tone={event.outcome === 'success' ? 'success' : 'danger'}>{event.outcome}</Badge>}
-                    />
-                    <CardBody>
-                      <AuditEventDetails event={event} />
-                    </CardBody>
+                  <Card key={event.id} className="p-4 sm:p-5">
+                    <div className="mb-2 flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <h4 className="text-base font-semibold text-tx">
+                          {LABELS[event.action] || event.action.replace(/_/g, ' ')}
+                        </h4>
+                        <p className="mt-0.5 text-sm text-txmuted">
+                          {`${event.actor_label || event.actor_username || 'System'}${event.actor_role ? ` · ${event.actor_role}` : ''} · ${formatDate(event.created_at)}`}
+                        </p>
+                      </div>
+                      <Pill tone={event.outcome === 'success' ? 'ok' : 'bad'}>{event.outcome}</Pill>
+                    </div>
+                    <AuditEventDetails event={event} />
                   </Card>
                 )
               })}
@@ -769,25 +794,23 @@ export function AuditHistory() {
 
           {/* Pagination */}
           <div className="mt-4 flex items-center justify-between">
-            <Button 
-              variant="secondary" 
-              disabled={page.offset === 0 || state.loading} 
-              icon={<ChevronLeft className="h-4 w-4" />} 
+            <GhostButton
+              disabled={page.offset === 0 || state.loading}
               onClick={() => setFilters(v => ({ ...v, offset: Math.max(0, (v.offset ?? 0) - PAGE_SIZE) }))}
             >
+              <ChevronLeft className="h-4 w-4" />
               Previous
-            </Button>
-            <span className="text-xs text-slate-500">
+            </GhostButton>
+            <span className="text-xs text-txmuted">
               Page {Math.floor(page.offset / page.limit) + 1} of {Math.max(1, Math.ceil(page.total / page.limit))}
             </span>
-            <Button 
-              variant="secondary" 
-              disabled={page.offset + page.events.length >= page.total || state.loading} 
-              icon={<ChevronRight className="h-4 w-4" />} 
+            <GhostButton
+              disabled={page.offset + page.events.length >= page.total || state.loading}
               onClick={() => setFilters(v => ({ ...v, offset: (v.offset ?? 0) + PAGE_SIZE }))}
             >
               Next
-            </Button>
+              <ChevronRight className="h-4 w-4" />
+            </GhostButton>
           </div>
         </>
       )}

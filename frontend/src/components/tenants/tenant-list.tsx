@@ -13,6 +13,44 @@ import { VerticalGlyph } from '@/components/vertical-icon'
 import { PageHeader } from '@/components/layout/page-header'
 import { useToast } from '@/components/ui/toast'
 import type { Tenant } from '@/lib/types'
+import { useResolved } from './hooks'
+
+/**
+ * Data health — display only. Reads the tenant's resolved profile (the
+ * same data the bot runs on) and flags the problems that used to hide:
+ * nothing published, an empty menu, no intents, no feature switches.
+ * It never writes anything.
+ */
+function TenantHealth({ tenant }: { tenant: Tenant }) {
+  const { data, error } = useResolved(tenant.id)
+  if (error) {
+    return (
+      <p className="mt-2 text-xs text-slate-500">
+        <span className="font-medium text-slate-400">Data health:</span> could not read the profile
+      </p>
+    )
+  }
+  if (!data) return null
+
+  const problems: string[] = []
+  if (!data.version) problems.push('nothing published yet — running on defaults')
+  if (!data.menu?.buttons?.length) problems.push('no menu buttons')
+  if (!data.active_intents?.length) problems.push('no active intents')
+  if (!Object.values(data.features ?? {}).some(Boolean)) problems.push('no feature switches set')
+
+  return (
+    <p className="mt-2 text-xs">
+      <span className="font-medium text-slate-400">Data health: </span>
+      {problems.length ? (
+        <span className="font-medium text-amber-600">{problems.join(' · ')}</span>
+      ) : (
+        <span className="text-slate-400">
+          menu, intents and features in place · live v{data.version}
+        </span>
+      )}
+    </p>
+  )
+}
 
 export function TenantList() {
   const { tenants, loading, error, reload } = useTenants()
@@ -187,6 +225,7 @@ export function TenantList() {
                       {tenant.waba_phone_id ? ` · phone ${tenant.waba_phone_id}` : ' · no phone bound'}
                     </p>
                     <p className="mt-2 max-w-2xl text-xs leading-relaxed text-slate-400">{vertical.blurb}</p>
+                    <TenantHealth tenant={tenant} />
                   </button>
 
                   <div className="flex shrink-0 items-center gap-2">

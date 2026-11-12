@@ -1,14 +1,12 @@
 import { useRef, useState } from 'react'
 import {
   FileText,
-  FolderUp,
   Download,
   Eye,
   RefreshCw,
   Trash2,
   Upload,
   Sparkles,
-  CheckCircle2,
   Package,
   ArrowRight,
   Bot,
@@ -23,6 +21,7 @@ import {
 import { useAction, useAsync } from '@/lib/hooks'
 import { useAuth } from '@/lib/auth'
 import { usePermissions } from '@/lib/permissions'
+import { navigate } from '@/lib/router'
 import {
   FILE_MODULES,
   UPLOAD_ACCEPT,
@@ -43,11 +42,20 @@ import {
 } from '@/lib/uploads'
 import { formatDate } from '@/lib/format'
 import { cn } from '@/lib/cn'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Card, CardBody, CardHeader } from '@/components/ui/card'
-import { Input, Textarea } from '@/components/ui/input'
-import { Alert, EmptyState, LoadingBlock } from '@/components/ui/feedback'
+import {
+  EmptyState,
+  ErrorBanner,
+  FieldInput,
+  FieldTextarea,
+  GhostButton,
+  IconButton,
+  NeedRow,
+  Notice,
+  Panel,
+  Pill,
+  PrimaryButton,
+} from '@/components/remake/ui'
+import { LoadingBlock } from '@/components/ui/feedback'
 import { PageHeader } from '@/components/layout/page-header'
 import { useToast } from '@/components/ui/toast'
 import { Modal } from '@/components/ui/modal'
@@ -100,6 +108,11 @@ export function UploadsPanel({ tenantId }: { tenantId: string }) {
   const canUpload = canWriteTenant(activeModule.permission)
   const canDelete = canWriteTenant('delete_files')
   const files = state.data ?? []
+
+  const failedFiles = files.filter((f) => f.status === 'failed')
+  const unresolvedGaps = !showResolvedGaps
+    ? (gapsState.data?.gaps ?? []).filter((g) => g.resolved === 0)
+    : []
 
   const pickUpload = () => inputRef.current?.click()
 
@@ -282,9 +295,9 @@ export function UploadsPanel({ tenantId }: { tenantId: string }) {
     return (
       <div className="min-w-0">
         <PageHeader title="Uploads" />
-        <Alert tone="warning" title="Not permitted">
+        <Notice tone="warn" title="Not permitted">
           This screen needs the <strong>view_files</strong> permission.
-        </Alert>
+        </Notice>
       </div>
     )
   }
@@ -294,30 +307,45 @@ export function UploadsPanel({ tenantId }: { tenantId: string }) {
       <PageHeader
         title="Uploads & Auto-Configurator"
         description="Upload documents once — products, FAQs, and knowledge are extracted and published live automatically."
-        meta={state.data && <Badge tone="accent">{files.length} files</Badge>}
+        meta={state.data && <Pill tone="ok">{files.length} files</Pill>}
         actions={
           <div className="flex flex-wrap items-center gap-2">
-            <Button
-              variant="ghost"
-              icon={<RefreshCw className={cn('h-4 w-4', state.loading && 'animate-spin')} />}
-              onClick={state.reload}
-            >
+            <GhostButton onClick={state.reload}>
+              <RefreshCw className={cn('h-4 w-4', state.loading && 'animate-spin')} />
               Refresh
-            </Button>
+            </GhostButton>
             {files.length > 0 && (
-              <Button
-                variant="ghost"
-                icon={<Sparkles className="h-4 w-4 text-accent-400" />}
-                onClick={() => void onBifurcateExisting()}
-                loading={bifurcating}
-                title="Re-run full bifurcation on files already in this library"
-              >
+              <GhostButton onClick={() => void onBifurcateExisting()} disabled={bifurcating}>
+                {bifurcating ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Sparkles className="h-4 w-4 text-acc" />
+                )}
                 Re-process library
-              </Button>
+              </GhostButton>
             )}
           </div>
         }
       />
+
+      {(failedFiles.length > 0 || unresolvedGaps.length > 0) && (
+        <Panel title="Needs you" className="mb-6">
+          {failedFiles.length > 0 && (
+            <NeedRow icon={<X className="h-4 w-4" />}>
+              <strong>{failedFiles.length}</strong> uploaded{' '}
+              {failedFiles.length === 1 ? 'file' : 'files'} failed to process —{' '}
+              {failedFiles.map((f) => f.name).join(', ')}.
+            </NeedRow>
+          )}
+          {unresolvedGaps.length > 0 && (
+            <NeedRow icon={<HelpCircle className="h-4 w-4" />}>
+              <strong>{unresolvedGaps.length}</strong> customer{' '}
+              {unresolvedGaps.length === 1 ? 'question is' : 'questions are'} still
+              unanswered — turn them into FAQs in Knowledge gaps below.
+            </NeedRow>
+          )}
+        </Panel>
+      )}
 
       <input
         ref={inputRef}
@@ -330,94 +358,98 @@ export function UploadsPanel({ tenantId }: { tenantId: string }) {
 
       {/* Auto-Bifurcation Result Banner */}
       {bifurcationResult && (
-        <Card className="mb-6 border-emerald-500/40 bg-emerald-950/20">
-          <CardHeader
-            title="Auto-Bifurcation Successful & Published Live"
-            icon={<CheckCircle2 className="h-5 w-5 text-emerald-400" />}
-            actions={
-              <Badge tone="accent">
-                Version {bifurcationResult.version || 1} Live
-              </Badge>
-            }
-          />
-          <CardBody className="space-y-4">
+        <Panel
+          className="mb-6 border-ok/40 bg-oksoft"
+          title="Auto-Bifurcation Successful & Published Live"
+          action={
+            <Pill tone="ok">
+              Version {bifurcationResult.version || 1} Live
+            </Pill>
+          }
+        >
+          <div className="space-y-4">
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
-              <div className="rounded-md border border-emerald-500/20 bg-surface-base/80 p-3">
-                <p className="text-2xs text-slate-400">Brand Configured</p>
-                <p className="font-semibold text-sm text-slate-100">
+              <div className="rounded-panel border border-line bg-card p-3">
+                <p className="text-2xs text-txmuted">Brand Configured</p>
+                <p className="text-sm font-semibold text-tx">
                   {bifurcationResult.brand?.name || 'Unchanged'}
                 </p>
-                <p className="text-2xs text-slate-400">{bifurcationResult.brand?.bot_name}</p>
-                <p className="mt-1 text-2xs text-emerald-400">Vertical: {bifurcationResult.vertical}</p>
+                <p className="text-2xs text-txmuted">{bifurcationResult.brand?.bot_name}</p>
+                <p className="mt-1 text-2xs text-acc">Vertical: {bifurcationResult.vertical}</p>
               </div>
 
-              <div className="rounded-md border border-emerald-500/20 bg-surface-base/80 p-3">
-                <p className="text-2xs text-slate-400">Catalog Offerings</p>
-                <p className="font-semibold text-lg text-emerald-400">{bifurcationResult.offerings_created}</p>
-                <p className="truncate text-2xs text-slate-300">
+              <div className="rounded-panel border border-line bg-card p-3">
+                <p className="text-2xs text-txmuted">Catalog Offerings</p>
+                <p className="text-lg font-semibold text-acc">{bifurcationResult.offerings_created}</p>
+                <p className="truncate text-2xs text-tx">
                   {bifurcationResult.offerings_sample?.join(', ') || 'Populated into catalog'}
                 </p>
               </div>
 
-              <div className="rounded-md border border-emerald-500/20 bg-surface-base/80 p-3">
-                <p className="text-2xs text-slate-400">FAQs Saved</p>
-                <p className="font-semibold text-lg text-emerald-400">{bifurcationResult.faqs_saved ?? 0}</p>
-                <p className="text-2xs text-slate-300">Live in FAQ index</p>
+              <div className="rounded-panel border border-line bg-card p-3">
+                <p className="text-2xs text-txmuted">FAQs Saved</p>
+                <p className="text-lg font-semibold text-acc">{bifurcationResult.faqs_saved ?? 0}</p>
+                <p className="text-2xs text-tx">Live in FAQ index</p>
               </div>
 
-              <div className="rounded-md border border-emerald-500/20 bg-surface-base/80 p-3">
-                <p className="text-2xs text-slate-400">WhatsApp Navigation</p>
-                <p className="font-semibold text-lg text-emerald-400">{bifurcationResult.menu_buttons_count} Options</p>
-                <p className="text-2xs text-slate-300">Formatted for WhatsApp API</p>
+              <div className="rounded-panel border border-line bg-card p-3">
+                <p className="text-2xs text-txmuted">WhatsApp Navigation</p>
+                <p className="text-lg font-semibold text-acc">{bifurcationResult.menu_buttons_count} Options</p>
+                <p className="text-2xs text-tx">Formatted for WhatsApp API</p>
               </div>
 
-              <div className="rounded-md border border-emerald-500/20 bg-surface-base/80 p-3">
-                <p className="text-2xs text-slate-400">Vector Search / RAG</p>
-                <p className="font-semibold text-lg text-emerald-400">{bifurcationResult.kb_chunks_indexed} Chunks</p>
-                <p className="text-2xs text-slate-300">FAISS & BM25 Ready</p>
+              <div className="rounded-panel border border-line bg-card p-3">
+                <p className="text-2xs text-txmuted">Vector Search / RAG</p>
+                <p className="text-lg font-semibold text-acc">{bifurcationResult.kb_chunks_indexed} Chunks</p>
+                <p className="text-2xs text-tx">FAISS & BM25 Ready</p>
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-surface-line">
-              <span className="text-2xs text-slate-400">Inspect configured sections:</span>
-              <a
-                href={`#/tenants/${tenantId}/records`}
-                className="inline-flex items-center gap-1 rounded px-2.5 py-1 text-2xs font-medium bg-surface-panel hover:bg-surface-line text-slate-200 transition"
+            <div className="flex flex-wrap items-center gap-2 border-t border-line pt-2">
+              <span className="text-2xs text-txmuted">Inspect configured sections:</span>
+              <button
+                type="button"
+                onClick={() => navigate(`/tenants/${tenantId}/records`)}
+                className="inline-flex items-center gap-1 rounded-lg bg-card px-2.5 py-1 text-2xs font-medium text-tx transition hover:bg-paper"
               >
-                <Package className="h-3 w-3 text-amber-400" />
+                <Package className="h-3 w-3 text-attink" />
                 View Records / Catalog
-              </a>
-              <a
-                href={`#/tenants/${tenantId}/offerings`}
-                className="inline-flex items-center gap-1 rounded px-2.5 py-1 text-2xs font-medium bg-surface-panel hover:bg-surface-line text-slate-200 transition"
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate(`/tenants/${tenantId}/offerings`)}
+                className="inline-flex items-center gap-1 rounded-lg bg-card px-2.5 py-1 text-2xs font-medium text-tx transition hover:bg-paper"
               >
-                <Package className="h-3 w-3 text-amber-400" />
+                <Package className="h-3 w-3 text-attink" />
                 View Offerings
-              </a>
-              <a
-                href={`#/tenants/${tenantId}/menu`}
-                className="inline-flex items-center gap-1 rounded px-2.5 py-1 text-2xs font-medium bg-surface-panel hover:bg-surface-line text-slate-200 transition"
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate(`/tenants/${tenantId}/menu`)}
+                className="inline-flex items-center gap-1 rounded-lg bg-card px-2.5 py-1 text-2xs font-medium text-tx transition hover:bg-paper"
               >
-                <Compass className="h-3 w-3 text-sky-400" />
+                <Compass className="h-3 w-3 text-acc" />
                 View WhatsApp Menu
-              </a>
-              <a
-                href={`#/tenants/${tenantId}/profile`}
-                className="inline-flex items-center gap-1 rounded px-2.5 py-1 text-2xs font-medium bg-surface-panel hover:bg-surface-line text-slate-200 transition"
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate(`/tenants/${tenantId}/profile`)}
+                className="inline-flex items-center gap-1 rounded-lg bg-card px-2.5 py-1 text-2xs font-medium text-tx transition hover:bg-paper"
               >
-                <Bot className="h-3 w-3 text-emerald-400" />
+                <Bot className="h-3 w-3 text-acc" />
                 View Profile
-              </a>
-              <a
-                href={`#/tenants/${tenantId}/test`}
-                className="inline-flex items-center gap-1 rounded px-2.5 py-1 text-2xs font-medium bg-accent-100 hover:bg-accent-200 text-accent-800 transition"
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate(`/tenants/${tenantId}/test`)}
+                className="inline-flex items-center gap-1 rounded-lg bg-accsoft px-2.5 py-1 text-2xs font-medium text-acc transition hover:bg-acc hover:text-onacc"
               >
                 <ArrowRight className="h-3 w-3" />
                 Test in Sandbox
-              </a>
+              </button>
             </div>
-          </CardBody>
-        </Card>
+          </div>
+        </Panel>
       )}
 
       {/* Predefined Onboarding Kits & AI Bifurcation — never for a super
@@ -440,8 +472,8 @@ export function UploadsPanel({ tenantId }: { tenantId: string }) {
               className={cn(
                 'rounded-lg px-3 py-1.5 text-xs font-medium transition',
                 module === m.value
-                  ? 'bg-accent-100 text-accent-800'
-                  : 'text-slate-400 hover:bg-surface-panel hover:text-slate-200',
+                  ? 'bg-accsoft text-acc'
+                  : 'text-txmuted hover:bg-paper hover:text-tx',
               )}
             >
               {m.label}
@@ -449,53 +481,50 @@ export function UploadsPanel({ tenantId }: { tenantId: string }) {
           ))}
         </div>
         <div className="flex items-center gap-2">
-          <Input
+          <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Filter files by name…"
-            className="w-full sm:w-56"
+            aria-label="Filter files by name"
+            className="w-full rounded-lg border border-line bg-inputbg px-3 py-2 text-sm text-tx outline-none placeholder:text-txfaint focus:border-acc sm:w-56"
           />
           {canUpload && (
-            <Button
-              variant="secondary"
-              size="sm"
-              icon={<Upload className="h-3.5 w-3.5" />}
+            <GhostButton
+              className="px-2.5 py-1.5 text-xs"
               onClick={pickUpload}
-              loading={uploading}
+              disabled={uploading}
             >
+              {uploading ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Upload className="h-3.5 w-3.5" />
+              )}
               Upload
-            </Button>
+            </GhostButton>
           )}
         </div>
       </div>
 
-      <p className="mb-4 text-2xs text-slate-500">
+      <p className="mb-4 text-2xs text-txmuted">
         Supported formats: {UPLOAD_TYPES_LABEL} · Max {MAX_UPLOAD_LABEL} per file
       </p>
 
       {action.error && (
-        <Alert tone="danger" title="Upload failed" className="mb-4">
-          {action.error}
-        </Alert>
+        <ErrorBanner title="Upload failed" message={action.error} className="mb-4" />
       )}
 
       {!canUpload && (
-        <Alert tone="info" className="mb-4">
+        <Notice tone="info" className="mb-4">
           You can view {activeModule.label} files, but uploading them needs the{' '}
           <strong>{activeModule.permission}</strong> permission.
-        </Alert>
+        </Notice>
       )}
 
-      <Card className="min-w-0">
-        <CardHeader title={`${activeModule.label} files (${files.length})`} icon={<FolderUp className="h-4 w-4" />} />
+      <Panel title={`${activeModule.label} files (${files.length})`}>
         {state.loading && !files.length ? (
           <LoadingBlock label="Loading files…" />
         ) : state.error ? (
-          <CardBody>
-            <Alert tone="danger" title="Could not load files">
-              {state.error}
-            </Alert>
-          </CardBody>
+          <ErrorBanner title="Could not load files" message={state.error} />
         ) : files.length === 0 ? (
           <EmptyState
             title={`No ${activeModule.label.toLowerCase()} files`}
@@ -504,41 +533,36 @@ export function UploadsPanel({ tenantId }: { tenantId: string }) {
                 ? 'Upload PDF or Word documents — products, FAQs, and knowledge are extracted and published automatically.'
                 : 'Nothing has been uploaded for this module yet.'
             }
-            icon={<FileText className="h-6 w-6" />}
           />
         ) : (
-          <ul className="divide-y divide-surface-line">
+          <ul className="-mx-4 -mb-4 divide-y divide-linesoft sm:-mx-5 sm:-mb-5">
             {files.map((item) => (
               <li
                 key={item.id}
-                className="flex flex-col gap-2 px-5 py-3.5 sm:flex-row sm:items-center sm:gap-3"
+                className="flex flex-col gap-2 px-4 py-3.5 sm:flex-row sm:items-center sm:gap-3 sm:px-5"
               >
                 <div className="flex min-w-0 items-start gap-3 sm:flex-1 sm:items-center">
-                  <FileText className="mt-0.5 h-4 w-4 shrink-0 text-accent-400 sm:mt-0" />
+                  <FileText className="mt-0.5 h-4 w-4 shrink-0 text-acc sm:mt-0" />
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <p className="break-all text-sm font-medium text-slate-100 sm:truncate" title={item.name}>
+                      <p className="break-all text-sm font-medium text-tx sm:truncate" title={item.name}>
                         {item.name}
                       </p>
                       {item.status === 'processing' && (
-                        <Badge tone="warning" className="flex items-center gap-1 text-2xs animate-pulse">
+                        <Pill tone="warn" className="animate-pulse">
                           <Loader2 className="h-3 w-3 animate-spin" /> Processing
-                        </Badge>
+                        </Pill>
                       )}
                       {item.status === 'ready' && (
-                        <Badge tone="success" className="text-2xs">
-                          {item.chunks_count ?? 0} chunks
-                        </Badge>
+                        <Pill tone="ok">{item.chunks_count ?? 0} chunks</Pill>
                       )}
                       {item.status === 'failed' && (
                         <span title={item.error_message || 'Processing failed'}>
-                          <Badge tone="danger" className="text-2xs">
-                            Failed
-                          </Badge>
+                          <Pill tone="bad">Failed</Pill>
                         </span>
                       )}
                     </div>
-                    <p className="mt-0.5 text-2xs text-slate-500">
+                    <p className="mt-0.5 text-2xs text-txmuted">
                       {(item.ext || 'file').toUpperCase()} · {formatBytes(item.size)} · {formatDate(item.created_at)}
                       {item.error_message ? ` · Error: ${item.error_message}` : ''}
                     </p>
@@ -569,8 +593,8 @@ export function UploadsPanel({ tenantId }: { tenantId: string }) {
                         <p
                           className={
                             s.status === 'error'
-                              ? 'mt-0.5 text-2xs text-rose-400'
-                              : 'mt-0.5 text-2xs text-emerald-400/90'
+                              ? 'mt-0.5 text-2xs text-badink'
+                              : 'mt-0.5 text-2xs text-acc'
                           }
                         >
                           {s.status === 'error'
@@ -582,71 +606,74 @@ export function UploadsPanel({ tenantId }: { tenantId: string }) {
                   </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-1 pl-7 sm:pl-0">
-                  <Button
-                    size="icon"
-                    variant="ghost"
+                  <IconButton
                     title="Preview"
-                    loading={busyName === item.name}
+                    aria-label="Preview"
+                    disabled={busyName === item.name}
                     onClick={() => void fetchFile(item, false)}
                   >
-                    <Eye className="h-4 w-4" />
-                  </Button>
-                  <Button size="icon" variant="ghost" title="Download" onClick={() => void fetchFile(item, true)}>
+                    {busyName === item.name ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Eye className="h-4 w-4" />
+                    )}
+                  </IconButton>
+                  <IconButton
+                    title="Download"
+                    aria-label="Download"
+                    onClick={() => void fetchFile(item, true)}
+                  >
                     <Download className="h-4 w-4" />
-                  </Button>
+                  </IconButton>
                   {canDelete && (
-                    <Button
-                      size="icon"
-                      variant="ghost"
+                    <IconButton
                       title="Delete"
+                      aria-label="Delete"
+                      className="text-badink hover:bg-badbg hover:text-badink"
                       onClick={() => void remove(item)}
-                      className="text-rose-400 hover:text-rose-300"
                     >
                       <Trash2 className="h-4 w-4" />
-                    </Button>
+                    </IconButton>
                   )}
                 </div>
               </li>
             ))}
           </ul>
         )}
-      </Card>
+      </Panel>
 
       {/* ── Knowledge Gap Analytics & 1-Click FAQ Generation ─────────────── */}
-      <Card className="mt-8 border-amber-500/30 bg-surface-panel/40">
-        <CardHeader
-          title="Customer Knowledge Gaps & Unanswered Queries"
-          icon={<HelpCircle className="h-5 w-5 text-amber-400" />}
-          actions={
-            <div className="flex items-center gap-2">
-              <Button
-                variant={showResolvedGaps ? 'secondary' : 'ghost'}
-                size="sm"
-                onClick={() => setShowResolvedGaps(!showResolvedGaps)}
-              >
-                {showResolvedGaps ? 'Showing Resolved' : 'Showing Unresolved'}
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                icon={<RefreshCw className={cn('h-3.5 w-3.5', gapsState.loading && 'animate-spin')} />}
-                onClick={gapsState.reload}
-              >
-                Refresh
-              </Button>
-            </div>
-          }
-        />
-        <CardBody className="space-y-4">
-          <p className="text-xs text-slate-400">
+      <Panel
+        className="mt-8 border-attline bg-attbg"
+        title="Customer Knowledge Gaps & Unanswered Queries"
+        action={
+          <div className="flex items-center gap-2">
+            <GhostButton
+              className={cn(
+                'px-2.5 py-1.5 text-xs',
+                showResolvedGaps && 'border-transparent bg-accsoft text-acc hover:text-acc',
+              )}
+              onClick={() => setShowResolvedGaps(!showResolvedGaps)}
+            >
+              {showResolvedGaps ? 'Showing Resolved' : 'Showing Unresolved'}
+            </GhostButton>
+            <GhostButton className="px-2.5 py-1.5 text-xs" onClick={gapsState.reload}>
+              <RefreshCw className={cn('h-3.5 w-3.5', gapsState.loading && 'animate-spin')} />
+              Refresh
+            </GhostButton>
+          </div>
+        }
+      >
+        <div className="space-y-4">
+          <p className="text-xs leading-relaxed text-txmuted">
             Real customer questions that scored below bot confidence thresholds or triggered fallback replies.
             Review the top questions the bot failed to answer and 1-click turn them into live FAQ answers to train your AI.
           </p>
 
           {/* Top Recurring Questions Summary */}
           {gapsState.data?.summary.top_queries && gapsState.data.summary.top_queries.length > 0 && (
-            <div className="rounded-lg border border-amber-500/20 bg-amber-950/10 p-3.5">
-              <div className="flex items-center gap-2 mb-2 text-xs font-semibold text-amber-300">
+            <div className="rounded-panel border border-attline bg-card p-3.5">
+              <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-attink">
                 <Lightbulb className="h-4 w-4" />
                 <span>Top High-Frequency Questions Asked by Customers</span>
               </div>
@@ -654,24 +681,22 @@ export function UploadsPanel({ tenantId }: { tenantId: string }) {
                 {gapsState.data.summary.top_queries.slice(0, 6).map((tq, idx) => (
                   <div
                     key={idx}
-                    className="flex flex-col justify-between rounded border border-surface-line bg-surface-base p-2.5"
+                    className="flex flex-col justify-between rounded-panel border border-line bg-paper p-2.5"
                   >
                     <div>
-                      <div className="flex items-center justify-between gap-1 mb-1">
-                        <Badge tone="warning" className="text-2xs">
+                      <div className="mb-1 flex items-center justify-between gap-1">
+                        <Pill tone="warn">
                           Asked {tq.count} {tq.count === 1 ? 'time' : 'times'}
-                        </Badge>
-                        <span className="text-2xs text-slate-500">{formatDate(tq.last_asked)}</span>
+                        </Pill>
+                        <span className="text-2xs text-txmuted">{formatDate(tq.last_asked)}</span>
                       </div>
-                      <p className="text-xs font-medium text-slate-200 line-clamp-2" title={tq.query}>
+                      <p className="line-clamp-2 text-xs font-medium text-tx" title={tq.query}>
                         "{tq.query}"
                       </p>
                     </div>
-                    <div className="mt-2 pt-2 border-t border-surface-line/50 flex justify-end">
-                      <Button
-                        size="sm"
-                        variant="primary"
-                        icon={<Plus className="h-3 w-3" />}
+                    <div className="mt-2 flex justify-end border-t border-linesoft pt-2">
+                      <PrimaryButton
+                        className="px-2.5 py-1.5 text-xs"
                         onClick={() => openFaqCreator({
                           id: tq.sample_id,
                           tenant_id: tenantId,
@@ -683,8 +708,9 @@ export function UploadsPanel({ tenantId }: { tenantId: string }) {
                           resolved: 0,
                         })}
                       >
+                        <Plus className="h-3 w-3" />
                         1-Click FAQ
-                      </Button>
+                      </PrimaryButton>
                     </div>
                   </div>
                 ))}
@@ -696,9 +722,7 @@ export function UploadsPanel({ tenantId }: { tenantId: string }) {
           {gapsState.loading && !gapsState.data ? (
             <LoadingBlock label="Loading knowledge gaps..." />
           ) : gapsState.error ? (
-            <Alert tone="danger" title="Could not load knowledge gaps">
-              {gapsState.error}
-            </Alert>
+            <ErrorBanner title="Could not load knowledge gaps" message={gapsState.error} />
           ) : !gapsState.data?.gaps.length ? (
             <EmptyState
               title={showResolvedGaps ? 'No resolved queries' : 'No unanswered queries detected'}
@@ -707,130 +731,124 @@ export function UploadsPanel({ tenantId }: { tenantId: string }) {
                   ? 'Resolved questions will appear here.'
                   : 'Great job! The AI bot has successfully answered incoming customer questions with high confidence.'
               }
-              icon={<CheckCircle2 className="h-6 w-6 text-emerald-400" />}
             />
           ) : (
-            <ul className="divide-y divide-surface-line rounded-lg border border-surface-line bg-surface-base overflow-hidden">
+            <ul className="divide-y divide-linesoft overflow-hidden rounded-panel border border-line bg-card">
               {gapsState.data.gaps.map((gap) => (
                 <li key={gap.id} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
                   <div className="min-w-0 flex-1 space-y-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-sm font-medium text-slate-100">"{gap.query}"</span>
+                      <span className="text-sm font-medium text-tx">"{gap.query}"</span>
                       {gap.reason === 'no_match' && (
-                        <Badge tone="danger" className="text-2xs">No FAQ Match</Badge>
+                        <Pill tone="bad">No FAQ Match</Pill>
                       )}
                       {gap.reason === 'low_confidence' && (
-                        <Badge tone="warning" className="text-2xs">
+                        <Pill tone="warn">
                           Low Confidence ({gap.confidence_score.toFixed(2)})
-                        </Badge>
+                        </Pill>
                       )}
                       {gap.reason === 'uncertain_fallback' && (
-                        <Badge tone="accent" className="text-2xs">Uncertain Fallback</Badge>
+                        <Pill tone="ok">Uncertain Fallback</Pill>
                       )}
                       {gap.resolved === 1 && (
-                        <Badge tone="success" className="text-2xs">Resolved</Badge>
+                        <Pill tone="ok">Resolved</Pill>
                       )}
                     </div>
-                    <div className="flex flex-wrap items-center gap-3 text-2xs text-slate-500">
+                    <div className="flex flex-wrap items-center gap-3 text-2xs text-txmuted">
                       <span>Asked: {formatDate(gap.created_at)}</span>
                       {gap.wa_id && <span>User: {gap.wa_id}</span>}
                       {gap.resolution_notes && (
-                        <span className="text-slate-400 italic">({gap.resolution_notes})</span>
+                        <span className="italic text-txmuted">({gap.resolution_notes})</span>
                       )}
                     </div>
                   </div>
                   {gap.resolved === 0 && (
                     <div className="flex shrink-0 items-center gap-2">
-                      <Button
-                        size="sm"
-                        variant="primary"
-                        icon={<Plus className="h-3.5 w-3.5" />}
+                      <PrimaryButton
+                        className="px-2.5 py-1.5 text-xs"
                         onClick={() => openFaqCreator(gap)}
                       >
+                        <Plus className="h-3.5 w-3.5" />
                         1-Click FAQ
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        icon={<Check className="h-3.5 w-3.5" />}
-                        loading={resolvingId === gap.id}
+                      </PrimaryButton>
+                      <GhostButton
+                        className="px-2.5 py-1.5 text-xs"
+                        disabled={resolvingId === gap.id}
                         onClick={() => void onResolveGap(gap)}
                       >
+                        {resolvingId === gap.id ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Check className="h-3.5 w-3.5" />
+                        )}
                         Dismiss
-                      </Button>
+                      </GhostButton>
                     </div>
                   )}
                 </li>
               ))}
             </ul>
           )}
-        </CardBody>
-      </Card>
+        </div>
+      </Panel>
 
       {/* ── 1-Click FAQ Creation Modal ───────────────────────────────────── */}
       {gapModalItem && (
         <Modal
           onClose={() => setGapModalItem(null)}
-          className="w-full max-w-lg rounded-xl border border-surface-line bg-surface-panel p-5 shadow-2xl"
+          className="w-full max-w-lg rounded-panel border border-line bg-card p-5 shadow-2xl"
         >
-            <div className="flex items-center justify-between pb-3 border-b border-surface-line">
-              <div className="flex items-center gap-2 text-sm font-semibold text-slate-100">
-                <Sparkles className="h-4 w-4 text-accent-400" />
+            <div className="flex items-center justify-between border-b border-line pb-3">
+              <div className="flex items-center gap-2 text-sm font-semibold text-tx">
+                <Sparkles className="h-4 w-4 text-acc" />
                 <span>Turn Question into Knowledge Base FAQ</span>
               </div>
               <button
                 type="button"
                 onClick={() => setGapModalItem(null)}
-                className="text-slate-400 hover:text-slate-200 transition"
+                aria-label="Close"
+                className="text-txmuted transition hover:text-tx"
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
 
             <div className="space-y-4 py-4">
-              <div>
-                <label className="text-xs font-medium text-slate-300 block mb-1">
-                  Customer Question
-                </label>
-                <Input
-                  value={faqQuestion}
-                  onChange={(e) => setFaqQuestion(e.target.value)}
-                  placeholder="E.g., What is your return policy?"
-                />
-              </div>
+              <FieldInput
+                label="Customer Question"
+                value={faqQuestion}
+                onChange={(e) => setFaqQuestion(e.target.value)}
+                placeholder="E.g., What is your return policy?"
+              />
 
-              <div>
-                <label className="text-xs font-medium text-slate-300 block mb-1">
-                  Official FAQ Answer
-                </label>
-                <Textarea
-                  rows={4}
-                  value={faqAnswer}
-                  onChange={(e) => setFaqAnswer(e.target.value)}
-                  placeholder="Enter the clear, direct answer the bot should provide to customers..."
-                />
-                <p className="mt-1 text-2xs text-slate-400">
-                  This will be added to the tenant FAQ dataset and immediately indexed in FAISS vector search.
-                </p>
-              </div>
+              <FieldTextarea
+                label="Official FAQ Answer"
+                rows={4}
+                value={faqAnswer}
+                onChange={(e) => setFaqAnswer(e.target.value)}
+                placeholder="Enter the clear, direct answer the bot should provide to customers..."
+                hint="This will be added to the tenant FAQ dataset and immediately indexed in FAISS vector search."
+              />
             </div>
 
-            <div className="flex items-center justify-end gap-2 pt-3 border-t border-surface-line">
-              <Button
-                variant="ghost"
+            <div className="flex items-center justify-end gap-2 border-t border-line pt-3">
+              <GhostButton
                 onClick={() => setGapModalItem(null)}
                 disabled={creatingFaq}
               >
                 Cancel
-              </Button>
-              <Button
-                variant="primary"
-                icon={<Sparkles className="h-4 w-4" />}
-                loading={creatingFaq}
+              </GhostButton>
+              <PrimaryButton
+                disabled={creatingFaq}
                 onClick={() => void onSaveFaq()}
               >
-                Save & Index FAQ
-              </Button>
+                {creatingFaq ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Sparkles className="h-4 w-4" />
+                )}
+                Save &amp; Index FAQ
+              </PrimaryButton>
             </div>
         </Modal>
       )}
