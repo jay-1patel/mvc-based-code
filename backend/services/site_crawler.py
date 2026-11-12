@@ -19,6 +19,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 import httpx
 from bs4 import BeautifulSoup
 
+from services.crawl_fulltext import url_dedupe_key
 from services.url_scraper import (
     DEFAULT_CRAWL_DELAY,
     USER_AGENT,
@@ -514,6 +515,9 @@ class SiteCrawler:
         started = time.monotonic()
         crawled_pages: List[Dict[str, Any]] = []
         visited: Set[str] = set()
+        # Same-page identity (trailing slash / www / default port folded):
+        # a page reachable under two URL spellings is fetched once.
+        visited_keys: Set[str] = set()
         # queue entries: (url, source, depth)
         queue: List[Tuple[str, str, int]] = []
 
@@ -581,7 +585,11 @@ class SiteCrawler:
                 curr_url, source, depth = queue.pop(0)
                 if curr_url in visited:
                     continue
+                curr_key = url_dedupe_key(curr_url)
+                if curr_key in visited_keys:
+                    continue
                 visited.add(curr_url)
+                visited_keys.add(curr_key)
 
                 # M2: never fetch a non-public address mid-crawl either.
                 try:
@@ -610,6 +618,7 @@ class SiteCrawler:
                 html, status, final_url, err = self._fetch(client, curr_url)
                 if final_url and final_url != curr_url:
                     visited.add(final_url)
+                    visited_keys.add(url_dedupe_key(final_url))
 
                 if not html:
                     self._record(
@@ -638,7 +647,10 @@ class SiteCrawler:
                     for link in self._discover_links(soup, final_url or curr_url):
                         if link in visited:
                             continue
-                        if any(link == q[0] for q in queue):
+                        link_key = url_dedupe_key(link)
+                        if link_key in visited_keys:
+                            continue
+                        if any(url_dedupe_key(q[0]) == link_key for q in queue):
                             continue
                         if self.respect_robots and self.robots and not self.robots.can_fetch(link):
                             continue
@@ -656,9 +668,10 @@ class SiteCrawler:
                     else "not_fetched_timeout"
                 )
                 for u, source, depth in queue:
-                    if u in visited:
+                    if u in visited or url_dedupe_key(u) in visited_keys:
                         continue
                     visited.add(u)
+                    visited_keys.add(url_dedupe_key(u))
                     self._record(
                         u, source=source, success=False,
                         error=leftover_error, depth=depth,

@@ -205,6 +205,9 @@ def get_crawl_run_staged(
             "pages_found": crawl_meta.get("pages_found"),
             "pages_scraped": crawl_meta.get("pages_scraped"),
             "images": payload.get("images_summary"),
+            "yield": payload.get("yield"),
+            "kb_chunks_count": len(payload.get("page_chunks") or []),
+            "knowledge_images": payload.get("knowledge_images") or [],
             "offerings_sample": [
                 {"name": o.get("name"), "price": o.get("price"), "media_url": o.get("media_url")}
                 for o in (bifurcation.get("offerings") or [])[:10]
@@ -216,13 +219,14 @@ def get_crawl_run_staged(
     }
 
 
-def _crawl_export_data(tenant_id: str, run_id: int, run: dict, staged: dict) -> dict:
+def _crawl_export_data(tenant_id: str, run_id: int, run: dict, staged: dict, images: list | None = None) -> dict:
     """Normalise a staged crawl payload into the downloadable knowledge doc.
 
-    Only knowledge content is exported — KB articles, FAQs, product
-    knowledge and the crawled page list. Website-guessed menu / brand /
-    hours are NOT part of the export (Rule 1: those come from the
-    tenant's PDF, never from the crawl).
+    Only knowledge content is exported — KB articles, the grounded
+    full-text page chunks, FAQs, product knowledge, captured images and
+    the crawled page list. Website-guessed menu / brand / hours are NOT
+    part of the export (Rule 1: those come from the tenant's PDF, never
+    from the crawl).
     """
     payload = staged.get("payload") or {}
     bifurcation = payload.get("bifurcation") or {}
@@ -236,6 +240,42 @@ def _crawl_export_data(tenant_id: str, run_id: int, run: dict, staged: dict) -> 
             "title": art.get("title") or "",
             "category": art.get("category") or "",
             "content": art.get("markdown_content") or art.get("content") or "",
+            "url": art.get("source_url") or "",
+        })
+    # Grounded layer: the pages' real text, chunked, source-tagged.
+    for chunk in payload.get("page_chunks") or []:
+        if not isinstance(chunk, dict):
+            continue
+        knowledge_base.append({
+            "title": chunk.get("title") or "",
+            "category": chunk.get("category") or "Website page",
+            "content": chunk.get("content") or "",
+            "url": chunk.get("url") or "",
+        })
+
+    # Captured content images (stored, de-duplicated; logos excluded —
+    # they are brand assets, not page knowledge). Section comes from the
+    # staged payload, keyed by source image URL.
+    section_by_source = {
+        img.get("source_url"): img.get("section") or ""
+        for img in (payload.get("knowledge_images") or [])
+        if isinstance(img, dict) and img.get("source_url")
+    }
+    export_images = []
+    for img in images or []:
+        if not isinstance(img, dict):
+            continue
+        if img.get("skipped") or img.get("is_duplicate"):
+            continue
+        if (img.get("kind") or "") == "logo":
+            continue
+        export_images.append({
+            "alt_text": img.get("alt_text") or "",
+            "image_url": img.get("served_url") or img.get("source_url") or "",
+            "source_url": img.get("source_url") or "",
+            "source_page_url": img.get("source_page_url") or "",
+            "kind": img.get("kind") or "image",
+            "section": section_by_source.get(img.get("source_url") or "", ""),
         })
 
     faqs = []
@@ -285,11 +325,14 @@ def _crawl_export_data(tenant_id: str, run_id: int, run: dict, staged: dict) -> 
             "faqs": len(faqs),
             "products": len(products),
             "pages": len(pages),
+            "images": len(export_images),
         },
         "knowledge_base": knowledge_base,
         "faqs": faqs,
         "products": products,
         "pages": pages,
+        "images": export_images,
+        "yield": payload.get("yield"),
     }
 
 
@@ -298,7 +341,7 @@ def _crawl_export_csv(data: dict) -> str:
     writer = csv.writer(output)
     writer.writerow(["section", "title_or_question", "category", "text_or_answer", "price", "url"])
     for art in data["knowledge_base"]:
-        writer.writerow(["knowledge_base", art["title"], art["category"], art["content"], "", ""])
+        writer.writerow(["knowledge_base", art["title"], art["category"], art["content"], "", art.get("url") or ""])
     for faq in data["faqs"]:
         writer.writerow(["faq", faq["question"], faq["category"], faq["answer"], "", ""])
     for prod in data["products"]:
@@ -309,6 +352,15 @@ def _crawl_export_csv(data: dict) -> str:
             prod["description"] or prod["short_description"],
             prod["price"],
             prod["detail_url"] or prod["media_url"],
+        ])
+    for img in data.get("images") or []:
+        writer.writerow([
+            "image",
+            img["alt_text"],
+            img["kind"],
+            img["image_url"],
+            "",
+            img["source_page_url"],
         ])
     for page in data["pages"]:
         writer.writerow(["page", page["title"], "", page["meta_description"], "", page["url"]])
@@ -336,7 +388,8 @@ def _render_crawl_export_pdf(data: dict) -> bytes:
     counts = data["counts"]
     add("meta", (
         f"Knowledge base: {counts['knowledge_base']}  |  FAQs: {counts['faqs']}  |  "
-        f"Products: {counts['products']}  |  Pages: {counts['pages']}"
+        f"Products: {counts['products']}  |  Pages: {counts['pages']}  |  "
+        f"Images: {counts.get('images', 0)}"
     ))
     add("blank", "")
 
@@ -373,6 +426,16 @@ def _render_crawl_export_pdf(data: dict) -> bytes:
         desc = prod["description"] or prod["short_description"]
         for wrapped in textwrap.wrap(desc, width=108) or [""]:
             add("body", wrapped)
+        add("blank", "")
+
+    add("h", "Images")
+    if not data.get("images"):
+        add("body", "(none)")
+    for img in data.get("images") or []:
+        add("item", img["alt_text"] or "(image)")
+        add("body", img["image_url"])
+        if img["source_page_url"]:
+            add("body", f"From page: {img['source_page_url']}")
         add("blank", "")
 
     add("h", "Pages Crawled")
@@ -437,7 +500,8 @@ def export_crawl_run(
     if not staged:
         raise HTTPException(status_code=404, detail="No staged payload for this run")
 
-    data = _crawl_export_data(tenant_id, run_id, run, staged)
+    images = list_crawl_images(run_id, tenant_id=tenant_id)
+    data = _crawl_export_data(tenant_id, run_id, run, staged, images=images)
     filename = f"crawl-run-{run_id}-knowledge.{fmt}"
     headers = {"Content-Disposition": f"attachment; filename={filename}"}
     if fmt == "json":

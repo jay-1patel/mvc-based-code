@@ -76,6 +76,7 @@ def run_crawl_pipeline(
         update_crawl_run,
         get_db_context,
     )
+    from services.crawl_fulltext import build_page_knowledge
     from services.crawl_images import download_and_store_crawl_images
     from services.site_crawler import SiteCrawler
     from services.url_scraper import UrlAutoOnboarder
@@ -125,16 +126,47 @@ def run_crawl_pipeline(
         if not pages:
             raise ValueError(f"Could not reach or crawl website: {url}")
 
-        # Download managed assets (staging dir under UPLOAD_DIR)
+        # ── Full-text knowledge layer (the extraction fix) ──
+        # Real page body text → KB chunks, before the HTML is stripped.
+        # Junk pages (privacy/terms/login/search results), too-short
+        # pages and duplicate URL spellings are excluded here and from
+        # every later stage; each exclusion is recorded with its reason.
+        kb = build_page_knowledge(pages)
+        # Junk / duplicate-spelling pages are excluded from every stage.
+        # Merely short pages stage no chunks but still feed the AI layer
+        # and image capture (a contact page is short, not junk).
+        excluded_urls = set(kb["excluded_urls"])
+        kept_pages = [p for p in pages if (p.get("url") or "") not in excluded_urls]
+
+        # Download managed assets (staging dir under UPLOAD_DIR) — kept
+        # pages only, so junk pages never contribute "knowledge" images.
         image_records = download_and_store_crawl_images(
             tenant_id=tenant_id,
             run_id=run_id,
-            pages=pages,
+            pages=kept_pages,
         )
+
+        # Knowledge images: stored, de-duplicated content images (logos
+        # stay brand assets, handled by _apply_image_links), each linked
+        # to the page it was captured from.
+        knowledge_images = []
+        for rec in image_records:
+            if rec.get("skipped") or rec.get("is_duplicate"):
+                continue
+            if (rec.get("kind") or "") == "logo":
+                continue
+            knowledge_images.append({
+                "alt_text": rec.get("alt_text") or "",
+                "image_url": rec.get("served_url") or rec.get("source_url") or "",
+                "source_url": rec.get("source_url") or "",
+                "source_page_url": rec.get("source_page_url") or "",
+                "section": rec.get("section") or "",
+                "kind": rec.get("kind") or "image",
+            })
 
         # Strip heavy HTML before bifurcation / staging payload
         slim_pages = []
-        for p in pages:
+        for p in kept_pages:
             slim = dict(p)
             slim.pop("html", None)
             slim_pages.append(slim)
@@ -177,6 +209,35 @@ def run_crawl_pipeline(
                 "duplicates": sum(1 for i in image_records if i.get("is_duplicate")),
                 "skipped": sum(1 for i in image_records if i.get("skipped")),
             },
+            # Grounded full-text layer: real page text chunks + the
+            # images captured from those pages, each with its source URL.
+            "page_chunks": [
+                {
+                    "title": c["title"],
+                    "category": c["category"],
+                    "content": c["content"],
+                    "url": c["url"],
+                }
+                for c in kb["chunks"]
+            ],
+            "knowledge_images": knowledge_images,
+            "yield": {
+                "pages_discovered": pages_found,
+                "pages_fetched": pages_scraped,
+                "pages_staged": len(kb["kept_urls"]),
+                "pages_skipped": kb["skipped"],
+                "kb_chunks": len(kb["chunks"]),
+                "kb_articles": len((bifurcation or {}).get("knowledge_articles") or []),
+                "faqs": len((bifurcation or {}).get("faqs") or []),
+                "products": len((bifurcation or {}).get("offerings") or []),
+                "images_captured": len(knowledge_images),
+                "images_deduped": sum(1 for i in image_records if i.get("is_duplicate")),
+                "images_skipped": sum(1 for i in image_records if i.get("skipped")),
+                "extractors": {
+                    name: sum(1 for v in kb["extractors"].values() if v == name)
+                    for name in ("trafilatura", "fallback")
+                },
+            },
             "trigger": trigger,
         }
 
@@ -198,9 +259,12 @@ def run_crawl_pipeline(
                     details={
                         "pages_found": pages_found,
                         "pages_scraped": pages_scraped,
+                        "pages_skipped": len(kb["skipped"]),
+                        "kb_chunks": len(kb["chunks"]),
                         "offerings": len((bifurcation or {}).get("offerings") or []),
                         "faqs": len((bifurcation or {}).get("faqs") or []),
                         "images_stored": payload["images_summary"]["stored"],
+                        "images_captured": len(knowledge_images),
                         "bifurcation_source": payload["bifurcation_source"],
                         "trigger": trigger,
                         "url": url[:200],
@@ -213,9 +277,12 @@ def run_crawl_pipeline(
             "status": "done",
             "pages_found": pages_found,
             "pages_scraped": pages_scraped,
+            "pages_skipped": len(kb["skipped"]),
+            "kb_chunks": len(kb["chunks"]),
             "offerings": len((bifurcation or {}).get("offerings") or []),
             "faqs": len((bifurcation or {}).get("faqs") or []),
             "images": payload["images_summary"],
+            "yield": payload["yield"],
         })
         return summary
 
@@ -431,11 +498,24 @@ def approve_crawl_run(
     # are never even candidates for a write. The snapshot/restore below
     # covers anything the publisher derives on its own (e.g. the
     # offering-linked intents it synthesises from the catalog).
+    # The grounded full-text chunks publish as KB articles alongside the
+    # LLM summary articles — same knowledge-only channel, real page text.
+    page_chunks = payload.get("page_chunks") or []
+    chunk_articles = [
+        {
+            "title": c.get("title") or "",
+            "category": c.get("category") or "Website page",
+            "markdown_content": c.get("content") or "",
+            "source_url": c.get("url") or "",
+        }
+        for c in page_chunks
+        if isinstance(c, dict) and (c.get("content") or "").strip()
+    ]
     knowledge_bifurcation: Dict[str, Any] = {
         "vertical": vertical,
         "offerings": bifurcation.get("offerings") or [],
         "faqs": bifurcation.get("faqs") or [],
-        "knowledge_articles": bifurcation.get("knowledge_articles") or [],
+        "knowledge_articles": (bifurcation.get("knowledge_articles") or []) + chunk_articles,
     }
 
     try:
@@ -548,6 +628,7 @@ def approve_crawl_run(
                 details={
                     "offerings_created": summary.get("offerings_created"),
                     "faqs_created": faqs_created,
+                    "kb_chunks_published": len(chunk_articles),
                     "images_promoted": len(url_map),
                     "skipped_fields": skipped_fields,
                     "rule1_locked_sections": sorted(profile_lock.keys()),
@@ -557,6 +638,30 @@ def approve_crawl_run(
     except Exception:
         logger.exception("AUDIT_EVENT_RECORD_FAILED | action=crawl_run_approved run=%s", run_id)
 
+    # Knowledge images: the promoted (served) files, linked to the page
+    # each was captured from. NOTE the honest limit: KB chunk rows
+    # published above carry text only — the publisher's article path has
+    # no per-article media field — so images persist with the crawl
+    # publish data (here + tenant_crawl_images), linked by source page
+    # URL, rather than inside the KB rows themselves.
+    knowledge_images_linked = []
+    for img in payload.get("knowledge_images") or []:
+        if not isinstance(img, dict):
+            continue
+        promoted = (
+            url_map.get(img.get("source_url") or "")
+            or url_map.get(img.get("image_url") or "")
+            or img.get("image_url")
+            or ""
+        )
+        knowledge_images_linked.append({
+            "alt_text": img.get("alt_text") or "",
+            "image_url": promoted,
+            "source_page_url": img.get("source_page_url") or "",
+            "section": img.get("section") or "",
+            "kind": img.get("kind") or "image",
+        })
+
     products = list_products(tenant_id=tenant_id)
     summary.update({
         "run_id": run_id,
@@ -564,6 +669,8 @@ def approve_crawl_run(
         "status": "published",
         "products_live": len(products),
         "images_promoted": len(url_map),
+        "kb_chunks_published": len(chunk_articles),
+        "knowledge_images": knowledge_images_linked,
         "skipped_fields": skipped_fields,
         "rule1_locked_sections": sorted(profile_lock.keys()),
         "profile_sections_restored": profile_sections_restored,
