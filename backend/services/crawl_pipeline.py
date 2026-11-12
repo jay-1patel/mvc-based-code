@@ -14,16 +14,6 @@ from typing import Any, Dict, List, Optional
 logger = logging.getLogger("crawl_pipeline")
 
 
-def _schedule_page_cap(stored) -> int:
-    """Page cap for a scheduled crawl. Missing values use CRAWL_DEFAULT_MAX_PAGES (50)."""
-    raw = stored if stored not in (None, "", 0) else os.getenv("CRAWL_DEFAULT_MAX_PAGES") or "50"
-    try:
-        value = int(raw)
-    except (TypeError, ValueError):
-        value = 50
-    return max(1, min(value, 500))
-
-
 def _bifurcation_timeout_seconds() -> float:
     try:
         return float(os.environ.get("CRAWL_BIFURCATION_TIMEOUT_SECONDS", "180"))
@@ -664,7 +654,10 @@ def enqueue_scheduled_crawl(schedule: dict) -> Optional[int]:
         url=schedule["url"],
         run_id=run["id"],
         trigger="schedule",
-        max_pages=_schedule_page_cap(schedule.get("max_pages")),
+        # Stored schedule max_pages is deliberately IGNORED: the page-count
+        # limit was removed (2026-11-11), so legacy schedules (which carry
+        # the old default 50) also run unlimited instead of staying capped.
+        max_pages=None,
         actor={
             "username": "crawl_scheduler",
             "role": "system",
