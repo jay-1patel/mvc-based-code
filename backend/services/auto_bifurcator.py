@@ -323,12 +323,10 @@ def _attach_pdf_images_to_offerings(
                             continue
                         url = tenancy_schemas.extract_first_url(uploaded_url or "")
                         if not url:
-                            logger.warning(
-                                "PDF_IMAGE_NO_PUBLIC_URL | file=%s — image extracted but "
-                                "hosting returned no URL (check img402 / PUBLIC_BASE_URL)",
-                                filename,
+                            raise RuntimeError(
+                                f"Extracted PDF image {filename} has no public URL "
+                                "(ImageHipo / PUBLIC_BASE_URL)"
                             )
-                            continue
                         uploaded_by_xref[xref] = url
                         logger.info(
                             "PDF_IMAGE_HOSTED | offering=%r | url=%s",

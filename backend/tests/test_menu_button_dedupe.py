@@ -245,23 +245,31 @@ class MenuButtonDedupeTests(unittest.TestCase):
             vertical="banking",
         )
         buttons = _sanitize_menu_buttons(extracted, vertical="banking")
+        menu_buttons = [
+            SimpleNamespace(
+                id=button["id"],
+                title=button["title"],
+                description=button["description"],
+                section=button["section"],
+                icon="",
+                sort_order=button["sort_order"],
+                enabled=True,
+            )
+            for button in buttons
+        ]
+
+        def visible_buttons(features, in_business_hours=True):
+            return menu_buttons
+
         profile = SimpleNamespace(
+            tenant_id="state-bank-of-india",
             brand=SimpleNamespace(name="State Bank of India"),
             display_name="State Bank of India",
+            features=SimpleNamespace(),
             menu=SimpleNamespace(
                 body="Welcome",
-                buttons=[
-                    SimpleNamespace(
-                        id=button["id"],
-                        title=button["title"],
-                        description=button["description"],
-                        section=button["section"],
-                        icon="",
-                        sort_order=button["sort_order"],
-                        enabled=True,
-                    )
-                    for button in buttons
-                ],
+                buttons=menu_buttons,
+                visible_buttons=visible_buttons,
             ),
         )
 

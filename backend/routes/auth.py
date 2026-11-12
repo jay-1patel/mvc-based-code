@@ -964,8 +964,7 @@ def reset_admin_password(username: str, body: ResetAdminPasswordRequest, current
     if not has_permission(current_admin, "manage_admins"):
         raise HTTPException(status_code=403, detail="You do not have permission to manage admins")
 
-    if not body.new_password or len(body.new_password) < 6:
-        raise HTTPException(status_code=400, detail="New password must be at least 6 characters")
+    _validate_password_strength(body.new_password)
 
     target = _admin_target(username, current_admin)
     if not target:
@@ -1150,7 +1149,10 @@ async def request_otp(request: Request, body: RequestOtpRequest):
 
     otp = f"{secrets.randbelow(1000000):06d}"
     expires_at = (datetime.now(timezone.utc) + timedelta(minutes=OTP_EXPIRY_MINUTES)).isoformat()
-    set_admin_otp(body.username, otp, expires_at)
+    # Store only the hash. reset_password checks it with bcrypt, and the
+    # plaintext is emailed once.
+    otp_hash = bcrypt.hashpw(otp.encode(), bcrypt.gensalt()).decode()
+    set_admin_otp(body.username, otp_hash, expires_at)
 
     if not send_otp_email(email, otp, OTP_EXPIRY_MINUTES):
         raise HTTPException(
@@ -1198,6 +1200,7 @@ async def reset_password(request: Request, body: ResetPasswordRequest):
     if not bcrypt.checkpw(body.otp.encode(), record["otp_code"].encode()):
         raise HTTPException(status_code=403, detail="Invalid OTP")
 
+    _validate_password_strength(body.new_password)
     hashed = _hash_password(body.new_password)
     with get_db_context() as conn:
         conn.execute(

@@ -16,6 +16,8 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 import database
+from fastapi import BackgroundTasks
+
 from routes import tenants
 
 
@@ -35,6 +37,7 @@ class TenantAuditTests(unittest.TestCase):
                 vertical TEXT,
                 status TEXT,
                 display_name TEXT,
+                mobile_number TEXT,
                 webhook_secret TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -109,9 +112,12 @@ class TenantAuditTests(unittest.TestCase):
             conn.close()
 
     def test_tenant_creation_records_actor_and_tenant(self):
-        body = tenants.TenantCreate(tenant_id="tenant-new", slug="new", vertical="generic", display_name="New")
+        body = tenants.TenantCreate(
+            tenant_id="tenant-new", slug="new", vertical="generic",
+            display_name="New", mobile_number="919800000010",
+        )
         with patch.object(tenants.tenancy_cache, "purge"), patch("shared.tenancy.loader.build_profile", return_value={}):
-            result = tenants.create_tenant(body, current_admin=self.admin)
+            result = tenants.create_tenant(body, BackgroundTasks(), current_admin=self.admin)
         self.assertEqual(result["tenant"]["id"], "tenant-new")
         conn = self._connect()
         row = conn.execute("SELECT actor_username, actor_role, tenant_id, action FROM admin_audit_events").fetchone()
@@ -119,12 +125,15 @@ class TenantAuditTests(unittest.TestCase):
         self.assertEqual(tuple(row), ("root", "super_admin", "tenant-new", "tenant_created"))
 
     def test_tenant_creation_rolls_back_if_audit_insert_fails(self):
-        body = tenants.TenantCreate(tenant_id="tenant-new", slug="new", vertical="generic", display_name="New")
+        body = tenants.TenantCreate(
+            tenant_id="tenant-new", slug="new", vertical="generic",
+            display_name="New", mobile_number="919800000011",
+        )
         with patch.object(tenants.tenancy_cache, "purge"), \
              patch("shared.tenancy.loader.build_profile", return_value={}), \
              patch.object(tenants, "record_admin_audit_event", side_effect=RuntimeError("audit failed")):
             with self.assertRaises(RuntimeError):
-                tenants.create_tenant(body, current_admin=self.admin)
+                tenants.create_tenant(body, BackgroundTasks(), current_admin=self.admin)
         conn = self._connect()
         self.assertEqual(conn.execute("SELECT COUNT(*) FROM tenants").fetchone()[0], 0)
         conn.close()

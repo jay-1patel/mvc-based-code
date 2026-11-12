@@ -50,9 +50,25 @@ class Section5Bifurcation(unittest.TestCase):
         self.assertEqual(fails, [], msg=json.dumps(fails, indent=2))
 
     def test_heuristic_extract_on_clean_pdf(self):
+        import fitz
         from backend.extract import process_file, results_to_chunks
 
-        pdf = PACK / "clean_multi_page.pdf"
+        # The checked-in fixture was never committed. Build the same
+        # two-page catalog the assertions describe.
+        doc = fitz.open()
+        first = doc.new_page()
+        first.insert_text(
+            (72, 72),
+            "Masala Chips 100g\n"
+            "Call 9876543210\n"
+            "We deliver across India. Shelf life 6 months.\n"
+            "Terms & Conditions\n",
+        )
+        second = doc.new_page()
+        second.insert_text((72, 72), "Page 2. More product notes for Masala Chips.")
+        pdf = Path(tempfile.mkdtemp()) / "clean_multi_page.pdf"
+        doc.save(pdf)
+        doc.close()
         result = process_file(str(pdf))
         self.assertIsNotNone(result)
         chunks = results_to_chunks(result)
@@ -104,7 +120,15 @@ class Section5Bifurcation(unittest.TestCase):
             ("Leeway QA Test Foods Pvt Ltd", False),
             ("Acme Corp", False),
         ]
-        rows = [{"value": v, "is_placeholder": fn(v), "expect": e, "pass": fn(v) == e} for v, e in cases]
+        rows = [
+            {
+                "value": v,
+                "is_placeholder": fn("name", v),
+                "expect": e,
+                "pass": fn("name", v) == e,
+            }
+            for v, e in cases
+        ]
         (OUT / "section5_brand_placeholder.json").write_text(json.dumps(rows, indent=2), encoding="utf-8")
         fails = [r for r in rows if not r["pass"]]
         self.assertEqual(fails, [], msg=json.dumps(fails, indent=2))

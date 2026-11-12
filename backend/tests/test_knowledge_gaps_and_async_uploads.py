@@ -26,7 +26,10 @@ from database import (
 
 
 @pytest.fixture(autouse=True)
-def setup_db():
+def setup_db(tmp_path, monkeypatch):
+    # Own the database file. init_db() follows database.DB_PATH, and a
+    # missing or shared path raises "unable to open database file".
+    monkeypatch.setattr("database.DB_PATH", str(tmp_path / "gaps.sqlite3"))
     init_db()
     with get_db_context() as conn:
         conn.execute("DELETE FROM unanswered_queries")

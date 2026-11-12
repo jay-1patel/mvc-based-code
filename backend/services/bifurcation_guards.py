@@ -285,8 +285,13 @@ def is_placeholder_brand_value(key: str, value: Any, tenant_id: str = "") -> boo
             tid.replace("-", " "),
             tid.replace("_", " "),
             "your company",
+            "your company name",
             "company name",
             "brand name",
+            "n/a",
+            "na",
+            "none",
+            "null",
         },
         "bot_name": {
             f"{tid} assistant",
