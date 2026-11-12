@@ -210,6 +210,14 @@ UPLOADED_DIR = _RESOLVED_UPLOAD_DIR
 os.makedirs(UPLOADED_DIR, exist_ok=True)
 app.mount("/uploaded_files", StaticFiles(directory=UPLOADED_DIR), name="uploaded-files")
 
+# Staged crawl images: services/crawl_images.py stores downloads under
+# <UPLOAD_DIR>/crawl_images/<tenant_id>/<run_id>/ and records them in the
+# staged payload as /crawl_images/<tenant_id>/<run_id>/<file>. Serve that
+# subtree so the Website Knowledge Images tab can render the staged files.
+CRAWL_IMAGES_DIR = os.path.join(UPLOADED_DIR, "crawl_images")
+os.makedirs(CRAWL_IMAGES_DIR, exist_ok=True)
+app.mount("/crawl_images", StaticFiles(directory=CRAWL_IMAGES_DIR), name="crawl-images")
+
 # Company logos live on disk and are served under /api so the Vite dev proxy
 # (which only forwards /api) reaches them; no third-party host or key needed.
 LOGOS_DIR = os.path.join(UPLOADED_DIR, "logos")
