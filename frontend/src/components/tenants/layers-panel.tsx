@@ -1,10 +1,10 @@
 import { useState } from 'react'
 import { FileJson, Layers } from 'lucide-react'
 import { useTenantDetail } from './hooks'
-import { Card, CardBody, CardHeader } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
+import { Card, Pill } from '@/components/remake/ui'
 import { Alert, LoadingBlock } from '@/components/ui/feedback'
 import { PageHeader } from '@/components/layout/page-header'
+import { cn } from '@/lib/cn'
 
 const LAYERS = [
   { id: 'defaults', label: 'Vertical defaults', hint: 'Shipped with the platform, chosen by the business field.' },
@@ -35,8 +35,8 @@ export function LayersPanel({ tenantId }: { tenantId: string }) {
         description="A profile is merged in one direction only: vertical defaults, then the client file, then the published DB overrides. Later layers replace earlier ones; lists never append."
         meta={
           <>
-            <Badge tone="accent">current v{data.current_version ?? 0}</Badge>
-            {data.effective_error && <Badge tone="danger">{data.effective_error}</Badge>}
+            <Pill tone="ok">current v{data.current_version ?? 0}</Pill>
+            {data.effective_error && <Pill tone="bad">{data.effective_error}</Pill>}
           </>
         }
       />
@@ -53,32 +53,37 @@ export function LayersPanel({ tenantId }: { tenantId: string }) {
               key={layer.id}
               type="button"
               onClick={() => setSelected(layer.id)}
-              className={`w-full rounded-lg p-3 text-left ring-1 ring-inset transition ${
+              className={cn(
+                'w-full rounded-panel border p-3 text-left transition',
                 selected === layer.id
-                  ? 'bg-accent-50 ring-accent-300'
-                  : 'bg-surface-panel ring-surface-line hover:bg-accent-50'
-              }`}
+                  ? 'border-acc bg-accsoft'
+                  : 'border-line bg-card hover:bg-paper',
+              )}
             >
               <div className="flex items-center justify-between gap-2">
-                <span className="text-xs font-medium text-slate-100">{layer.label}</span>
-                <Badge tone="muted">{layer.size}</Badge>
+                <span className="text-xs font-medium text-tx">{layer.label}</span>
+                <Pill>{layer.size}</Pill>
               </div>
-              <p className="mt-1 text-xs leading-relaxed text-slate-500">{layer.hint}</p>
+              <p className="mt-1 text-xs leading-relaxed text-txmuted">{layer.hint}</p>
             </button>
           ))}
         </div>
 
         <Card className="lg:col-span-3">
-          <CardHeader
-            title={selected}
-            description="Raw JSON exactly as stored."
-            icon={selected === 'effective' ? <Layers className="h-4 w-4" /> : <FileJson className="h-4 w-4" />}
-          />
-          <CardBody>
-            <pre className="max-h-[32rem] overflow-auto scroll-thin rounded-lg bg-surface p-4 font-mono text-xs leading-relaxed text-slate-400">
+          <div className="flex items-center gap-2 border-b border-linesoft px-4 py-3 sm:px-5">
+            <span className="text-txmuted">
+              {selected === 'effective' ? <Layers className="h-4 w-4" /> : <FileJson className="h-4 w-4" />}
+            </span>
+            <div className="min-w-0">
+              <h2 className="text-sm font-semibold text-tx">{selected}</h2>
+              <p className="text-xs text-txmuted">Raw JSON exactly as stored.</p>
+            </div>
+          </div>
+          <div className="p-4 sm:p-5">
+            <pre className="max-h-[32rem] overflow-auto rounded-panel bg-paper p-4 font-mono text-xs leading-relaxed text-txmuted">
               {payload ? JSON.stringify(payload, null, 2) : 'This layer is empty.'}
             </pre>
-          </CardBody>
+          </div>
         </Card>
       </div>
     </div>

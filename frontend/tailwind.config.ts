@@ -1,12 +1,54 @@
 import type { Config } from 'tailwindcss'
 
 /**
- * Light canvas, deep-ink sidebar, teal accent.
+ * Remake semantic colours. Every value is a CSS variable from
+ * `src/theme/tokens.css` — the ONLY place colour literals live. These
+ * names are deliberately unlike the legacy palette below (`slate`,
+ * `surface`, `accent`) so the token test can scan for exactly this set
+ * and fail the build if one is ever used without a definition.
+ */
+const v = (name: string) => `rgb(var(--${name}) / <alpha-value>)`
+const semantic = {
+  paper: v('paper'),
+  card: v('card'),
+  sidebg: v('sidebg'),
+  inputbg: v('input-bg'),
+  tx: v('tx'),
+  txmuted: v('tx-muted'),
+  txfaint: v('tx-faint'),
+  line: v('line'),
+  linesoft: v('line-soft'),
+  acc: v('acc'),
+  accsoft: v('acc-soft'),
+  onacc: v('on-acc'),
+  attbg: v('att-bg'),
+  attline: v('att-line'),
+  attink: v('att-ink'),
+  badbg: v('bad-bg'),
+  badline: v('bad-line'),
+  badink: v('bad-ink'),
+  ok: v('ok'),
+  oksoft: v('ok-soft'),
+  chippdfbg: v('chip-pdf-bg'),
+  chippdfink: v('chip-pdf-ink'),
+  chipwebbg: v('chip-web-bg'),
+  chipwebink: v('chip-web-ink'),
+  chipmanbg: v('chip-man-bg'),
+  chipmanink: v('chip-man-ink'),
+  chipdefbg: v('chip-def-bg'),
+  chipdefink: v('chip-def-ink'),
+  bubblein: v('bubble-in'),
+  switchoff: v('switch-off'),
+}
+
+/**
+ * Light theme: a light grey canvas with a purple cast, violet accents.
  *
  * Note the inverted `slate` scale: the numbers run dark → light instead of
  * light → dark, because the app was authored as "slate-100 is the strongest
  * text, slate-600 is the faintest hint". Flipping the scale keeps every one of
- * those usages correct without touching the markup.
+ * those usages correct without touching the markup. The hues themselves are
+ * nudged towards purple so nothing reads as pure black, pure white or blue-grey.
  */
 export default {
   content: ['./index.html', './src/**/*.{ts,tsx}'],
@@ -14,49 +56,55 @@ export default {
   theme: {
     extend: {
       colors: {
+        ...semantic,
         slate: {
-          100: '#14221c',
-          200: '#1c3329',
-          300: '#2c463b',
-          400: '#4d6559',
-          500: '#6d8378',
-          600: '#96a89f',
-          700: '#c9d5cf',
+          100: '#1a1626', // strongest text — deep plum-black, never #000
+          200: '#28213a', // headings
+          300: '#3b3350', // secondary text
+          400: '#564c6d', // body-muted
+          500: '#776d8c', // hints
+          600: '#9c94ad', // faint
+          700: '#c9c3d6', // dividers
         },
         surface: {
-          DEFAULT: '#f4f1ea',
-          raised: '#fffcf7',
-          overlay: '#fffcf7',
-          panel: '#f7f4ee',
-          line: '#e4ddd2',
-          fg: '#14221c',
-          muted: '#4d6559',
-          bg: '#f4f1ea',
-          base: '#f7f4ee',
-          card: '#fffcf7',
-          elevated: '#eef6f3',
+          DEFAULT: '#f1f0f7', // page — light grey, purple cast
+          raised: '#fbfaff', // cards, inputs — near-white lavender
+          overlay: '#fbfaff', // menus, popovers
+          panel: '#f7f6fc', // sidebar, sunken blocks
+          line: '#e2dfef', // borders
+          // Aliases the markup was authored against (onboarding components
+          // especially). Text steps come from the ink scale, background
+          // steps from the surface scale above — same hues, no new colours.
+          fg: '#1a1626', // primary text on a surface (= ink / slate-100)
+          muted: '#564c6d', // secondary text on a surface (= ink-soft / slate-400)
+          bg: '#f1f0f7', // page canvas (= DEFAULT)
+          base: '#f7f6fc', // sunken blocks, banner bodies (= panel)
+          card: '#fbfaff', // card bodies, dropdowns (= raised)
+          elevated: '#f6f3ff', // hover step above a card (= accent-50)
         },
         ink: {
-          DEFAULT: '#14221c',
-          soft: '#4d6559',
-          faint: '#96a89f',
+          DEFAULT: '#1a1626',
+          soft: '#564c6d',
+          faint: '#9c94ad',
         },
         accent: {
-          50: '#eef6f3',
-          100: '#d7eee6',
-          200: '#b3ddd0',
-          300: '#7ec4ae',
-          400: '#45a58a',
-          500: '#1f8a6e',
-          600: '#0f6e58',
-          700: '#0c5746',
-          800: '#0d4639',
-          900: '#0c3a30',
+          50: '#f6f3ff',
+          100: '#ede8fe',
+          200: '#ddd3fd',
+          300: '#c5b2fb',
+          400: '#a983f7',
+          500: '#8d5cf0',
+          600: '#7c3aed',
+          700: '#6b21d9',
+          800: '#5a1bb4',
+          900: '#4a1a8f',
         },
       },
+      borderRadius: {
+        panel: '14px',
+      },
       fontFamily: {
-        sans: ['"Source Sans 3"', 'Segoe UI', 'system-ui', 'sans-serif'],
-        display: ['Outfit', '"Source Sans 3"', 'system-ui', 'sans-serif'],
+        sans: ['Inter', 'Segoe UI', 'system-ui', 'sans-serif'],
         mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'],
       },
       // Bigger type across the board: 17px root, so every rem-based Tailwind

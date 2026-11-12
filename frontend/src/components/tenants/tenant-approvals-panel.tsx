@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { Check, ClipboardCheck, Send, X } from 'lucide-react'
+import { Check, Loader2, X } from 'lucide-react'
 import {
   tenantApprovalsApi,
   type TenantChangeRequest,
@@ -10,19 +10,27 @@ import { useAuth } from '@/lib/auth'
 import { navigate } from '@/lib/router'
 import { formatDate, isTruthyFlag } from '@/lib/format'
 import { tenantsApi } from '@/lib/tenants'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Card, CardBody, CardHeader } from '@/components/ui/card'
-import { Textarea } from '@/components/ui/input'
-import { Select } from '@/components/ui/select'
-import { Alert, EmptyState, LoadingBlock } from '@/components/ui/feedback'
+import {
+  Card,
+  DangerButton,
+  EmptyState,
+  ErrorBanner,
+  FieldSelect,
+  FieldTextarea,
+  GhostButton,
+  Panel,
+  Pill,
+  PrimaryButton,
+  type PillTone,
+} from '@/components/remake/ui'
+import { LoadingBlock } from '@/components/ui/feedback'
 import { PageHeader } from '@/components/layout/page-header'
 import { useToast } from '@/components/ui/toast'
 
-const TONES: Record<TenantChangeStatus, 'warning' | 'success' | 'danger'> = {
-  pending: 'warning',
-  approved: 'success',
-  rejected: 'danger',
+const TONES: Record<TenantChangeStatus, PillTone> = {
+  pending: 'warn',
+  approved: 'ok',
+  rejected: 'bad',
 }
 
 const TYPE_LABELS = {
@@ -31,6 +39,9 @@ const TYPE_LABELS = {
 } as const
 
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
+/** The compact size the legacy `size="sm"` buttons had on this screen. */
+const smallBtn = 'px-3 py-1.5 text-xs'
 
 function valueOr(value: unknown, fallback = '—'): string {
   if (value === null || value === undefined) return fallback
@@ -43,12 +54,12 @@ function DetailSection({ title, rows }: { title: string; rows: [string, ReactNod
   if (rows.length === 0) return null
   return (
     <div>
-      <p className="field-label mb-1.5">{title}</p>
-      <div className="divide-y divide-surface-line rounded-lg ring-1 ring-inset ring-surface-line">
+      <p className="mb-1.5 text-sm font-medium text-tx">{title}</p>
+      <div className="divide-y divide-linesoft rounded-panel border border-line">
         {rows.map(([label, value]) => (
           <div key={label} className="flex items-start gap-4 px-4 py-2.5">
-            <span className="w-40 shrink-0 text-xs text-slate-500">{label}</span>
-            <span className="min-w-0 flex-1 whitespace-pre-wrap text-xs text-slate-200">{value}</span>
+            <span className="w-40 shrink-0 text-xs text-txfaint">{label}</span>
+            <span className="min-w-0 flex-1 whitespace-pre-wrap text-xs text-tx">{value}</span>
           </div>
         ))}
       </div>
@@ -56,12 +67,12 @@ function DetailSection({ title, rows }: { title: string; rows: [string, ReactNod
   )
 }
 
-/** Green highlight for values the admin changed against the live profile. */
+/** Teal highlight for values the admin changed against the live profile. */
 function Edited({ changed, children }: { changed: boolean; children: ReactNode }) {
   if (!changed) return <>{children}</>
   return (
     <span
-      className="rounded bg-emerald-500/10 px-1.5 py-0.5 text-emerald-300 ring-1 ring-inset ring-emerald-500/30"
+      className="rounded bg-oksoft px-1.5 py-0.5 text-ok ring-1 ring-inset ring-line"
       title="Changed by the admin"
     >
       {children}
@@ -73,7 +84,7 @@ function Edited({ changed, children }: { changed: boolean; children: ReactNode }
  * Everything the admin entered, field by field — the review counterpart of the
  * wizard's own steps. Empty fields read as an em dash so a gap is visible
  * rather than silently missing. For profile publishes the live profile is the
- * baseline: fields the admin actually changed are highlighted in green.
+ * baseline: fields the admin actually changed are highlighted in teal.
  */
 function SnapshotDetails({
   request,
@@ -321,7 +332,7 @@ function RequestPayload({ request }: { request: TenantChangeRequest }) {
   const [open, setOpen] = useState(false)
   // For profile publishes the tenant's live profile is the diff baseline:
   // fields whose submitted value differs from it are the admin's edits and
-  // show in green. Registrations have no prior profile to compare against.
+  // show in teal. Registrations have no prior profile to compare against.
   const baselineState = useAsync(
     (signal) =>
       request.request_type === 'publish_profile'
@@ -349,11 +360,11 @@ function RequestPayload({ request }: { request: TenantChangeRequest }) {
       )}
       <SnapshotDetails request={request} baseline={baseline} />
       <div>
-        <Button size="sm" variant="ghost" onClick={() => setOpen((v) => !v)}>
+        <GhostButton className={smallBtn} onClick={() => setOpen((v) => !v)}>
           {open ? 'Hide' : 'Inspect'} raw submitted data
-        </Button>
+        </GhostButton>
         {open && (
-          <pre className="mt-2 max-h-72 overflow-auto scroll-thin rounded-lg bg-surface p-4 font-mono text-xs leading-relaxed text-slate-400">
+          <pre className="mt-2 max-h-72 overflow-auto scroll-thin rounded-lg border border-line bg-paper p-4 font-mono text-xs leading-relaxed text-txmuted">
             {JSON.stringify(request.payload, null, 2)}
           </pre>
         )}
@@ -376,17 +387,18 @@ function RequestCard({
   onNoteChange: (note: string) => void
 }) {
   return (
-    <Card>
-      <CardHeader
-        title={`${TYPE_LABELS[request.request_type]} · ${request.tenant_id}`}
-        description={`Submitted by ${request.requester_username} on ${formatDate(request.created_at)}`}
-        actions={<Badge tone={TONES[request.status]}>{request.status}</Badge>}
-      />
-      <CardBody className="space-y-4">
+    <Panel
+      title={`${TYPE_LABELS[request.request_type]} · ${request.tenant_id}`}
+      action={<Pill tone={TONES[request.status]}>{request.status}</Pill>}
+    >
+      <p className="-mt-1 mb-4 text-sm text-txmuted">
+        Submitted by {request.requester_username} on {formatDate(request.created_at)}
+      </p>
+      <div className="space-y-4">
         <RequestPayload request={request} />
         {request.status === 'pending' ? (
           <>
-            <Textarea
+            <FieldTextarea
               label="Decision note (optional)"
               rows={2}
               maxLength={2000}
@@ -395,23 +407,25 @@ function RequestCard({
               hint="Visible to the requester."
             />
             <div className="flex flex-wrap gap-2">
-              <Button variant="primary" loading={busy} icon={<Check className="h-4 w-4" />} onClick={() => onDecide(request, 'approved')}>
+              <PrimaryButton disabled={busy} onClick={() => onDecide(request, 'approved')}>
+                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
                 Approve and apply
-              </Button>
-              <Button variant="danger" loading={busy} icon={<X className="h-4 w-4" />} onClick={() => onDecide(request, 'rejected')}>
+              </PrimaryButton>
+              <DangerButton disabled={busy} onClick={() => onDecide(request, 'rejected')}>
+                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <X className="h-4 w-4" />}
                 Reject request
-              </Button>
+              </DangerButton>
             </div>
           </>
         ) : (
-          <div className="rounded-lg bg-surface-panel p-3 text-xs text-slate-400">
+          <div className="rounded-lg border border-line bg-paper p-3 text-xs text-txmuted">
             Reviewed by {request.reviewer_username || 'super admin'}
             {request.decided_at ? ` on ${formatDate(request.decided_at)}` : ''}
             {request.decision_note && (
-              <p className="mt-1 whitespace-pre-wrap text-slate-300">{request.decision_note}</p>
+              <p className="mt-1 whitespace-pre-wrap text-tx">{request.decision_note}</p>
             )}
             {request.status === 'approved' && (
-              <p className="mt-2 text-emerald-700">
+              <p className="mt-2 text-ok">
                 {isTruthyFlag(request.applied)
                   ? `Applied — live on version ${request.applied_version ?? '?'}.`
                   : 'Approved but not applied; contact engineering.'}
@@ -419,8 +433,8 @@ function RequestCard({
             )}
           </div>
         )}
-      </CardBody>
-    </Card>
+      </div>
+    </Panel>
   )
 }
 
@@ -446,27 +460,26 @@ export function TenantChangeReview() {
   return (
     <div>
       <PageHeader
-        title="Tenant change requests"
+        title="Business requests"
         description="Tenant registrations and profile publishes submitted by admins. Approval applies the change exactly as it was submitted; rejection leaves the live tenant untouched."
-        meta={<Badge tone="accent">Superadmin review</Badge>}
+        meta={<Pill tone="ok">Superadmin review</Pill>}
       />
 
       <div className="mb-4 max-w-xs">
-        <Select label="Request status" value={filter} onChange={(event) => setFilter(event.target.value as TenantChangeStatus | 'all')}>
+        <FieldSelect label="Request status" value={filter} onChange={(event) => setFilter(event.target.value as TenantChangeStatus | 'all')}>
           <option value="pending">Pending</option>
           <option value="approved">Approved</option>
           <option value="rejected">Rejected</option>
           <option value="all">All requests</option>
-        </Select>
+        </FieldSelect>
       </div>
 
-      {action.error && <Alert tone="danger" title="Could not update request" className="mb-4">{action.error}</Alert>}
+      {action.error && <ErrorBanner title="Could not update request" message={action.error} className="mb-4" />}
       {state.loading && <LoadingBlock label="Loading tenant change requests…" />}
-      {state.error && <Alert tone="danger" title="Could not load requests">{state.error}</Alert>}
+      {state.error && <ErrorBanner title="Could not load requests" message={state.error} />}
       {state.data?.length === 0 && !state.loading && (
         <Card>
           <EmptyState
-            icon={<ClipboardCheck className="h-8 w-8" />}
             title="No requests"
             description="There are no tenant change requests in this status. Admin submissions appear here for approval."
           />
@@ -518,15 +531,14 @@ export function MyTenantChangeRequests() {
       <PageHeader
         title="My change requests"
         description="Tenant registrations and profile publishes you submitted. Nothing goes live until a super admin approves it."
-        meta={<Badge tone="neutral">Pending super admin approval</Badge>}
+        meta={<Pill>Pending super admin approval</Pill>}
       />
 
       {state.loading && <LoadingBlock label="Loading your requests…" />}
-      {state.error && <Alert tone="danger" title="Could not load requests">{state.error}</Alert>}
+      {state.error && <ErrorBanner title="Could not load requests" message={state.error} />}
       {state.data?.length === 0 && !state.loading && (
         <Card>
           <EmptyState
-            icon={<Send className="h-8 w-8" />}
             title="No requests yet"
             description="Register a tenant or publish a profile and your submission will appear here while it waits for approval."
           />
@@ -535,40 +547,42 @@ export function MyTenantChangeRequests() {
       {state.data && state.data.length > 0 && (
         <div className="space-y-3">
           {state.data.map((request) => (
-            <Card key={request.id}>
-              <CardHeader
-                title={`${TYPE_LABELS[request.request_type]} · ${request.tenant_id}`}
-                description={`Submitted on ${formatDate(request.created_at)}`}
-                actions={<Badge tone={TONES[request.status]}>{request.status}</Badge>}
-              />
-              <CardBody className="space-y-3">
-                <p className="text-xs text-slate-300">{request.summary}</p>
+            <Panel
+              key={request.id}
+              title={`${TYPE_LABELS[request.request_type]} · ${request.tenant_id}`}
+              action={<Pill tone={TONES[request.status]}>{request.status}</Pill>}
+            >
+              <p className="-mt-1 mb-4 text-sm text-txmuted">
+                Submitted on {formatDate(request.created_at)}
+              </p>
+              <div className="space-y-3">
+                <p className="text-sm text-tx">{request.summary}</p>
                 {request.status !== 'pending' && (
-                  <div className="rounded-lg bg-surface-panel p-3 text-xs text-slate-400">
+                  <div className="rounded-lg border border-line bg-paper p-3 text-xs text-txmuted">
                     Reviewed by {request.reviewer_username || 'super admin'}
                     {request.decided_at ? ` on ${formatDate(request.decided_at)}` : ''}
                     {request.decision_note && (
-                      <p className="mt-1 whitespace-pre-wrap text-slate-300">{request.decision_note}</p>
+                      <p className="mt-1 whitespace-pre-wrap text-tx">{request.decision_note}</p>
                     )}
                     {request.status === 'approved' && isTruthyFlag(request.applied) && (
-                      <p className="mt-2 text-emerald-700">
+                      <p className="mt-2 text-ok">
                         Applied — live on version {request.applied_version ?? '?'}.
                       </p>
                     )}
                   </div>
                 )}
                 {request.status === 'pending' && (
-                  <Button size="sm" variant="ghost" onClick={() => setOpen(open === request.id ? null : request.id)}>
+                  <GhostButton className={smallBtn} onClick={() => setOpen(open === request.id ? null : request.id)}>
                     {open === request.id ? 'Hide' : 'Inspect'} submitted data
-                  </Button>
+                  </GhostButton>
                 )}
                 {open === request.id && (
-                  <pre className="max-h-72 overflow-auto scroll-thin rounded-lg bg-surface p-4 font-mono text-xs leading-relaxed text-slate-400">
+                  <pre className="max-h-72 overflow-auto scroll-thin rounded-lg border border-line bg-paper p-4 font-mono text-xs leading-relaxed text-txmuted">
                     {JSON.stringify(request.payload, null, 2)}
                   </pre>
                 )}
-              </CardBody>
-            </Card>
+              </div>
+            </Panel>
           ))}
         </div>
       )}

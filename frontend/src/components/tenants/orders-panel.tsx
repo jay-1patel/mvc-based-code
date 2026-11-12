@@ -1,30 +1,37 @@
 import { useState } from 'react'
 import { useAsync } from '@/lib/hooks'
+import { ClipboardList, Search } from 'lucide-react'
 import { ORDER_STATUSES, money, operationsApi } from '@/lib/operations'
 import { formatDate } from '@/lib/format'
-import { Badge } from '@/components/ui/badge'
-import { Card, CardBody } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
-import { Select } from '@/components/ui/select'
-import { Alert, EmptyState, LoadingBlock } from '@/components/ui/feedback'
+import {
+  Card,
+  EmptyState,
+  ErrorBanner,
+  FieldSelect,
+  NeedRow,
+  Panel,
+  Pill,
+  type PillTone,
+} from '@/components/remake/ui'
+import { LoadingBlock } from '@/components/ui/feedback'
 import { PageHeader } from '@/components/layout/page-header'
 
-const STATUS_TONE: Record<string, 'neutral' | 'accent' | 'success' | 'warning' | 'danger' | 'muted'> = {
+const STATUS_TONE: Record<string, PillTone> = {
   placed: 'neutral',
-  confirmed: 'accent',
-  processing: 'accent',
-  shipped: 'warning',
-  delivered: 'success',
-  completed: 'success',
-  cancelled: 'danger',
-  returned: 'danger',
+  confirmed: 'ok',
+  processing: 'ok',
+  shipped: 'warn',
+  delivered: 'ok',
+  completed: 'ok',
+  cancelled: 'bad',
+  returned: 'bad',
 }
 
-const PAYMENT_TONE: Record<string, 'neutral' | 'accent' | 'success' | 'warning' | 'danger' | 'muted'> = {
-  pending: 'warning',
-  paid: 'success',
-  failed: 'danger',
-  refunded: 'muted',
+const PAYMENT_TONE: Record<string, PillTone> = {
+  pending: 'warn',
+  paid: 'ok',
+  failed: 'bad',
+  refunded: 'neutral',
   cod: 'neutral',
 }
 
@@ -53,41 +60,51 @@ export function OrdersPanel({ tenantId }: { tenantId: string }) {
         meta={
           counts && (
             <>
-              <Badge tone="muted">{counts.total} total</Badge>
-              <Badge tone="warning">{counts.placed} placed</Badge>
-              <Badge tone="success">{counts.delivered} delivered</Badge>
-              <Badge tone="accent">{money(counts.revenue)} revenue</Badge>
+              <Pill>{counts.total} total</Pill>
+              <Pill tone="warn">{counts.placed} placed</Pill>
+              <Pill tone="ok">{counts.delivered} delivered</Pill>
+              <Pill tone="ok">{money(counts.revenue)} revenue</Pill>
             </>
           )
         }
       />
 
+      {counts && counts.placed > 0 && (
+        <Panel title="Needs you" className="mb-4">
+          <NeedRow icon={<ClipboardList className="h-4 w-4" />}>
+            <strong>{counts.placed}</strong> {counts.placed === 1 ? 'order is' : 'orders are'} placed and
+            waiting to be confirmed — filter by the “placed” status below to see them.
+          </NeedRow>
+        </Panel>
+      )}
+
       <div className="mb-4 flex flex-wrap items-end gap-4">
         <div className="w-44">
-          <Select label="Status" value={status} onChange={(e) => setStatus(e.target.value)}>
+          <FieldSelect label="Status" value={status} onChange={(e) => setStatus(e.target.value)}>
             {['all', ...ORDER_STATUSES].map((filter) => (
               <option key={filter} value={filter}>
                 {filter === 'all' ? 'All statuses' : filter.replace('_', ' ')}
               </option>
             ))}
-          </Select>
+          </FieldSelect>
         </div>
         <div className="min-w-0 max-w-sm flex-1">
-          <Input
-            label="Search"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Order number, customer or phone"
-          />
+          <label className="mb-1.5 block text-sm font-medium text-tx">Search</label>
+          <label className="flex items-center gap-2 rounded-lg border border-line bg-inputbg px-3 py-2">
+            <Search className="h-4 w-4 shrink-0 text-txfaint" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Order number, customer or phone"
+              aria-label="Search"
+              className="w-full bg-transparent text-sm text-tx outline-none placeholder:text-txfaint"
+            />
+          </label>
         </div>
       </div>
 
       {state.loading && <LoadingBlock label="Reading orders…" />}
-      {state.error && (
-        <Alert tone="danger" title="Could not read orders">
-          {state.error}
-        </Alert>
-      )}
+      {state.error && <ErrorBanner title="Could not read orders" message={state.error} />}
 
       {state.data && orders.length === 0 && (
         <Card>
@@ -99,18 +116,18 @@ export function OrdersPanel({ tenantId }: { tenantId: string }) {
       )}
 
       {orders.length > 0 && (
-        <Card>
-          <CardBody className="divide-y divide-surface-line">
+        <Card className="px-4 py-2 sm:px-5">
+          <div className="divide-y divide-linesoft">
             {orders.map((order) => (
-              <div key={order.id} className="flex flex-wrap items-center gap-3 py-3 first:pt-0 last:pb-0">
+              <div key={order.id} className="flex flex-wrap items-center gap-3 py-3">
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-slate-100">
+                  <p className="truncate text-sm font-medium text-tx">
                     {order.order_number || `Order #${order.id}`}
-                    <span className="ml-2 text-xs font-normal text-slate-500">
+                    <span className="ml-2 text-xs font-normal text-txmuted">
                       {order.items?.length ?? 0} item{(order.items?.length ?? 0) === 1 ? '' : 's'}
                     </span>
                   </p>
-                  <p className="mt-0.5 truncate text-xs text-slate-500">
+                  <p className="mt-0.5 truncate text-xs text-txmuted">
                     {order.customer_name || order.wa_id || 'Unknown customer'}
                     {order.customer_mobile ? ` · ${order.customer_mobile}` : ''}
                     {order.order_type ? ` · ${order.order_type}` : ''}
@@ -119,16 +136,16 @@ export function OrdersPanel({ tenantId }: { tenantId: string }) {
                 </div>
                 <div className="flex flex-wrap items-center gap-1.5">
                   {order.status && (
-                    <Badge tone={STATUS_TONE[order.status] ?? 'neutral'}>{order.status.replace('_', ' ')}</Badge>
+                    <Pill tone={STATUS_TONE[order.status] ?? 'neutral'}>{order.status.replace('_', ' ')}</Pill>
                   )}
                   {order.payment_status && (
-                    <Badge tone={PAYMENT_TONE[order.payment_status] ?? 'muted'}>{order.payment_status}</Badge>
+                    <Pill tone={PAYMENT_TONE[order.payment_status] ?? 'neutral'}>{order.payment_status}</Pill>
                   )}
-                  <Badge tone="success">{money(order.total_amount)}</Badge>
+                  <Pill tone="ok">{money(order.total_amount)}</Pill>
                 </div>
               </div>
             ))}
-          </CardBody>
+          </div>
         </Card>
       )}
     </div>

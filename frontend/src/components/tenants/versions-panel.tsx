@@ -1,12 +1,17 @@
 import { useState } from 'react'
-import { History, Rocket, Undo2 } from 'lucide-react'
+import { History, Loader2, Rocket, Undo2 } from 'lucide-react'
 import { useAction } from '@/lib/hooks'
 import { tenantsApi } from '@/lib/tenants'
 import { formatDate, isTruthyFlag, relativeTime } from '@/lib/format'
-import { Button } from '@/components/ui/button'
-import { Card, CardBody, CardHeader } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { Alert, LoadingBlock } from '@/components/ui/feedback'
+import {
+  DangerButton,
+  ErrorBanner,
+  GhostButton,
+  Panel,
+  Pill,
+  PrimaryButton,
+} from '@/components/remake/ui'
+import { LoadingBlock } from '@/components/ui/feedback'
 import { PageHeader } from '@/components/layout/page-header'
 import { useToast } from '@/components/ui/toast'
 import { useAuth } from '@/lib/auth'
@@ -67,99 +72,81 @@ export function VersionsPanel({ tenantId }: { tenantId: string }) {
         description="Publishing appends an immutable version and swaps the live profile. Rolling back never deletes anything — it re-points which version is current."
         actions={
           isAdmin ? (
-            <Button
-              variant="primary"
-              size="sm"
-              loading={action.busy}
-              icon={<Rocket className="h-4 w-4" />}
-              onClick={publish}
-            >
+            <PrimaryButton disabled={action.busy} onClick={publish}>
+              {action.busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Rocket className="h-4 w-4" />}
               Publish draft
-            </Button>
+            </PrimaryButton>
           ) : undefined
         }
         meta={
-          <Badge tone={current ? 'success' : 'warning'}>
+          <Pill tone={current ? 'ok' : 'warn'}>
             {current ? `live version v${current}` : 'nothing published yet'}
-          </Badge>
+          </Pill>
         }
       />
 
-      {action.error && (
-        <Alert tone="danger" title="Action failed" className="mb-4">
-          {action.error}
-        </Alert>
-      )}
+      {action.error && <ErrorBanner title="Action failed" message={action.error} className="mb-4" />}
 
       {versions.loading ? (
         <LoadingBlock label="Loading versions…" />
       ) : (
-        <Card>
-          <CardHeader title="History" description={`${rows.length} version(s)`} icon={<History className="h-4 w-4" />} />
-          <CardBody>
-            {!rows.length ? (
-              <p className="text-xs text-slate-500">
-                No versions yet. Save a draft in the profile editor, then publish it here.
-              </p>
-            ) : (
-              <div className="divide-y divide-surface-line">
-                {rows.map((row) => {
-                  const isCurrent = isTruthyFlag(row.is_current) || row.version === current
-                  return (
-                    <div key={row.version} className="flex flex-wrap items-center gap-3 py-3">
-                      <div className="w-14 shrink-0">
-                        <span className="font-mono text-sm text-slate-100">v{row.version}</span>
-                      </div>
-                      {isCurrent && <Badge tone="success">current</Badge>}
-                      <div className="min-w-0 flex-1 text-xs text-slate-400">
-                        <p className="text-slate-300">{row.note || row.published_by || '—'}</p>
-                        <p className="mt-0.5 text-xs text-slate-600">
-                          {formatDate(row.created_at)} · {relativeTime(row.created_at)}
-                        </p>
-                      </div>
-                      <div className="flex shrink-0 items-center gap-2">
-                        <Button size="sm" variant="ghost" onClick={() => openVersion(row.version)}>
-                          {preview?.version === row.version ? 'Hide' : 'Inspect'}
-                        </Button>
-                        {!isCurrent && isAdmin &&
-                          (confirming === row.version ? (
-                            <>
-                              <Button size="sm" variant="danger" loading={action.busy} onClick={() => rollback(row.version)}>
-                                Confirm
-                              </Button>
-                              <Button size="sm" variant="ghost" onClick={() => setConfirming(null)}>
-                                Cancel
-                              </Button>
-                            </>
-                          ) : (
-                            <Button
-                              size="sm"
-                              variant="secondary"
-                              icon={<Undo2 className="h-3.5 w-3.5" />}
-                              onClick={() => setConfirming(row.version)}
-                            >
-                              Roll back
-                            </Button>
-                          ))}
-                      </div>
+        <Panel title="History" action={<History className="h-4 w-4 text-txmuted" />}>
+          <p className="-mt-1 mb-2 text-sm text-txmuted">{rows.length} version(s)</p>
+          {!rows.length ? (
+            <p className="text-sm text-txmuted">
+              No versions yet. Save a draft in the profile editor, then publish it here.
+            </p>
+          ) : (
+            <div className="divide-y divide-linesoft">
+              {rows.map((row) => {
+                const isCurrent = isTruthyFlag(row.is_current) || row.version === current
+                return (
+                  <div key={row.version} className="flex flex-wrap items-center gap-3 py-3">
+                    <div className="w-14 shrink-0">
+                      <span className="font-mono text-sm text-tx">v{row.version}</span>
                     </div>
-                  )
-                })}
-              </div>
-            )}
-          </CardBody>
-        </Card>
+                    {isCurrent && <Pill tone="ok">current</Pill>}
+                    <div className="min-w-0 flex-1 text-sm text-txmuted">
+                      <p className="text-tx">{row.note || row.published_by || '—'}</p>
+                      <p className="mt-0.5 text-xs text-txfaint">
+                        {formatDate(row.created_at)} · {relativeTime(row.created_at)}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <GhostButton onClick={() => openVersion(row.version)}>
+                        {preview?.version === row.version ? 'Hide' : 'Inspect'}
+                      </GhostButton>
+                      {!isCurrent && isAdmin &&
+                        (confirming === row.version ? (
+                          <>
+                            <DangerButton disabled={action.busy} onClick={() => rollback(row.version)}>
+                              {action.busy && <Loader2 className="h-4 w-4 animate-spin" />}
+                              Confirm
+                            </DangerButton>
+                            <GhostButton onClick={() => setConfirming(null)}>Cancel</GhostButton>
+                          </>
+                        ) : (
+                          <GhostButton onClick={() => setConfirming(row.version)}>
+                            <Undo2 className="h-3.5 w-3.5" />
+                            Roll back
+                          </GhostButton>
+                        ))}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </Panel>
       )}
 
       {preview && (
-        <Card className="mt-4">
-          <CardHeader title={`Version ${preview.version}`} description="Raw stored payload." />
-          <CardBody>
-            <pre className="max-h-96 overflow-auto scroll-thin rounded-lg bg-surface p-4 font-mono text-xs leading-relaxed text-slate-400">
-              {JSON.stringify(preview.data, null, 2)}
-            </pre>
-          </CardBody>
-        </Card>
+        <Panel title={`Version ${preview.version}`} className="mt-4">
+          <p className="-mt-1 mb-3 text-sm text-txmuted">Raw stored payload.</p>
+          <pre className="max-h-96 overflow-auto scroll-thin rounded-lg border border-line bg-paper p-4 font-mono text-xs leading-relaxed text-txmuted">
+            {JSON.stringify(preview.data, null, 2)}
+          </pre>
+        </Panel>
       )}
     </div>
   )

@@ -1,41 +1,59 @@
 /**
- * The tenant sidebar, as data.
+ * The tenant sidebar, as data — remake edition.
  *
- * Which screens a tenant console shows is a function of three things:
- *   - the vertical (what the content panel is called — "Packages", "Services"),
- *   - the tenant's feature flags (a tenant without `human_handover` has no live
- *     inbox), and
- *   - the signed-in admin's permissions (a restricted admin sees fewer items).
+ * The remake groups the same screens by the job the admin is doing
+ * (Today / Talk to customers / Your business data / Grow / Manage /
+ * Settings → Advanced) and renames them in plain words. Every item still
+ * maps to the SAME route view it always did; only the label, the icon
+ * and the grouping changed. Visibility is unchanged too: an item shows
+ * when the admin's permissions and the tenant's feature flags allow it,
+ * exactly as before.
  *
- * Keeping it here — rather than hard-coded in `app-shell.tsx` — means a new
- * vertical or capability adds a row, not a branch in the layout.
+ * Route mapping (view id → new label):
+ *   overview          → Today                    records   → <Products|Services|…> & prices
+ *   inbox             → Chats                    uploads   → Knowledge
+ *   chat-history      → Past chats               uploads   → Files (same screen, second door)
+ *   complaints        → Help requests            website-knowledge → Website knowledge
+ *   callbacks         → Callbacks                customers → Customers
+ *   menu              → Bot menu                 orders    → Orders
+ *   distributors      → Partners                 campaigns → Send an offer
+ *   intents           → Questions the bot understands
+ *   versions          → Versions                 tokens    → Connections
+ *   profile           → Profile (Advanced)       menu-edit → Menu editor (Advanced)
+ *   layers            → Layers (Advanced)        api-access → API access (Advanced)
+ *   chat              → Admin chat (Advanced)    test      → Test & smoke (Advanced)
+ *   whatsapp-tester   → WhatsApp Tester (Advanced)
+ *   projects/technologies/careers/benefits keep their names (IT tenants).
  */
 
 import {
   AlertTriangle,
+  BookOpen,
   Briefcase,
+  ClipboardList,
   Cpu,
+  FileText,
+  FlaskConical,
   FolderOpen,
   Gift,
-  GitBranch,
   Globe,
+  HelpCircle,
   History,
   Inbox,
   KeyRound,
+  Layers,
   LayoutGrid,
   ListTree,
   Megaphone,
   MessagesSquare,
   Package,
-  ScrollText,
-  ShoppingCart,
-  Smartphone,
-  Truck,
-  Upload,
-  Users,
   Phone,
   Plug,
-  FlaskConical,
+  ScrollText,
+  ShieldCheck,
+  ShoppingCart,
+  Truck,
+  Users,
   type LucideIcon,
 } from 'lucide-react'
 import type { FeatureFlag, Features } from './types'
@@ -46,6 +64,8 @@ export interface NavItem {
   id: string
   label: string
   icon: LucideIcon
+  /** Sidebar group heading this item sits under. */
+  group: NavGroup
   /** Visible when the admin holds any of these. Undefined is ungated. */
   permissions?: string[]
   /** Visible when the tenant has this feature on. Undefined is ungated. */
@@ -54,12 +74,29 @@ export interface NavItem {
   showsCount?: boolean
 }
 
+export type NavGroup =
+  | 'Today'
+  | 'Talk to customers'
+  | 'Your business data'
+  | 'Grow'
+  | 'Manage'
+  | 'Settings → Advanced'
+
+export const NAV_GROUP_ORDER: NavGroup[] = [
+  'Today',
+  'Talk to customers',
+  'Your business data',
+  'Grow',
+  'Manage',
+  'Settings → Advanced',
+]
+
 /**
  * Company info pages for Software & IT tenants only (tech stack, portfolio,
  * hiring, why-us). Other verticals use their own menus — banking has products /
  * eligibility, not Technologies or Careers.
  */
-const IT_COMPANY_INFO_ITEMS: NavItem[] = [
+const IT_COMPANY_INFO_ITEMS: Omit<NavItem, 'group'>[] = [
   { id: 'projects', label: 'Projects', icon: FolderOpen, permissions: ['manage_projects'] },
   { id: 'technologies', label: 'Technologies', icon: Cpu, permissions: ['manage_technologies'] },
   { id: 'careers', label: 'Careers', icon: Briefcase, permissions: ['manage_careers'] },
@@ -86,95 +123,35 @@ export function buildTenantNav(opts: {
   const content = getVertical(opts.vertical).content
   const features = opts.features ?? null
   const companyInfo = VERTICALS_WITH_COMPANY_INFO.has(opts.vertical ?? '')
-    ? IT_COMPANY_INFO_ITEMS
+    ? IT_COMPANY_INFO_ITEMS.map((item) => ({ ...item, group: 'Your business data' as NavGroup }))
     : []
 
+  const uploadPermissions = ['upload_faq', 'upload_kb', 'view_files', 'catalogue_new_arrival']
+
   const items: NavItem[] = [
-    { id: 'overview', label: 'Overview', icon: LayoutGrid },
-    {
-      id: 'records',
-      label: content.label,
-      icon: Package,
-      permissions: ['view_products'],
-      feature: 'offerings',
-      showsCount: true,
-    },
-    ...companyInfo,
-    {
-      id: 'orders',
-      label: 'Orders',
-      icon: ShoppingCart,
-      permissions: ['view_orders'],
-      feature: 'orders',
-    },
-    { id: 'customers', label: 'Customers', icon: Users, permissions: ['view_customers'] },
-    { id: 'profile', label: 'Profile', icon: ScrollText, permissions: ['manage_operations'] },
-    { id: 'menu', label: 'Menu', icon: ListTree },
-    { id: 'intents', label: 'Intents Editor', icon: GitBranch, permissions: ['manage_operations'] },
-    {
-      id: 'uploads',
-      label: 'Uploads',
-      icon: Upload,
-      permissions: ['upload_faq', 'upload_kb', 'view_files', 'catalogue_new_arrival'],
-    },
-    {
-      // Website Knowledge: the crawl half of onboarding (KB / FAQs /
-      // product knowledge from the tenant's website). Same content
-      // switches as Uploads — the two screens are one knowledge hub.
-      id: 'website-knowledge',
-      label: 'Website Knowledge',
-      icon: Globe,
-      permissions: ['upload_faq', 'upload_kb', 'view_files', 'catalogue_new_arrival'],
-    },
-    {
-      id: 'campaigns',
-      label: 'Campaigns',
-      icon: Megaphone,
-      permissions: ['view_campaigns'],
-      feature: 'campaigns',
-    },
-    {
-      id: 'distributors',
-      label: 'Distributors',
-      icon: Truck,
-      permissions: ['view_distributors'],
-      feature: 'distributors',
-    },
-    {
-      id: 'whatsapp-tester',
-      label: 'WhatsApp Tester',
-      icon: Smartphone,
-      permissions: ['chat', 'view_inbox', 'upload_faq'],
-    },
-    {
-      id: 'test',
-      label: 'Test & smoke',
-      icon: FlaskConical,
-      permissions: ['upload_faq', 'upload_kb'],
-    },
-    {
-      id: 'chat',
-      label: 'Team chat (internal)',
-      icon: MessagesSquare,
-      permissions: ['chat'],
-    },
-    {
-      id: 'chat-history',
-      label: 'Chat history',
-      icon: History,
-      permissions: ['chat_history'],
-    },
+    { id: 'overview', label: 'Today', icon: LayoutGrid, group: 'Today' },
+
+    // Talk to customers
     {
       id: 'inbox',
-      label: 'Live inbox (WhatsApp)',
+      label: 'Chats',
       icon: Inbox,
+      group: 'Talk to customers',
       permissions: ['view_inbox'],
       feature: 'human_handover',
     },
     {
+      id: 'chat-history',
+      label: 'Past chats',
+      icon: History,
+      group: 'Talk to customers',
+      permissions: ['chat_history'],
+    },
+    {
       id: 'complaints',
-      label: 'Complaints',
+      label: 'Help requests',
       icon: AlertTriangle,
+      group: 'Talk to customers',
       permissions: ['view_complaints'],
       feature: 'complaints',
     },
@@ -182,17 +159,123 @@ export function buildTenantNav(opts: {
       id: 'callbacks',
       label: 'Callbacks',
       icon: Phone,
+      group: 'Talk to customers',
       permissions: ['manage_operations'],
       feature: 'callback',
       showsCount: true,
     },
+
+    // Your business data
+    { id: 'menu', label: 'Bot menu', icon: ListTree, group: 'Your business data' },
     {
-      id: 'api-access',
-      label: 'Integrations & APIs',
-      icon: Plug,
+      id: 'records',
+      label: `${content.label} & prices`,
+      icon: Package,
+      group: 'Your business data',
+      permissions: ['view_products'],
+      feature: 'offerings',
+      showsCount: true,
+    },
+    {
+      id: 'uploads',
+      label: 'Knowledge',
+      icon: BookOpen,
+      group: 'Your business data',
+      permissions: uploadPermissions,
+    },
+    {
+      // Website Knowledge: the crawl half of onboarding (KB / FAQs /
+      // product knowledge from the tenant's website). Same content
+      // switches as Uploads — the two screens are one knowledge hub.
+      id: 'website-knowledge',
+      label: 'Website knowledge',
+      icon: Globe,
+      group: 'Your business data',
+      permissions: uploadPermissions,
+    },
+    {
+      // Files is the same Uploads screen through a second door: that
+      // screen manages both the knowledge content and the raw files, and
+      // the remake's plain naming keeps both jobs findable.
+      id: 'uploads',
+      label: 'Files',
+      icon: FileText,
+      group: 'Your business data',
+      permissions: uploadPermissions,
+    },
+    ...companyInfo,
+    { id: 'customers', label: 'Customers', icon: Users, group: 'Your business data', permissions: ['view_customers'] },
+    {
+      id: 'orders',
+      label: 'Orders',
+      icon: ShoppingCart,
+      group: 'Your business data',
+      permissions: ['view_orders'],
+      feature: 'orders',
+    },
+    {
+      id: 'distributors',
+      label: 'Partners',
+      icon: Truck,
+      group: 'Your business data',
+      permissions: ['view_distributors'],
+      feature: 'distributors',
+    },
+
+    // Grow
+    {
+      id: 'campaigns',
+      label: 'Send an offer',
+      icon: Megaphone,
+      group: 'Grow',
+      permissions: ['view_campaigns'],
+      feature: 'campaigns',
+    },
+    {
+      id: 'intents',
+      label: 'Questions the bot understands',
+      icon: HelpCircle,
+      group: 'Grow',
       permissions: ['manage_operations'],
     },
-    { id: 'tokens', label: 'API tokens', icon: KeyRound, permissions: ['manage_operations'] },
+
+    // Manage
+    { id: 'versions', label: 'Versions', icon: ClipboardList, group: 'Manage', permissions: ['manage_operations'] },
+    { id: 'tokens', label: 'Connections', icon: KeyRound, group: 'Manage', permissions: ['manage_operations'] },
+
+    // Settings → Advanced: the technical screens, kept reachable but out
+    // of the daily path.
+    { id: 'profile', label: 'Profile', icon: ScrollText, group: 'Settings → Advanced', permissions: ['manage_operations'] },
+    { id: 'menu-edit', label: 'Menu editor', icon: ListTree, group: 'Settings → Advanced', permissions: ['manage_operations'] },
+    { id: 'layers', label: 'Layers', icon: Layers, group: 'Settings → Advanced', permissions: ['manage_operations'] },
+    {
+      id: 'api-access',
+      label: 'API access',
+      icon: Plug,
+      group: 'Settings → Advanced',
+      permissions: ['manage_operations'],
+    },
+    {
+      id: 'chat',
+      label: 'Admin chat',
+      icon: MessagesSquare,
+      group: 'Settings → Advanced',
+      permissions: ['chat'],
+    },
+    {
+      id: 'test',
+      label: 'Test & smoke',
+      icon: ShieldCheck,
+      group: 'Settings → Advanced',
+      permissions: ['manage_operations'],
+    },
+    {
+      id: 'whatsapp-tester',
+      label: 'WhatsApp Tester',
+      icon: FlaskConical,
+      group: 'Settings → Advanced',
+      permissions: ['manage_operations'],
+    },
   ]
   return items.filter((item) => isVisible(item, opts.can, features))
 }

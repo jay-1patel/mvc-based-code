@@ -8,6 +8,7 @@ import {
   Check,
   FileText,
   FolderUp,
+  Loader2,
   MessageSquareText,
   Rocket,
   ShieldAlert,
@@ -36,14 +37,20 @@ import { tenantApprovalsApi } from '@/lib/tenant-approvals'
 import { navigate } from '@/lib/router'
 import { VERTICAL_CATALOG, getVertical } from '@/lib/verticals'
 import type { FeatureFlag, ResolvedProfile, Tenant } from '@/lib/types'
-import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { Card, CardBody, CardHeader, SectionTitle } from '@/components/ui/card'
-import { Input, Textarea } from '@/components/ui/input'
-import { Select } from '@/components/ui/select'
-import { Switch } from '@/components/ui/switch'
-import { TagInput } from '@/components/ui/tags'
-import { Alert } from '@/components/ui/feedback'
+import {
+  Card,
+  ErrorBanner,
+  FieldInput,
+  FieldSelect,
+  FieldTextarea,
+  GhostButton,
+  Notice,
+  Panel,
+  Pill,
+  PrimaryButton,
+  TagField,
+  Toggle,
+} from '@/components/remake/ui'
 import { VerticalGlyph } from '@/components/vertical-icon'
 import { PageHeader } from '@/components/layout/page-header'
 import { useToast } from '@/components/ui/toast'
@@ -58,7 +65,9 @@ const DAYS = [
   { value: 0, label: 'Sun' },
 ]
 
-/** Dropdown for the working-hours timezone — free text invited typos. */
+const fieldLabelClass = 'mb-1.5 block text-sm font-medium text-tx'
+/** The compact size the legacy `size="sm"` buttons had in this wizard. */
+const smallBtn = 'px-3 py-1.5 text-xs'
 
 // The super admin only registers the company basics; an admin completes the
 // tenant from WhatsApp onwards, and that completion goes for approval.
@@ -260,16 +269,16 @@ export function RegisterWizard({ onSubmitted }: { onSubmitted?: () => void } = {
                 disabled={index > step}
                 className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition ${
                   state === 'current'
-                    ? 'bg-accent-100 text-accent-800 ring-1 ring-inset ring-accent-300'
+                    ? 'bg-accsoft text-acc ring-1 ring-inset ring-line'
                     : state === 'done'
-                      ? 'text-emerald-700 hover:text-emerald-700'
-                      : 'text-slate-600'
+                      ? 'text-ok hover:text-ok'
+                      : 'text-txmuted'
                 }`}
               >
                 {state === 'done' ? <Check className="h-3 w-3" /> : <span>{index + 1}</span>}
                 {s.label}
               </button>
-              {index < steps.length - 1 && <span className="text-slate-600">/</span>}
+              {index < steps.length - 1 && <span className="text-txfaint">/</span>}
             </li>
           )
         })}
@@ -304,51 +313,46 @@ export function RegisterWizard({ onSubmitted }: { onSubmitted?: () => void } = {
 
         {action.error && (
           <div className="px-5 pb-4">
-            <Alert tone="danger" title="Registration failed">
-              {action.error}
-            </Alert>
+            <ErrorBanner title="Registration failed" message={action.error} />
           </div>
         )}
 
-        <div className="flex items-center justify-between border-t border-surface-line px-5 py-4">
-          <Button
-            variant="ghost"
+        <div className="flex items-center justify-between border-t border-linesoft px-5 py-4">
+          <GhostButton
             disabled={step === 0}
             onClick={() => setStep((s) => Math.max(0, s - 1))}
-            icon={<ArrowLeft className="h-4 w-4" />}
           >
+            <ArrowLeft className="h-4 w-4" />
             Back
-          </Button>
+          </GhostButton>
 
           {step < steps.length - 1 ? (
-            <Button
-              variant="primary"
+            <PrimaryButton
               disabled={Boolean(error)}
               onClick={() => setStep((s) => s + 1)}
             >
               Continue
               <ArrowRight className="h-4 w-4" />
-            </Button>
+            </PrimaryButton>
           ) : (
-            <Button
-              variant="primary"
-              loading={action.busy}
+            <PrimaryButton
+              disabled={action.busy}
               onClick={submit}
-              icon={<Rocket className="h-4 w-4" />}
             >
+              {action.busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Rocket className="h-4 w-4" />}
               {isSuperAdmin ? 'Create tenant' : 'Submit for approval'}
-            </Button>
+            </PrimaryButton>
           )}
         </div>
       </Card>
 
       {error && step < steps.length - 1 && (
-        <p className="mt-3 text-xs text-amber-700/80">{error}</p>
+        <p className="mt-3 text-xs text-attink">{error}</p>
       )}
       {isSuperAdmin && tenantIdTaken && stepId === 'company' && (
-        <Alert tone="warning" className="mt-4">
+        <Notice tone="warn" className="mt-4">
           A tenant with this id already exists. Pick another id, or cancel and edit the existing tenant instead.
-        </Alert>
+        </Notice>
       )}
     </div>
   )
@@ -386,7 +390,7 @@ function TenantStep({
     >
       <div className="space-y-2.5">
         {tenants.length === 0 && (
-          <p className="text-sm text-slate-400">
+          <p className="text-sm text-txmuted">
             No tenants yet. A super admin registers the company first from this same panel.
           </p>
         )}
@@ -399,31 +403,31 @@ function TenantStep({
               type="button"
               onClick={() => onPick(tenant.id)}
               className={`flex w-full items-center gap-3 rounded-lg p-3.5 text-left ring-1 ring-inset transition ${
-                active ? 'bg-accent-100 ring-accent-400' : 'bg-surface-panel ring-surface-line hover:bg-accent-50'
+                active ? 'bg-accsoft ring-acc' : 'bg-paper ring-line hover:bg-accsoft'
               }`}
             >
               <VerticalGlyph
                 name={vertical.icon}
-                className={`h-5 w-5 shrink-0 ${active ? 'text-accent-700' : 'text-slate-500'}`}
+                className={`h-5 w-5 shrink-0 ${active ? 'text-acc' : 'text-txmuted'}`}
               />
               <span className="min-w-0 flex-1">
-                <span className="block text-sm font-medium text-slate-100">
+                <span className="block text-sm font-medium text-tx">
                   {tenant.display_name || tenant.id}
                 </span>
-                <span className="mt-0.5 block font-mono text-xs text-slate-500">
+                <span className="mt-0.5 block font-mono text-xs text-txfaint">
                   {tenant.id} · {vertical.short}
                 </span>
               </span>
-              <Badge tone={tenant.current_version ? 'success' : 'warning'}>
+              <Pill tone={tenant.current_version ? 'ok' : 'warn'}>
                 {tenant.current_version ? `live v${tenant.current_version}` : 'awaiting completion'}
-              </Badge>
+              </Pill>
             </button>
           )
         })}
       </div>
 
       {draft.tenantId && (
-        <div className="rounded-lg border border-dashed border-accent-300 bg-accent-50/40 p-4">
+        <div className="rounded-panel border border-dashed border-line bg-accsoft p-4">
           <input
             ref={fileRef}
             type="file"
@@ -437,12 +441,12 @@ function TenantStep({
             }}
           />
           <div className="flex flex-wrap items-center gap-3">
-            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-accent-100 text-accent-700">
+            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-card text-acc ring-1 ring-inset ring-line">
               <FileText className="h-4 w-4" />
             </span>
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium text-slate-100">Have a company document?</p>
-              <p className="text-xs leading-relaxed text-slate-400">
+              <p className="text-sm font-medium text-tx">Have a company document?</p>
+              <p className="text-xs leading-relaxed text-txmuted">
                 Upload your company PDF, Word file or Markdown and the details it confirms —
                 brand, contacts and services, plus the menu, hours and guardrails whenever
                 the document itself confirms them — pre-fill the next steps. Anything you
@@ -450,24 +454,23 @@ function TenantStep({
                 submit for approval.
               </p>
             </div>
-            <Button
-              variant="primary"
-              size="sm"
-              loading={pdfBusy}
-              icon={<FolderUp className="h-4 w-4" />}
+            <PrimaryButton
+              className={smallBtn}
+              disabled={pdfBusy}
               onClick={() => fileRef.current?.click()}
             >
+              {pdfBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <FolderUp className="h-4 w-4" />}
               Upload document
-            </Button>
+            </PrimaryButton>
           </div>
 
           {pdfError && (
-            <Alert tone="danger" title="We could not read that document" className="mt-3">
+            <Notice tone="bad" title="We could not read that document" className="mt-3">
               {pdfError} You can still complete every step by hand.
-            </Alert>
+            </Notice>
           )}
           {pdfSummary && pdfSummary.mode === 'kit' && (
-            <Alert tone="success" title="Fetched from your PDF" className="mt-3">
+            <Notice tone="success" title="Fetched from your PDF" className="mt-3">
               {pdfSummary.filled.length ? (
                 <>
                   Filled in: {pdfSummary.filled.join(' · ')}. Check each step — everything stays
@@ -476,10 +479,10 @@ function TenantStep({
               ) : (
                 'The document was read, but every field it covers was already filled in — nothing was changed.'
               )}
-            </Alert>
+            </Notice>
           )}
           {pdfSummary && pdfSummary.mode === 'universal' && (
-            <Alert
+            <Notice
               tone="info"
               title="Started from your document — review the pre-filled steps"
               className="mt-3"
@@ -505,7 +508,7 @@ function TenantStep({
               ) : (
                 'The document was read, but its details could not be confirmed, so nothing was pre-filled — you can fill the steps in by hand.'
               )}
-            </Alert>
+            </Notice>
           )}
         </div>
       )}
@@ -526,8 +529,14 @@ function StepShell({
 }) {
   return (
     <>
-      <CardHeader title={title} description={description} icon={icon} />
-      <CardBody className="space-y-5">{children}</CardBody>
+      <div className="border-b border-linesoft px-5 py-4">
+        <h2 className="flex items-center gap-2 text-base font-semibold text-tx">
+          <span className="text-txmuted">{icon}</span>
+          {title}
+        </h2>
+        <p className="mt-1 text-sm leading-relaxed text-txmuted">{description}</p>
+      </div>
+      <div className="space-y-5 px-5 py-5">{children}</div>
     </>
   )
 }
@@ -540,27 +549,27 @@ function CompanyStep({ draft, patch }: StepProps) {
       icon={<Building2 className="h-4 w-4" />}
     >
       <div className="grid gap-4 sm:grid-cols-2">
-        <Input
+        <FieldInput
           label="Company name"
           value={draft.companyName}
           onChange={(e) => patch({ companyName: e.target.value, tenantId: draft.tenantId || slugify(e.target.value) })}
           placeholder="Leeway Softech"
           required
         />
-        <Input
+        <FieldInput
           label="Tenant id"
           value={draft.tenantId}
           onChange={(e) => patch({ tenantId: slugify(e.target.value) })}
           hint="Lowercase, no spaces. This is the id used in the API and the database."
           required
         />
-        <Input
+        <FieldInput
           label="Display name"
           value={draft.displayName}
           onChange={(e) => patch({ displayName: e.target.value })}
           placeholder={draft.companyName || 'Shown in menus'}
         />
-        <Input
+        <FieldInput
           label="Website"
           value={draft.website}
           onChange={(e) => patch({ website: e.target.value })}
@@ -569,9 +578,10 @@ function CompanyStep({ draft, patch }: StepProps) {
       </div>
 
       <div>
-        <SectionTitle hint="This is the single most important answer: it selects the profile defaults, the vocabulary, the menu and the intents.">
-          Business field
-        </SectionTitle>
+        <p className={fieldLabelClass}>Business field</p>
+        <p className="mb-2 text-xs text-txfaint">
+          This is the single most important answer: it selects the profile defaults, the vocabulary, the menu and the intents.
+        </p>
         <div className="grid gap-2.5 sm:grid-cols-2">
           {VERTICAL_CATALOG.map((v) => {
             const active = draft.vertical === v.id
@@ -582,17 +592,17 @@ function CompanyStep({ draft, patch }: StepProps) {
                 onClick={() => patch(applyVertical(draft, v.id))}
                 className={`flex gap-3 rounded-lg p-3.5 text-left ring-1 ring-inset transition ${
                   active
-                    ? 'bg-accent-100 ring-accent-400'
-                    : 'bg-surface-panel ring-surface-line hover:bg-accent-50'
+                    ? 'bg-accsoft ring-acc'
+                    : 'bg-paper ring-line hover:bg-accsoft'
                 }`}
               >
                 <VerticalGlyph
                   name={v.icon}
-                  className={`mt-0.5 h-5 w-5 shrink-0 ${active ? 'text-accent-700' : 'text-slate-500'}`}
+                  className={`mt-0.5 h-5 w-5 shrink-0 ${active ? 'text-acc' : 'text-txmuted'}`}
                 />
                 <span className="min-w-0">
-                  <span className="block text-sm font-medium text-slate-100">{v.label}</span>
-                  <span className="mt-1 block text-xs leading-relaxed text-slate-400">{v.blurb}</span>
+                  <span className="block text-sm font-medium text-tx">{v.label}</span>
+                  <span className="mt-1 block text-xs leading-relaxed text-txmuted">{v.blurb}</span>
                 </span>
               </button>
             )
@@ -617,7 +627,7 @@ function WhatsAppStep({ draft, patch }: StepProps) {
       description="The phone number routes inbound messages to this tenant. Working hours decide when the bot offers a callback instead of a live handoff."
       icon={<CalendarClock className="h-4 w-4" />}
     >
-      <Input
+      <FieldInput
         label="WhatsApp phone number *"
         value={draft.wabaPhoneId}
         onChange={(e) => patch({ wabaPhoneId: e.target.value })}
@@ -627,7 +637,7 @@ function WhatsAppStep({ draft, patch }: StepProps) {
       />
 
       <div className="grid gap-4 sm:grid-cols-3">
-        <Select
+        <FieldSelect
           label="Timezone *"
           value={draft.timezone}
           onChange={(e) => patch({ timezone: e.target.value })}
@@ -639,15 +649,15 @@ function WhatsAppStep({ draft, patch }: StepProps) {
               {tz}
             </option>
           ))}
-        </Select>
-        <Input
+        </FieldSelect>
+        <FieldInput
           label="Opens"
           type="time"
           value={draft.openTime}
           onChange={(e) => patch({ openTime: e.target.value })}
           disabled={draft.alwaysOpen}
         />
-        <Input
+        <FieldInput
           label="Closes"
           type="time"
           value={draft.closeTime}
@@ -656,7 +666,7 @@ function WhatsAppStep({ draft, patch }: StepProps) {
         />
       </div>
 
-      <Switch
+      <Toggle
         checked={draft.alwaysOpen}
         onChange={(alwaysOpen) => patch({ alwaysOpen })}
         label="Always open"
@@ -666,7 +676,7 @@ function WhatsAppStep({ draft, patch }: StepProps) {
       {!draft.alwaysOpen && (
         <div className="space-y-3">
           <div>
-            <p className="field-label">Open on</p>
+            <p className={fieldLabelClass}>Open on</p>
             <div className="flex flex-wrap gap-1.5">
               {DAYS.map((day) => {
                 const on = draft.openDays.includes(day.value)
@@ -677,8 +687,8 @@ function WhatsAppStep({ draft, patch }: StepProps) {
                     onClick={() => toggleDay(day.value)}
                     className={`h-9 w-12 rounded-lg text-xs font-medium ring-1 ring-inset transition ${
                       on
-                        ? 'bg-accent-600 text-white ring-accent-500'
-                        : 'bg-surface-raised text-slate-400 ring-surface-line hover:text-slate-100'
+                        ? 'bg-acc text-onacc ring-acc'
+                        : 'bg-card text-txmuted ring-line hover:text-tx'
                     }`}
                   >
                     {day.label}
@@ -687,7 +697,7 @@ function WhatsAppStep({ draft, patch }: StepProps) {
               })}
             </div>
           </div>
-          <Textarea
+          <FieldTextarea
             label="Out-of-hours message"
             value={draft.outOfHoursMessage}
             onChange={(e) => patch({ outOfHoursMessage: e.target.value })}
@@ -707,13 +717,13 @@ function BrandStep({ draft, patch }: StepProps) {
       icon={<MessageSquareText className="h-4 w-4" />}
     >
       <div className="grid gap-4 sm:grid-cols-2">
-        <Input
-        label="Bot name *"
+        <FieldInput
+          label="Bot name *"
           value={draft.botName}
           onChange={(e) => patch({ botName: e.target.value })}
           placeholder="Asha"
         />
-        <Select
+        <FieldSelect
           label="Tone"
           value={draft.tone}
           onChange={(e) => patch({ tone: e.target.value })}
@@ -725,27 +735,27 @@ function BrandStep({ draft, patch }: StepProps) {
           <option value="warm and helpful">Warm and helpful</option>
           <option value="calm and empathetic">Calm and empathetic</option>
           <option value="concise and direct">Concise and direct</option>
-        </Select>
-        <Input
+        </FieldSelect>
+        <FieldInput
           label="Tagline"
           value={draft.tagline}
           onChange={(e) => patch({ tagline: e.target.value })}
           placeholder="Software that ships"
         />
-        <Input
+        <FieldInput
           label="Closing signature"
           value={draft.signature}
           onChange={(e) => patch({ signature: e.target.value })}
           placeholder="— Team Leeway"
         />
-        <Input
+        <FieldInput
           label="Support email *"
           type="email"
           value={draft.supportEmail}
           onChange={(e) => patch({ supportEmail: e.target.value })}
           placeholder="support@example.com"
         />
-        <Input
+        <FieldInput
           label="Support phone *"
           value={draft.supportPhone}
           onChange={(e) => patch({ supportPhone: e.target.value })}
@@ -760,7 +770,7 @@ function BrandStep({ draft, patch }: StepProps) {
         />
       </div>
 
-      <Textarea
+      <FieldTextarea
         label="Menu greeting"
         value={draft.greeting}
         onChange={(e) => patch({ greeting: e.target.value })}
@@ -768,10 +778,10 @@ function BrandStep({ draft, patch }: StepProps) {
         hint="Shown as the WhatsApp menu body. Leave blank to use the field default."
       />
 
-      <Alert tone="info" title={`Vocabulary for ${v.short}`}>
+      <Notice tone="info" title={`Vocabulary for ${v.short}`}>
         The bot will call your offerings <strong>{v.nouns.item}</strong> and your enquiries{' '}
         <strong>{v.nouns.lead}</strong>. You can override every one of these later in the profile editor.
-      </Alert>
+      </Notice>
     </StepShell>
   )
 }
@@ -791,33 +801,33 @@ function DomainStep({ draft, patch }: StepProps) {
           const value = draft.answers[q.key]
           return (
             <div key={q.key}>
-              <p className="field-label">
+              <p className={fieldLabelClass}>
                 {q.label}
-                {q.required && <span className="ml-1 text-rose-400">*</span>}
+                {q.required && <span className="ml-1 text-badink">*</span>}
               </p>
               {q.kind === 'chips' && (
-                <TagInput
+                <TagField
                   value={Array.isArray(value) ? value : []}
                   onChange={(next) => patch({ answers: { ...draft.answers, [q.key]: next } })}
                   suggestions={q.suggestions ?? []}
                 />
               )}
               {q.kind === 'text' && (
-                <Input
+                <FieldInput
                   value={typeof value === 'string' ? value : ''}
                   onChange={(e) => patch({ answers: { ...draft.answers, [q.key]: e.target.value } })}
                   placeholder={q.placeholder}
                 />
               )}
               {q.kind === 'textarea' && (
-                <Textarea
+                <FieldTextarea
                   value={typeof value === 'string' ? value : ''}
                   onChange={(e) => patch({ answers: { ...draft.answers, [q.key]: e.target.value } })}
                   placeholder={q.placeholder}
                 />
               )}
               {q.kind === 'select' && (
-                <Select
+                <FieldSelect
                   value={typeof value === 'string' ? value : ''}
                   onChange={(e) => patch({ answers: { ...draft.answers, [q.key]: e.target.value } })}
                 >
@@ -827,20 +837,19 @@ function DomainStep({ draft, patch }: StepProps) {
                       {option}
                     </option>
                   ))}
-                </Select>
+                </FieldSelect>
               )}
-              {q.help && <p className="hint">{q.help}</p>}
+              {q.help && <p className="mt-1.5 text-xs leading-relaxed text-txmuted">{q.help}</p>}
             </div>
           )
         })}
       </div>
 
-      <Card>
-        <CardHeader
-          title="Optional modules"
-          description="Switch on only what this company will use — anything off stays hidden from their console."
-        />
-        <CardBody className="space-y-4">
+      <Panel title="Optional modules">
+        <p className="-mt-1 mb-4 text-sm text-txmuted">
+          Switch on only what this company will use — anything off stays hidden from their console.
+        </p>
+        <div className="space-y-4">
           {([
             { flag: 'payments', label: 'Online Payments', desc: 'Generate Razorpay or Stripe checkout links for WhatsApp orders.' },
             { flag: 'orders', label: 'Orders Management', desc: 'Accept and process customer orders through WhatsApp.' },
@@ -856,7 +865,7 @@ function DomainStep({ draft, patch }: StepProps) {
             { flag: 'services', label: 'Services Menu', desc: 'Show the Services menu entry and answer questions about what you deliver.' },
             { flag: 'products', label: 'Products Menu', desc: 'Show the Products menu entry and answer questions about what you sell.' },
           ] as const).map(({ flag, label, desc }) => (
-            <Switch
+            <Toggle
               key={flag}
               checked={draft.features.includes(flag as FeatureFlag)}
               onChange={(on) =>
@@ -870,13 +879,13 @@ function DomainStep({ draft, patch }: StepProps) {
               description={desc}
             />
           ))}
-        </CardBody>
-      </Card>
+        </div>
+      </Panel>
 
       {missingRequired.length > 0 && (
-        <Alert tone="warning">
+        <Notice tone="warn">
           Answer {missingRequired.map((q) => q.label).join(', ')} before continuing.
-        </Alert>
+        </Notice>
       )}
     </StepShell>
   )
@@ -890,14 +899,14 @@ function NotificationsStep({ draft, patch }: StepProps) {
       icon={<Webhook className="h-4 w-4" />}
     >
       <div className="grid gap-4 sm:grid-cols-2">
-        <Input
+        <FieldInput
           label="Sales / enquiries email *"
           type="email"
           value={draft.salesEmail}
           onChange={(e) => patch({ salesEmail: e.target.value })}
           placeholder="sales@example.com"
         />
-        <Input
+        <FieldInput
           label="Support email"
           type="email"
           value={draft.notificationsSupportEmail}
@@ -905,8 +914,6 @@ function NotificationsStep({ draft, patch }: StepProps) {
           placeholder="support@example.com"
         />
       </div>
-
-
     </StepShell>
   )
 }
@@ -918,7 +925,7 @@ function GuardrailsStep({ draft, patch }: StepProps) {
       description="Guardrails bind the language model. Statements listed here are refused, and the escalation keywords hand the conversation to a person."
       icon={<ShieldAlert className="h-4 w-4" />}
     >
-      <Textarea
+      <FieldTextarea
         label="Never state (one per line)"
         value={draft.neverState}
         onChange={(e) => patch({ neverState: e.target.value })}
@@ -927,16 +934,16 @@ function GuardrailsStep({ draft, patch }: StepProps) {
       />
       <div className="grid gap-4 sm:grid-cols-2">
         <div>
-          <p className="field-label">Forbidden terms</p>
-          <TagInput
+          <p className={fieldLabelClass}>Forbidden terms</p>
+          <TagField
             value={draft.forbiddenTerms}
             onChange={(forbiddenTerms) => patch({ forbiddenTerms })}
             placeholder="Terms to refuse"
           />
         </div>
         <div>
-          <p className="field-label">Handoff keywords</p>
-          <TagInput
+          <p className={fieldLabelClass}>Handoff keywords</p>
+          <TagField
             value={draft.handoffKeywords}
             onChange={(handoffKeywords) => patch({ handoffKeywords })}
             placeholder="human, agent…"
@@ -944,23 +951,23 @@ function GuardrailsStep({ draft, patch }: StepProps) {
         </div>
       </div>
       <div>
-        <p className="field-label">Escalate immediately on</p>
-        <TagInput
+        <p className={fieldLabelClass}>Escalate immediately on</p>
+        <TagField
           value={draft.escalateKeywords}
           onChange={(escalateKeywords) => patch({ escalateKeywords })}
           placeholder="complaint, fraud, urgent…"
         />
       </div>
-      <Textarea
+      <FieldTextarea
         label="Escalation message"
         value={draft.escalationMessage}
         onChange={(e) => patch({ escalationMessage: e.target.value })}
         rows={2}
       />
-      <Alert tone="warning" title="Write these carefully">
+      <Notice tone="warn" title="Write these carefully">
         The linter flags a profile when a forbidden term leaks back into its own copy. Keep the two lists
         disjoint.
-      </Alert>
+      </Notice>
     </StepShell>
   )
 }
@@ -1032,8 +1039,8 @@ function ReviewStep({
       value: answers.length ? (
         <ul className="space-y-1">
           {answers.map(([key, value]) => (
-            <li key={key} className="text-xs text-slate-300">
-              <span className="text-slate-500">{key.replace(/_/g, ' ')}:</span>{' '}
+            <li key={key} className="text-xs text-tx">
+              <span className="text-txfaint">{key.replace(/_/g, ' ')}:</span>{' '}
               {Array.isArray(value) ? value.join(', ') : value}
             </li>
           ))}
@@ -1076,18 +1083,18 @@ function ReviewStep({
       }
       icon={<BadgeCheck className="h-4 w-4" />}
     >
-      <div className="divide-y divide-surface-line rounded-lg ring-1 ring-inset ring-surface-line">
+      <div className="divide-y divide-linesoft rounded-panel border border-line">
         {rows.map((row) => (
           <div key={row.label} className="flex items-start gap-4 px-4 py-3">
-            <span className="w-40 shrink-0 text-xs text-slate-500">{row.label}</span>
-            <span className="min-w-0 flex-1 text-xs text-slate-200">
+            <span className="w-40 shrink-0 text-xs text-txfaint">{row.label}</span>
+            <span className="min-w-0 flex-1 text-xs text-tx">
               {typeof row.value === 'string' ? row.value : row.value}
             </span>
             {(companyEditable || row.step > 0) && (
               <button
                 type="button"
                 onClick={() => onEdit(row.step)}
-                className="shrink-0 text-xs text-accent-700 hover:text-accent-700"
+                className="shrink-0 text-xs text-acc transition hover:opacity-80"
               >
                 Edit
               </button>
@@ -1096,10 +1103,10 @@ function ReviewStep({
         ))}
       </div>
 
-      <Alert tone="info" title="What approval does">
+      <Notice tone="info" title="What approval does">
         On approval the snapshot is merged over the {v.short} defaults, validated, stored as an immutable
         version, and the runtime cache is purged — so the next message is answered by the profile above.
-      </Alert>
+      </Notice>
     </StepShell>
   )
 }

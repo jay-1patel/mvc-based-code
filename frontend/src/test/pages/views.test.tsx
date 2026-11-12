@@ -44,7 +44,7 @@ describe('profile page', () => {
 describe('menu preview page', () => {
   it('shows the menu preview', async () => {
     await renderView(`#/tenants/${T}/menu`)
-    await expectHeading('Menu')
+    await expectHeading('Bot menu')
   })
 })
 
@@ -111,7 +111,7 @@ describe('chat history page', () => {
 describe('live inbox page', () => {
   it('shows the inbox queue', async () => {
     await renderView(`#/tenants/${T}/inbox`)
-    await expectHeading('Live inbox')
+    await expectHeading('Chats')
     expect(await screen.findByText('I need help')).toBeInTheDocument()
   })
 })

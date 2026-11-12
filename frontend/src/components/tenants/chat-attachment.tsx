@@ -23,7 +23,7 @@ export function AttachmentBubble({ attachment, mine }: { attachment: Attachment;
       rel="noopener noreferrer"
       className={cn(
         'flex items-center gap-2 rounded-lg px-2.5 py-2 text-sm underline-offset-2 hover:underline',
-        mine ? 'bg-white/15 text-white' : 'bg-accent-50 text-slate-200',
+        mine ? 'bg-onacc/15 text-onacc' : 'bg-accsoft text-tx',
       )}
     >
       <FileText className="h-4 w-4 shrink-0" />
@@ -46,21 +46,21 @@ export function AttachmentChip({
   onRemove?: () => void
 }) {
   return (
-    <div className="inline-flex items-center gap-2 rounded-lg bg-surface-overlay px-2.5 py-1.5 text-sm text-slate-200 ring-1 ring-inset ring-surface-line">
+    <div className="inline-flex items-center gap-2 rounded-lg border border-line bg-paper px-2.5 py-1.5 text-sm text-tx">
       {uploading ? (
-        <Loader2 className="h-4 w-4 animate-spin text-accent-400" />
+        <Loader2 className="h-4 w-4 animate-spin text-acc" />
       ) : (
-        <FileText className="h-4 w-4 text-accent-400" />
+        <FileText className="h-4 w-4 text-acc" />
       )}
       <span className="max-w-[14rem] truncate">{attachment.name}</span>
       {typeof attachment.size === 'number' && (
-        <span className="text-xs text-slate-400">{formatBytes(attachment.size)}</span>
+        <span className="text-xs text-txmuted">{formatBytes(attachment.size)}</span>
       )}
       {onRemove && (
         <button
           type="button"
           onClick={onRemove}
-          className="text-slate-400 transition hover:text-slate-100"
+          className="text-txmuted transition hover:text-tx"
           aria-label="Remove attachment"
         >
           <X className="h-4 w-4" />

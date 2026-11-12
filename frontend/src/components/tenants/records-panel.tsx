@@ -1,7 +1,7 @@
 import { useMemo, useState, type ChangeEvent } from 'react'
 import {
   AlertTriangle,
-  Layers,
+  Loader2,
   Lock,
   Pencil,
   Plus,
@@ -20,12 +20,22 @@ import { useTenants } from '@/lib/tenants'
 import { getVertical } from '@/lib/verticals'
 import type { Offering, OfferingInput, RecordColumn, RecordColumnType } from '@/lib/types'
 import { cn } from '@/lib/cn'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Card, CardBody, CardHeader } from '@/components/ui/card'
-import { Input, Textarea } from '@/components/ui/input'
-import { Checkbox, Switch } from '@/components/ui/switch'
-import { Alert, EmptyState, LoadingBlock } from '@/components/ui/feedback'
+import {
+  Check,
+  DangerButton,
+  EmptyState,
+  ErrorBanner,
+  FieldInput,
+  FieldSelect,
+  FieldTextarea,
+  GhostButton,
+  Notice,
+  Panel,
+  Pill,
+  PrimaryButton,
+  Toggle,
+} from '@/components/remake/ui'
+import { LoadingBlock } from '@/components/ui/feedback'
 import { PageHeader } from '@/components/layout/page-header'
 import { useToast } from '@/components/ui/toast'
 
@@ -189,9 +199,9 @@ export function RecordsPanel({ tenantId }: { tenantId: string }) {
     return (
       <div>
         <PageHeader title={content.label} description="What this tenant sells, offers or lists." />
-        <Alert tone="warning" title="Not permitted">
+        <Notice tone="warn" title="Not permitted">
           Viewing {content.label.toLowerCase()} needs the <strong>view_products</strong> permission.
-        </Alert>
+        </Notice>
       </div>
     )
   }
@@ -201,38 +211,25 @@ export function RecordsPanel({ tenantId }: { tenantId: string }) {
       <PageHeader
         title={content.label}
         description={`A table the bot reads from. Its columns are this tenant's own — add a ${content.singular} column the business needs and the bot can answer with it.`}
-          actions={
-            <div className="flex flex-wrap items-center justify-end gap-2">
-              {canRead && (
-              <Button
-                variant="ghost"
-                icon={<Settings2 className="h-4 w-4" />}
-                disabled={!canSchema}
-                title={canSchema ? 'Add a column' : 'Needs manage_operations'}
-                onClick={() => setColumnForm({ column: null })}
-              >
+        actions={
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {canRead && (
+              <GhostButton disabled={!canSchema} onClick={() => setColumnForm({ column: null })}>
+                <Settings2 className="h-4 w-4" />
                 Add column
-              </Button>
+              </GhostButton>
             )}
             {canAdd && (
-              <Button
-                variant="primary"
-                icon={<Plus className="h-4 w-4" />}
-                disabled={creating || editing !== null}
-                onClick={() => setCreating(true)}
-              >
+              <PrimaryButton disabled={creating || editing !== null} onClick={() => setCreating(true)}>
+                <Plus className="h-4 w-4" />
                 Add a {content.singular}
-              </Button>
+              </PrimaryButton>
             )}
           </div>
         }
       />
 
-      {action.error && (
-        <Alert tone="danger" title="Action failed" className="mb-4">
-          {action.error}
-        </Alert>
-      )}
+      {action.error && <ErrorBanner title="Action failed" message={action.error} className="mb-4" />}
 
       {columnForm && (
         <ColumnForm
@@ -291,50 +288,44 @@ export function RecordsPanel({ tenantId }: { tenantId: string }) {
         />
       )}
 
-      <Card className="mt-4">
-        <CardHeader
-          title={`${filtered.length} ${filtered.length === 1 ? content.singular : content.label.toLowerCase()}`}
-          icon={<Layers className="h-4 w-4" />}
-          actions={
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="relative w-48 max-w-full">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
-                <input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search…"
-                  className="w-full rounded-lg bg-surface-raised py-1.5 pl-8 pr-3 text-xs text-slate-100 placeholder:text-slate-500 ring-1 ring-inset ring-surface-line focus:outline-none focus:ring-2 focus:ring-accent-500"
-                />
-              </div>
-              {categories.length > 1 && (
-                <select
-                  value={category}
-                  onChange={(e) => setCategory(e.target.value)}
-                  className="max-w-full rounded-lg bg-surface-raised px-2 py-1.5 text-xs text-slate-200 ring-1 ring-inset ring-surface-line focus:outline-none focus:ring-2 focus:ring-accent-500"
-                >
-                  <option value="">All groups</option>
-                  {categories.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-              )}
-              <div className="w-40">
-                <Switch size="sm" checked={showInactive} onChange={setShowInactive} label="Show removed" />
-              </div>
-            </div>
-          }
-        />
-
+      <Panel
+        className="mt-4"
+        title={`${filtered.length} ${filtered.length === 1 ? content.singular : content.label.toLowerCase()}`}
+        action={
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="flex w-48 max-w-full items-center gap-2 rounded-lg border border-line bg-inputbg px-2.5 py-1.5">
+              <Search className="h-3.5 w-3.5 shrink-0 text-txfaint" />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search…"
+                aria-label="Search"
+                className="w-full bg-transparent text-xs text-tx outline-none placeholder:text-txfaint"
+              />
+            </label>
+            {categories.length > 1 && (
+              <select
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                aria-label="Group"
+                className="max-w-full rounded-lg border border-line bg-inputbg px-2 py-1.5 text-xs text-tx outline-none focus:border-acc"
+              >
+                <option value="">All groups</option>
+                {categories.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            )}
+            <Toggle size="sm" checked={showInactive} onChange={setShowInactive} label="Show removed" />
+          </div>
+        }
+      >
         {state.loading ? (
           <LoadingBlock label={`Loading ${content.label.toLowerCase()}…`} />
         ) : state.error ? (
-          <CardBody>
-            <Alert tone="danger" title="Could not load">
-              {state.error}
-            </Alert>
-          </CardBody>
+          <ErrorBanner title="Could not load" message={state.error} />
         ) : rows.length === 0 ? (
           <EmptyState
             title={`No ${content.label.toLowerCase()} yet`}
@@ -343,16 +334,12 @@ export function RecordsPanel({ tenantId }: { tenantId: string }) {
                 ? `Add the first ${content.singular} and the bot can start answering questions about it.`
                 : 'Nothing has been added for this tenant yet.'
             }
-            icon={<Layers className="h-6 w-6" />}
             action={
               canSchema ? (
-                <Button
-                  variant="secondary"
-                  icon={<Settings2 className="h-4 w-4" />}
-                  onClick={() => setColumnForm({ column: null })}
-                >
+                <GhostButton onClick={() => setColumnForm({ column: null })}>
+                  <Settings2 className="h-4 w-4" />
                   Shape the columns
-                </Button>
+                </GhostButton>
               ) : undefined
             }
           />
@@ -360,22 +347,22 @@ export function RecordsPanel({ tenantId }: { tenantId: string }) {
           <div className="overflow-x-auto">
             <table className="w-full min-w-max text-left text-sm">
               <thead>
-                <tr className="border-b border-surface-line">
+                <tr className="border-b border-line">
                   {columns.map((column) => (
                     <th key={column.key} className="whitespace-nowrap px-4 py-2.5 align-bottom">
                       <div className="flex items-center gap-1.5">
-                        <span className="text-2xs font-semibold uppercase tracking-wider text-slate-400">
+                        <span className="text-2xs font-semibold uppercase tracking-wider text-txmuted">
                           {column.label}
                         </span>
                         {column.is_system ? (
-                          <Lock className="h-3 w-3 text-slate-600" />
+                          <Lock className="h-3 w-3 text-txfaint" />
                         ) : canSchema ? (
                           <span className="flex items-center">
                             <button
                               type="button"
                               title="Edit column"
                               onClick={() => setColumnForm({ column })}
-                              className="rounded p-0.5 text-slate-500 transition hover:bg-accent-50 hover:text-slate-100"
+                              className="rounded p-0.5 text-txmuted transition hover:bg-paper hover:text-tx"
                             >
                               <Pencil className="h-3 w-3" />
                             </button>
@@ -383,7 +370,7 @@ export function RecordsPanel({ tenantId }: { tenantId: string }) {
                               type="button"
                               title="Delete column and its data"
                               onClick={() => dropColumn(column)}
-                              className="rounded p-0.5 text-slate-500 transition hover:bg-accent-50 hover:text-rose-700"
+                              className="rounded p-0.5 text-txmuted transition hover:bg-badbg hover:text-badink"
                             >
                               <Trash2 className="h-3 w-3" />
                             </button>
@@ -395,21 +382,21 @@ export function RecordsPanel({ tenantId }: { tenantId: string }) {
                   <th className="px-4 py-2.5" />
                 </tr>
               </thead>
-              <tbody className="divide-y divide-surface-line">
+              <tbody className="divide-y divide-linesoft">
                 {filtered.map((row) => (
                   <tr key={row.id} className="align-top">
                     {columns.map((column) => {
                       const imageUrl =
                         column.key === 'media_url' ? publicImageUrl(cellValue(row, column)) : null
                       return (
-                        <td key={column.key} className="px-4 py-3 text-slate-200">
+                        <td key={column.key} className="px-4 py-3 text-tx">
                           {column.key === 'name' ? (
                             <div className="flex flex-wrap items-center gap-2">
-                              <span className="font-medium text-slate-100">{row.name}</span>
-                              {!row.is_active && <Badge tone="neutral">removed</Badge>}
+                              <span className="font-medium">{row.name}</span>
+                              {!row.is_active && <Pill>removed</Pill>}
                             </div>
                           ) : column.key === 'short_label' && row.short_label ? (
-                            <Badge tone="accent">{row.short_label}</Badge>
+                            <Pill tone="ok">{row.short_label}</Pill>
                           ) : column.key === 'media_url' ? (
                             <div className="flex min-w-36 items-center gap-2">
                               {imageUrl ? (
@@ -418,21 +405,21 @@ export function RecordsPanel({ tenantId }: { tenantId: string }) {
                                   target="_blank"
                                   rel="noreferrer"
                                   title={imageUrl}
-                                  className="flex min-w-0 items-center gap-2 text-accent-700 hover:underline"
+                                  className="flex min-w-0 items-center gap-2 text-acc hover:underline"
                                 >
                                   <img
                                     src={imageUrl}
                                     alt=""
-                                    className="h-8 w-8 shrink-0 rounded object-cover ring-1 ring-inset ring-surface-line"
+                                    className="h-8 w-8 shrink-0 rounded border border-line object-cover"
                                   />
                                   <span className="max-w-40 truncate text-xs">{imageUrl}</span>
                                 </a>
                               ) : (
-                                <span className="text-slate-500">—</span>
+                                <span className="text-txfaint">—</span>
                               )}
                               {canEditRow && (
                                 <label
-                                  className={`inline-flex cursor-pointer items-center gap-1 whitespace-nowrap rounded px-2 py-1 text-xs text-accent-700 hover:bg-accent-50 ${
+                                  className={`inline-flex cursor-pointer items-center gap-1 whitespace-nowrap rounded px-2 py-1 text-xs text-acc hover:bg-accsoft ${
                                     uploadingImageFor === row.id ? 'pointer-events-none opacity-60' : ''
                                   }`}
                                   title={imageUrl ? 'Replace image' : 'Add image'}
@@ -469,53 +456,49 @@ export function RecordsPanel({ tenantId }: { tenantId: string }) {
                       {(canEditRow || canRemove) && (
                         <div className="flex shrink-0 items-center justify-end gap-2">
                           {canEditRow && (
-                            <Button
-                              size="sm"
-                              variant="secondary"
-                              icon={<Pencil className="h-3.5 w-3.5" />}
-                              onClick={() => setEditing(row)}
-                            >
-                              Edit
-                            </Button>
+                            <GhostButton className="px-2.5 py-1.5 text-xs" onClick={() => setEditing(row)}>
+                              <Pencil className="h-3.5 w-3.5" /> Edit
+                            </GhostButton>
                           )}
                           {canRemove && row.is_active &&
                             (confirmDelete === row.id ? (
                               <>
-                                <Button
-                                  size="sm"
-                                  variant="danger"
-                                  loading={action.busy}
+                                <DangerButton
+                                  className="px-2.5 py-1.5 text-xs"
+                                  disabled={action.busy}
                                   onClick={() => removeRow(row.id, true)}
                                 >
+                                  {action.busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                                   Delete forever
-                                </Button>
-                                <Button size="sm" variant="ghost" onClick={() => setConfirmDelete(null)}>
+                                </DangerButton>
+                                <GhostButton
+                                  className="px-2.5 py-1.5 text-xs"
+                                  onClick={() => setConfirmDelete(null)}
+                                >
                                   Cancel
-                                </Button>
+                                </GhostButton>
                               </>
                             ) : (
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                icon={<Trash2 className="h-3.5 w-3.5" />}
+                              <GhostButton
+                                className="border-transparent bg-transparent px-2.5 py-1.5 text-xs text-badink hover:bg-badbg hover:text-badink"
                                 onClick={() => setConfirmDelete(row.id)}
                               >
-                                Remove
-                              </Button>
+                                <Trash2 className="h-3.5 w-3.5" /> Remove
+                              </GhostButton>
                             ))}
                           {canEditRow && !row.is_active && (
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              loading={action.busy}
+                            <GhostButton
+                              className="px-2.5 py-1.5 text-xs"
+                              disabled={action.busy}
                               onClick={() =>
                                 action
                                   .run(() => offeringsApi.update(tenantId, row.id, { is_active: true }))
                                   .then((r) => r && reload())
                               }
                             >
+                              {action.busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                               Restore
-                            </Button>
+                            </GhostButton>
                           )}
                         </div>
                       )}
@@ -526,10 +509,10 @@ export function RecordsPanel({ tenantId }: { tenantId: string }) {
             </table>
           </div>
         )}
-      </Card>
+      </Panel>
 
       {canSchema && (
-        <p className="mt-3 flex items-center gap-1.5 text-xs text-slate-500">
+        <p className="mt-3 flex items-center gap-1.5 text-xs text-txmuted">
           <AlertTriangle className="h-3.5 w-3.5" />
           Deleting a column drops its data. Core columns (name, price, …) are always kept.
         </p>
@@ -568,26 +551,28 @@ function ColumnForm({
   const typeHint = COLUMN_TYPE_OPTIONS.find((t) => t.value === type)?.hint
 
   return (
-    <Card className="mt-4">
-      <CardHeader
-        title={initial ? `Edit the ‘${initial.label}’ column` : 'Add a column'}
-        description="A column is a field on every record — a SKU, a destination, a duration."
-        actions={
-          <Button size="sm" variant="ghost" icon={<X className="h-3.5 w-3.5" />} onClick={onCancel}>
-            Close
-          </Button>
-        }
-      />
-      <CardBody className="space-y-4">
+    <Panel
+      className="mt-4"
+      title={initial ? `Edit the ‘${initial.label}’ column` : 'Add a column'}
+      action={
+        <GhostButton className="px-2.5 py-1.5 text-xs" onClick={onCancel}>
+          <X className="h-3.5 w-3.5" /> Close
+        </GhostButton>
+      }
+    >
+      <p className="-mt-1 mb-4 text-sm text-txmuted">
+        A column is a field on every record — a SKU, a destination, a duration.
+      </p>
+      <div className="space-y-4">
         <div className="grid gap-4 sm:grid-cols-2">
-          <Input
+          <FieldInput
             label="Column name"
             value={label}
             onChange={(e) => setLabel(e.target.value)}
             placeholder="Destination"
             hint="The header the admin and the bot see."
           />
-          <Input
+          <FieldInput
             label="Key"
             value={key}
             disabled={Boolean(initial)}
@@ -597,24 +582,21 @@ function ColumnForm({
           />
         </div>
 
-        <div>
-          <label className="field-label">Type</label>
-          <select
-            value={type}
-            onChange={(e) => setType(e.target.value as RecordColumnType)}
-            className="w-full rounded-lg bg-surface-raised px-3 py-2 text-sm text-slate-100 ring-1 ring-inset ring-surface-line focus:outline-none focus:ring-2 focus:ring-accent-500"
-          >
-            {COLUMN_TYPE_OPTIONS.map((t) => (
-              <option key={t.value} value={t.value}>
-                {t.label}
-              </option>
-            ))}
-          </select>
-          {typeHint && <p className="hint">{typeHint}</p>}
-        </div>
+        <FieldSelect
+          label="Type"
+          value={type}
+          onChange={(e) => setType(e.target.value as RecordColumnType)}
+          hint={typeHint}
+        >
+          {COLUMN_TYPE_OPTIONS.map((t) => (
+            <option key={t.value} value={t.value}>
+              {t.label}
+            </option>
+          ))}
+        </FieldSelect>
 
         {type === 'select' && (
-          <Input
+          <FieldInput
             label="Choices"
             value={options}
             onChange={(e) => setOptions(e.target.value)}
@@ -623,14 +605,13 @@ function ColumnForm({
           />
         )}
 
-        <Input label="Help text" value={help} onChange={(e) => setHelp(e.target.value)} placeholder="Optional note shown under the field." />
+        <FieldInput label="Help text" value={help} onChange={(e) => setHelp(e.target.value)} placeholder="Optional note shown under the field." />
 
-        <Checkbox checked={required} onChange={setRequired} label="Required" description="A record cannot be saved without it." />
+        <Check checked={required} onChange={setRequired} label="Required" description="A record cannot be saved without it." />
 
         <div className="flex items-center gap-2">
-          <Button
-            variant="primary"
-            loading={busy}
+          <PrimaryButton
+            disabled={busy}
             onClick={() =>
               onSubmit({
                 key: (initial?.key ?? key).trim().toLowerCase(),
@@ -645,14 +626,15 @@ function ColumnForm({
               })
             }
           >
+            {busy && <Loader2 className="h-4 w-4 animate-spin" />}
             {initial ? 'Save column' : 'Add column'}
-          </Button>
-          <Button variant="ghost" onClick={onCancel}>
+          </PrimaryButton>
+          <GhostButton onClick={onCancel}>
             Cancel
-          </Button>
+          </GhostButton>
         </div>
-      </CardBody>
-    </Card>
+      </div>
+    </Panel>
   )
 }
 
@@ -756,24 +738,26 @@ function RecordForm({
   }
 
   return (
-    <Card className="mt-4">
-      <CardHeader
-        title={initial ? `Edit ${initial.name}` : `Add a ${content.singular}`}
-        description="The fields are this tenant's columns — the same ones shown in the table."
-        actions={
-          <Button size="sm" variant="ghost" icon={<X className="h-3.5 w-3.5" />} onClick={onCancel}>
-            Close
-          </Button>
-        }
-      />
-      <CardBody className="space-y-4">
+    <Panel
+      className="mt-4"
+      title={initial ? `Edit ${initial.name}` : `Add a ${content.singular}`}
+      action={
+        <GhostButton className="px-2.5 py-1.5 text-xs" onClick={onCancel}>
+          <X className="h-3.5 w-3.5" /> Close
+        </GhostButton>
+      }
+    >
+      <p className="-mt-1 mb-4 text-sm text-txmuted">
+        The fields are this tenant's columns — the same ones shown in the table.
+      </p>
+      <div className="space-y-4">
         <div className="grid gap-4 sm:grid-cols-2">
           {columns.map((column) => {
             const value = cells[column.key]
             if (column.type === 'long_text') {
               return (
                 <div key={column.key} className="sm:col-span-2">
-                  <Textarea
+                  <FieldTextarea
                     label={column.label}
                     rows={3}
                     value={String(value ?? '')}
@@ -787,7 +771,7 @@ function RecordForm({
             if (column.type === 'boolean') {
               return (
                 <div key={column.key} className="flex items-center pt-6">
-                  <Checkbox
+                  <Check
                     checked={Boolean(value)}
                     onChange={(next) => set(column.key, next)}
                     label={column.label}
@@ -798,50 +782,46 @@ function RecordForm({
             }
             if (column.type === 'select') {
               return (
-                <div key={column.key}>
-                  <label className="field-label">{column.label}</label>
-                  <select
-                    value={String(value ?? '')}
-                    onChange={(e) => set(column.key, e.target.value)}
-                    className="w-full rounded-lg bg-surface-raised px-3 py-2 text-sm text-slate-100 ring-1 ring-inset ring-surface-line focus:outline-none focus:ring-2 focus:ring-accent-500"
-                  >
-                    <option value="">—</option>
-                    {column.options.map((option) => (
-                      <option key={option} value={option}>
-                        {option}
-                      </option>
-                    ))}
-                  </select>
-                  {column.help && <p className="hint">{column.help}</p>}
-                </div>
+                <FieldSelect
+                  key={column.key}
+                  label={column.label}
+                  value={String(value ?? '')}
+                  onChange={(e) => set(column.key, e.target.value)}
+                  hint={column.help || undefined}
+                >
+                  <option value="">—</option>
+                  {column.options.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </FieldSelect>
               )
             }
             if (column.key === 'media_url') {
               const url = String(value ?? '')
               return (
                 <div key={column.key}>
-                  <label className="field-label">{column.label}</label>
+                  <span className="mb-1.5 block text-sm font-medium text-tx">{column.label}</span>
                   {url ? (
-                    <div className="flex items-center gap-2.5 rounded-lg bg-surface-raised p-2 ring-1 ring-inset ring-surface-line">
+                    <div className="flex items-center gap-2.5 rounded-lg border border-line bg-inputbg p-2">
                       <img
                         src={url}
                         alt=""
-                        className="h-10 w-10 shrink-0 rounded object-cover ring-1 ring-inset ring-surface-line"
+                        className="h-10 w-10 shrink-0 rounded border border-line object-cover"
                       />
-                      <span className="min-w-0 flex-1 truncate text-xs text-slate-500">{url}</span>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        icon={<Trash2 className="h-3.5 w-3.5" />}
+                      <span className="min-w-0 flex-1 truncate text-xs text-txmuted">{url}</span>
+                      <GhostButton
+                        className="px-2.5 py-1.5 text-xs"
                         onClick={() => set('media_url', '')}
                       >
-                        Remove
-                      </Button>
+                        <Trash2 className="h-3.5 w-3.5" /> Remove
+                      </GhostButton>
                     </div>
                   ) : (
                     <label
                       className={cn(
-                        'flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg bg-surface-raised py-2 text-sm text-slate-300 ring-1 ring-inset ring-surface-line transition hover:bg-accent-50 hover:text-slate-100',
+                        'flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg border border-line bg-inputbg py-2 text-sm text-txmuted transition hover:border-acc hover:text-acc',
                         imageBusy && 'pointer-events-none opacity-60',
                       )}
                     >
@@ -856,13 +836,15 @@ function RecordForm({
                       {imageBusy ? 'Uploading…' : 'Upload image'}
                     </label>
                   )}
-                  {imageError && <p className="hint text-rose-700">{imageError}</p>}
-                  {column.help && !imageError && <p className="hint">{column.help}</p>}
+                  {imageError && <p className="mt-1 text-xs text-badink">{imageError}</p>}
+                  {column.help && !imageError && (
+                    <p className="mt-1 text-xs text-txmuted">{column.help}</p>
+                  )}
                 </div>
               )
             }
             return (
-              <Input
+              <FieldInput
                 key={column.key}
                 label={column.label}
                 type={column.type === 'date' ? 'date' : column.type === 'number' || column.type === 'integer' ? 'number' : 'text'}
@@ -877,14 +859,15 @@ function RecordForm({
         </div>
 
         <div className="flex items-center gap-2">
-          <Button variant="primary" loading={busy} onClick={submit}>
+          <PrimaryButton disabled={busy} onClick={submit}>
+            {busy && <Loader2 className="h-4 w-4 animate-spin" />}
             {initial ? 'Save changes' : `Add ${content.singular}`}
-          </Button>
-          <Button variant="ghost" onClick={onCancel}>
+          </PrimaryButton>
+          <GhostButton onClick={onCancel}>
             Cancel
-          </Button>
+          </GhostButton>
         </div>
-      </CardBody>
-    </Card>
+      </div>
+    </Panel>
   )
 }

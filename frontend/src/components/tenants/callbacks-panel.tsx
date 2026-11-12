@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { CalendarCheck, CheckCircle2, PhoneCall, Plus, Video, XCircle } from 'lucide-react'
+import { CalendarCheck, CheckCircle2, Loader2, PhoneCall, Plus, Video, XCircle } from 'lucide-react'
 import { useAction, useAsync } from '@/lib/hooks'
 import {
   CALLBACK_PRIORITIES,
@@ -11,35 +11,42 @@ import {
 } from '@/lib/callbacks'
 import { formatDate, relativeTime } from '@/lib/format'
 import { cn } from '@/lib/cn'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Card, CardBody, CardHeader } from '@/components/ui/card'
-import { Input, Textarea } from '@/components/ui/input'
-import { Alert, EmptyState, LoadingBlock } from '@/components/ui/feedback'
+import {
+  DangerButton,
+  EmptyState,
+  ErrorBanner,
+  FieldInput,
+  FieldSelect,
+  FieldTextarea,
+  GhostButton,
+  NeedRow,
+  Panel,
+  Pill,
+  PrimaryButton,
+  type PillTone,
+} from '@/components/remake/ui'
+import { LoadingBlock } from '@/components/ui/feedback'
 import { PageHeader } from '@/components/layout/page-header'
 import { useToast } from '@/components/ui/toast'
 import { useConfirm } from '@/components/ui/confirm'
 
 const FILTERS = ['all', ...CALLBACK_STATUSES]
 
-const SELECT =
-  'rounded-lg bg-surface-raised px-2.5 py-1.5 text-xs text-slate-200 ring-1 ring-inset ring-surface-line focus:outline-none focus:ring-2 focus:ring-accent-500'
-
-const STATUS_TONE: Record<string, 'neutral' | 'accent' | 'success' | 'warning' | 'danger' | 'muted'> = {
-  pending: 'warning',
-  confirmed: 'accent',
-  scheduled: 'accent',
+const STATUS_TONE: Record<string, PillTone> = {
+  pending: 'warn',
+  confirmed: 'ok',
+  scheduled: 'ok',
   in_progress: 'neutral',
-  completed: 'success',
-  cancelled: 'muted',
-  no_show: 'danger',
+  completed: 'ok',
+  cancelled: 'neutral',
+  no_show: 'bad',
 }
 
-const PRIORITY_TONE: Record<string, 'neutral' | 'accent' | 'success' | 'warning' | 'danger' | 'muted'> = {
-  low: 'muted',
+const PRIORITY_TONE: Record<string, PillTone> = {
+  low: 'neutral',
   medium: 'neutral',
-  high: 'warning',
-  urgent: 'danger',
+  high: 'warn',
+  urgent: 'bad',
 }
 
 const EMPTY_FORM: CallbackInput = {
@@ -189,17 +196,27 @@ export function CallbacksPanel({ tenantId }: { tenantId: string }) {
         meta={
           state.data && (
             <>
-              <Badge tone={openCount ? 'warning' : 'success'}>{openCount} open</Badge>
-              <Badge tone="muted">{state.data.total_count} total</Badge>
+              <Pill tone={openCount ? 'warn' : 'ok'}>{openCount} open</Pill>
+              <Pill>{state.data.total_count} total</Pill>
             </>
           )
         }
         actions={
-          <Button size="sm" variant="primary" icon={<Plus className="h-4 w-4" />} onClick={() => setShowForm((v) => !v)}>
+          <PrimaryButton onClick={() => setShowForm((v) => !v)}>
+            <Plus className="h-4 w-4" />
             New callback
-          </Button>
+          </PrimaryButton>
         }
       />
+
+      {openCount > 0 && (
+        <Panel title="Needs you" className="mb-4">
+          <NeedRow icon={<PhoneCall className="h-4 w-4" />}>
+            <strong>{openCount}</strong> {openCount === 1 ? 'callback is' : 'callbacks are'} still open in the list
+            below — schedule, complete or cancel each one.
+          </NeedRow>
+        </Panel>
+      )}
 
       <div className="mb-4 flex flex-wrap items-center gap-1.5">
         {FILTERS.map((filter) => (
@@ -213,8 +230,8 @@ export function CallbacksPanel({ tenantId }: { tenantId: string }) {
             className={cn(
               'rounded-lg px-3 py-1.5 text-xs font-medium capitalize transition',
               status === filter
-                ? 'bg-accent-100 text-accent-800'
-                : 'text-slate-400 hover:bg-surface-panel hover:text-slate-200',
+                ? 'bg-acc text-onacc'
+                : 'text-txmuted hover:bg-paper hover:text-tx',
             )}
           >
             {filter.replace(/_/g, ' ')}
@@ -223,65 +240,68 @@ export function CallbacksPanel({ tenantId }: { tenantId: string }) {
       </div>
 
       {showForm && (
-        <Card className="mb-4">
-          <CardHeader title="New callback request" icon={<PhoneCall className="h-4 w-4" />} />
-          <CardBody className="grid gap-3 sm:grid-cols-2">
-            <Input
+        <section className="mb-4 rounded-panel border border-line bg-card">
+          <div className="flex items-center gap-2 border-b border-linesoft px-4 py-3 sm:px-5">
+            <span className="text-txmuted">
+              <PhoneCall className="h-4 w-4" />
+            </span>
+            <h2 className="text-sm font-semibold text-tx">New callback request</h2>
+          </div>
+          <div className="grid gap-3 p-4 sm:grid-cols-2 sm:p-5">
+            <FieldInput
               label="Customer name"
               value={form.customer_name}
               onChange={(e) => update({ customer_name: e.target.value })}
               placeholder="Jane Doe"
             />
-            <Input
+            <FieldInput
               label="WhatsApp number"
               value={form.wa_id}
               onChange={(e) => update({ wa_id: e.target.value })}
               placeholder="919876543210"
             />
-            <Input
+            <FieldInput
               label="Phone (optional)"
               value={form.customer_phone}
               onChange={(e) => update({ customer_phone: e.target.value })}
               placeholder="+91 98765 43210"
             />
-            <label className="flex flex-col gap-1 text-xs text-slate-400">
-              Type
-              <select
-                value={form.callback_type}
-                onChange={(e) => update({ callback_type: e.target.value })}
-                className={SELECT}
-              >
-                {CALLBACK_TYPES.map((t) => (
-                  <option key={t} value={t}>
-                    {t.replace(/_/g, ' ')}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="flex flex-col gap-1 text-xs text-slate-400">
-              Priority
-              <select value={form.priority} onChange={(e) => update({ priority: e.target.value })} className={SELECT}>
-                {CALLBACK_PRIORITIES.map((p) => (
-                  <option key={p} value={p}>
-                    {p}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <Input
+            <FieldSelect
+              label="Type"
+              value={form.callback_type}
+              onChange={(e) => update({ callback_type: e.target.value })}
+            >
+              {CALLBACK_TYPES.map((t) => (
+                <option key={t} value={t}>
+                  {t.replace(/_/g, ' ')}
+                </option>
+              ))}
+            </FieldSelect>
+            <FieldSelect
+              label="Priority"
+              value={form.priority}
+              onChange={(e) => update({ priority: e.target.value })}
+            >
+              {CALLBACK_PRIORITIES.map((p) => (
+                <option key={p} value={p}>
+                  {p}
+                </option>
+              ))}
+            </FieldSelect>
+            <FieldInput
               label="Preferred date"
               type="date"
               value={form.preferred_date ?? ''}
               onChange={(e) => update({ preferred_date: e.target.value })}
             />
-            <Input
+            <FieldInput
               label="Preferred time"
               value={form.preferred_time ?? ''}
               onChange={(e) => update({ preferred_time: e.target.value })}
               placeholder="10:00 or 10:00-11:00"
             />
             <div className="sm:col-span-2">
-              <Input
+              <FieldInput
                 label="Purpose"
                 value={form.purpose}
                 onChange={(e) => update({ purpose: e.target.value })}
@@ -289,7 +309,7 @@ export function CallbacksPanel({ tenantId }: { tenantId: string }) {
               />
             </div>
             <div className="sm:col-span-2">
-              <Textarea
+              <FieldTextarea
                 label="Additional info"
                 value={form.additional_info}
                 onChange={(e) => update({ additional_info: e.target.value })}
@@ -298,44 +318,42 @@ export function CallbacksPanel({ tenantId }: { tenantId: string }) {
             </div>
             {(createAction.error || action.error) && (
               <div className="sm:col-span-2">
-                <Alert tone="danger" title="Action failed">
-                  {createAction.error || action.error}
-                </Alert>
+                <ErrorBanner title="Action failed" message={createAction.error || action.error || ''} />
               </div>
             )}
             <div className="flex items-center gap-2 sm:col-span-2">
-              <Button variant="primary" size="sm" loading={createAction.busy} onClick={create}>
+              <PrimaryButton onClick={create} disabled={createAction.busy}>
+                {createAction.busy && <Loader2 className="h-4 w-4 animate-spin" />}
                 Create
-              </Button>
-              <Button variant="ghost" size="sm" onClick={() => setShowForm(false)}>
-                Discard
-              </Button>
+              </PrimaryButton>
+              <GhostButton onClick={() => setShowForm(false)}>Discard</GhostButton>
             </div>
-          </CardBody>
-        </Card>
+          </div>
+        </section>
       )}
 
       {action.error && !showForm && (
-        <Alert tone="danger" title="Action failed" className="mb-4">
-          {action.error}
-        </Alert>
+        <ErrorBanner title="Action failed" message={action.error} className="mb-4" />
       )}
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)]">
-        <Card className="overflow-hidden">
-          <CardHeader title="Requests" icon={<PhoneCall className="h-4 w-4" />} />
+        <section className="overflow-hidden rounded-panel border border-line bg-card">
+          <div className="flex items-center gap-2 border-b border-linesoft px-4 py-3">
+            <span className="text-txmuted">
+              <PhoneCall className="h-4 w-4" />
+            </span>
+            <h2 className="text-sm font-semibold text-tx">Requests</h2>
+          </div>
           {state.loading && !callbacks.length ? (
             <LoadingBlock label="Loading callbacks…" />
           ) : state.error ? (
-            <CardBody>
-              <Alert tone="danger" title="Could not load">
-                {state.error}
-              </Alert>
-            </CardBody>
+            <div className="p-4">
+              <ErrorBanner title="Could not load" message={state.error} />
+            </div>
           ) : callbacks.length === 0 ? (
             <EmptyState title="No callbacks" description="Nothing matches this filter." />
           ) : (
-            <ul className="max-h-[70vh] divide-y divide-surface-line overflow-y-auto scroll-thin">
+            <ul className="max-h-[70vh] divide-y divide-linesoft overflow-y-auto">
               {callbacks.map((item) => (
                 <li key={item.id}>
                   <button
@@ -343,24 +361,26 @@ export function CallbacksPanel({ tenantId }: { tenantId: string }) {
                     onClick={() => setSelected(item.id)}
                     className={cn(
                       'w-full px-4 py-3 text-left transition',
-                      item.id === selected ? 'bg-accent-50' : 'hover:bg-surface-panel',
+                      item.id === selected ? 'bg-accsoft' : 'hover:bg-paper',
                     )}
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-100">
+                      <span className="min-w-0 flex-1 truncate text-sm font-medium text-tx">
                         {item.customer_name || item.wa_id}
                       </span>
-                      <span className="shrink-0 text-2xs text-slate-500">{relativeTime(item.created_at)}</span>
+                      <span className="shrink-0 text-[11px] text-txfaint">{relativeTime(item.created_at)}</span>
                     </div>
-                    <p className="mt-0.5 truncate text-2xs text-slate-500">{item.wa_id}</p>
+                    <p className="mt-0.5 truncate text-[11px] text-txmuted">{item.wa_id}</p>
                     <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                      <Badge tone={STATUS_TONE[item.status] ?? 'neutral'}>{item.status.replace(/_/g, ' ')}</Badge>
-                      <Badge tone={PRIORITY_TONE[item.priority] ?? 'neutral'}>{item.priority}</Badge>
+                      <Pill tone={STATUS_TONE[item.status] ?? 'neutral'}>{item.status.replace(/_/g, ' ')}</Pill>
+                      <Pill tone={PRIORITY_TONE[item.priority] ?? 'neutral'}>{item.priority}</Pill>
                       {item.meet_link && (
-                        <Badge tone="accent">
-                          <Video className="mr-1 h-3 w-3" />
-                          meet
-                        </Badge>
+                        <Pill tone="ok">
+                          <span className="inline-flex items-center gap-1">
+                            <Video className="h-3 w-3" />
+                            meet
+                          </span>
+                        </Pill>
                       )}
                     </div>
                   </button>
@@ -368,52 +388,58 @@ export function CallbacksPanel({ tenantId }: { tenantId: string }) {
               ))}
             </ul>
           )}
-        </Card>
+        </section>
 
-        <Card className="flex min-h-[24rem] flex-col">
+        <section className="flex min-h-[24rem] flex-col rounded-panel border border-line bg-card">
           {!active ? (
             <EmptyState
+              className="flex-1"
               title="Pick a request"
               description="Select a callback to read it and act on it."
-              icon={<PhoneCall className="h-6 w-6" />}
             />
           ) : (
             <>
-              <CardHeader
-                title={active.customer_name || active.wa_id}
-                description={`${active.wa_id} · raised ${formatDate(active.created_at)}`}
-                icon={<PhoneCall className="h-4 w-4" />}
-              />
-              <CardBody className="flex-1 space-y-4 overflow-y-auto scroll-thin">
+              <div className="flex items-center gap-2 border-b border-linesoft px-4 py-3 sm:px-5">
+                <span className="text-txmuted">
+                  <PhoneCall className="h-4 w-4" />
+                </span>
+                <div className="min-w-0">
+                  <h2 className="truncate text-sm font-semibold text-tx">{active.customer_name || active.wa_id}</h2>
+                  <p className="text-xs text-txmuted">
+                    {active.wa_id} · raised {formatDate(active.created_at)}
+                  </p>
+                </div>
+              </div>
+              <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4 sm:px-5">
                 <div className="flex flex-wrap items-center gap-2">
-                  <Badge tone={STATUS_TONE[active.status] ?? 'neutral'}>{active.status.replace(/_/g, ' ')}</Badge>
-                  <Badge tone={PRIORITY_TONE[active.priority] ?? 'neutral'}>{active.priority} priority</Badge>
-                  <Badge tone="neutral">{active.callback_type.replace(/_/g, ' ')}</Badge>
-                  {active.assigned_agent_name && <Badge tone="accent">{active.assigned_agent_name}</Badge>}
+                  <Pill tone={STATUS_TONE[active.status] ?? 'neutral'}>{active.status.replace(/_/g, ' ')}</Pill>
+                  <Pill tone={PRIORITY_TONE[active.priority] ?? 'neutral'}>{active.priority} priority</Pill>
+                  <Pill>{active.callback_type.replace(/_/g, ' ')}</Pill>
+                  {active.assigned_agent_name && <Pill tone="ok">{active.assigned_agent_name}</Pill>}
                 </div>
 
-                <div className="rounded-xl bg-surface-panel p-3.5 text-sm leading-relaxed text-slate-200 ring-1 ring-inset ring-surface-line">
+                <div className="rounded-panel bg-paper p-3.5 text-sm leading-relaxed text-tx">
                   {active.purpose || active.additional_info || 'No purpose recorded.'}
                 </div>
 
-                <div className="grid gap-2 text-xs text-slate-400 sm:grid-cols-2">
+                <div className="grid gap-2 text-xs text-txmuted sm:grid-cols-2">
                   <p>
                     Preferred:{' '}
-                    <span className="text-slate-200">
+                    <span className="text-tx">
                       {[active.preferred_date, active.preferred_time].filter(Boolean).join(' ') || 'any time'}
                     </span>
                   </p>
                   <p>
-                    Phone: <span className="text-slate-200">{active.customer_phone || '—'}</span>
+                    Phone: <span className="text-tx">{active.customer_phone || '—'}</span>
                   </p>
                   <p>
                     Scheduled:{' '}
-                    <span className="text-slate-200">
+                    <span className="text-tx">
                       {active.scheduled_start_time ? formatDate(active.scheduled_start_time) : 'not yet'}
                     </span>
                   </p>
                   <p>
-                    Updated: <span className="text-slate-200">{relativeTime(active.updated_at)}</span>
+                    Updated: <span className="text-tx">{relativeTime(active.updated_at)}</span>
                   </p>
                 </div>
 
@@ -422,7 +448,7 @@ export function CallbacksPanel({ tenantId }: { tenantId: string }) {
                     href={active.meet_link}
                     target="_blank"
                     rel="noreferrer"
-                    className="inline-flex items-center gap-2 text-sm font-medium text-accent-300 hover:underline"
+                    className="inline-flex items-center gap-2 text-sm font-medium text-acc hover:underline"
                   >
                     <Video className="h-4 w-4" />
                     Open Google Meet
@@ -430,30 +456,30 @@ export function CallbacksPanel({ tenantId }: { tenantId: string }) {
                 )}
 
                 {OPEN.has(active.status) && (
-                  <div className="space-y-3 rounded-xl bg-surface-panel p-3.5 ring-1 ring-inset ring-surface-line">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                  <div className="space-y-3 rounded-panel bg-paper p-3.5">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-txmuted">
                       Schedule with Google Meet
                     </p>
                     <div className="grid gap-3 sm:grid-cols-2">
-                      <Input
+                      <FieldInput
                         label="Agent name"
                         value={schedule.agent_name}
                         onChange={(e) => setSchedule((s) => ({ ...s, agent_name: e.target.value }))}
                         placeholder="Agent handling the call (defaults to Support Agent)"
                       />
-                      <Input
+                      <FieldInput
                         label="Agent ID (optional)"
                         value={schedule.agent_id}
                         onChange={(e) => setSchedule((s) => ({ ...s, agent_id: e.target.value }))}
                         placeholder="Defaults to the name"
                       />
-                      <Input
+                      <FieldInput
                         label="Start"
                         type="datetime-local"
                         value={schedule.start}
                         onChange={(e) => setSchedule((s) => ({ ...s, start: e.target.value }))}
                       />
-                      <Input
+                      <FieldInput
                         label="End"
                         type="datetime-local"
                         value={schedule.end}
@@ -461,52 +487,45 @@ export function CallbacksPanel({ tenantId }: { tenantId: string }) {
                       />
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
-                      <Button
-                        variant="primary"
-                        size="sm"
-                        icon={<CalendarCheck className="h-4 w-4" />}
-                        loading={action.busy}
-                        onClick={book}
-                      >
+                      <PrimaryButton onClick={book} disabled={action.busy}>
+                        {action.busy ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <CalendarCheck className="h-4 w-4" />
+                        )}
                         Schedule
-                      </Button>
-                      <Button
-                        variant="danger"
-                        size="sm"
-                        icon={<XCircle className="h-4 w-4" />}
-                        loading={action.busy}
-                        onClick={cancel}
-                      >
+                      </PrimaryButton>
+                      <DangerButton onClick={cancel} disabled={action.busy}>
+                        <XCircle className="h-4 w-4" />
                         Cancel request
-                      </Button>
+                      </DangerButton>
                     </div>
                   </div>
                 )}
 
                 {OPEN.has(active.status) && (
-                  <div className="space-y-3 rounded-xl bg-surface-panel p-3.5 ring-1 ring-inset ring-surface-line">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Complete the call</p>
-                    <Textarea
+                  <div className="space-y-3 rounded-panel bg-paper p-3.5">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-txmuted">Complete the call</p>
+                    <FieldTextarea
                       label="Meeting notes"
                       value={notes}
                       onChange={(e) => setNotes(e.target.value)}
                       placeholder="Outcome of the call…"
                     />
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      icon={<CheckCircle2 className="h-4 w-4" />}
-                      loading={action.busy}
-                      onClick={complete}
-                    >
+                    <PrimaryButton onClick={complete} disabled={action.busy}>
+                      {action.busy ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <CheckCircle2 className="h-4 w-4" />
+                      )}
                       Mark completed
-                    </Button>
+                    </PrimaryButton>
                   </div>
                 )}
-              </CardBody>
+              </div>
             </>
           )}
-        </Card>
+        </section>
       </div>
     </div>
   )
