@@ -24,6 +24,7 @@ from fastapi.testclient import TestClient
 import database
 from routes import auth as auth_routes
 from routes import distributors as distributors_routes
+from routes import tenants as tenants_routes
 
 PASSWORD = "RootPass123!"
 
@@ -53,6 +54,7 @@ class DistributorValidationTests(unittest.TestCase):
         if auth_routes.RATE_LIMIT_ENABLED:
             self.app.state.limiter = auth_routes.limiter
         self.app.include_router(auth_routes.router)
+        self.app.include_router(tenants_routes.router)
         self.app.include_router(distributors_routes.router)
         self.client = TestClient(self.app)
 
@@ -64,7 +66,36 @@ class DistributorValidationTests(unittest.TestCase):
             "/api/auth/login", json={"username": "root", "password": PASSWORD}
         )
         assert res.status_code == 200, res.text
-        self.headers = {"Authorization": f"Bearer {res.json()['token']}"}
+        super_headers = {"Authorization": f"Bearer {res.json()['token']}"}
+        created = self.client.post(
+            "/api/admin/tenants",
+            json={
+                "tenant_id": "acme",
+                "vertical": "ecommerce",
+                "display_name": "Acme",
+                "mobile_number": "919800000001",
+                "auto_scrape": False,
+            },
+            headers=super_headers,
+        )
+        assert created.status_code in (200, 201), created.text
+        made = self.client.post(
+            "/api/auth/create",
+            json={
+                "username": "acme-admin",
+                "password": PASSWORD,
+                "role": "admin",
+                "tenant_id": "acme",
+                "email": "admin@acme.example",
+            },
+            headers=super_headers,
+        )
+        assert made.status_code == 200, made.text
+        login = self.client.post(
+            "/api/auth/login", json={"username": "acme-admin", "password": PASSWORD}
+        )
+        assert login.status_code == 200, login.text
+        self.headers = {"Authorization": f"Bearer {login.json()['token']}"}
 
     def tearDown(self):
         self.db_patch.stop()

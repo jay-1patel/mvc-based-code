@@ -28,6 +28,10 @@ def sanitize_address(text: str) -> str:
 def validate_name(raw: str) -> dict:
     if not raw or not raw.strip():
         return {"valid": False, "error": "Please enter a name."}
+    # Names are plain text. Angle brackets are markup, not part of a name,
+    # and escaping them first would leave a still-valid "script" string.
+    if re.search(r"[<>]", raw):
+        return {"valid": False, "error": "Please enter a valid name."}
     cleaned = sanitize_name(raw)
     if len(cleaned) < 2:
         return {"valid": False, "error": "Name must be at least 2 characters."}

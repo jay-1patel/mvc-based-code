@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { KeyRound, Loader2, LogIn, ShieldCheck, UserPlus } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { ApiError } from '@/lib/api'
+import { PASSWORD_HINT, passwordError } from '@/lib/password'
 import { FieldInput, Notice, PrimaryButton } from '@/components/remake/ui'
 
 export function LoginView() {
@@ -14,6 +15,13 @@ export function LoginView() {
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault()
+    if (needsSetup) {
+      const problem = passwordError(password)
+      if (problem) {
+        setError(problem)
+        return
+      }
+    }
     setBusy(true)
     setError(null)
     try {
@@ -56,7 +64,7 @@ export function LoginView() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             autoComplete={needsSetup ? 'new-password' : 'current-password'}
-            hint={needsSetup ? 'At least 12 characters, not a common password.' : undefined}
+            hint={needsSetup ? PASSWORD_HINT : undefined}
             required
           />
           {needsSetup && (

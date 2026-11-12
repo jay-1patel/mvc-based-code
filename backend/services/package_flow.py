@@ -393,11 +393,13 @@ def package_card(pkg: dict) -> str:
 
 # ── pending package (which card the user is looking at) ───────────────────
 
-def remember_package(wa_id: str, pkg: dict) -> None:
+def remember_package(wa_id: str, pkg: dict, tenant_id: str | None = None) -> None:
     """Remember the package the user is currently looking at.
 
     The tap on "Book This Package" carries no id, so this is what identifies
-    the package the user wants to book.
+    the package the user wants to book. The conversation row is stamped with
+    the tenant that owns the package; without that, the write is skipped and
+    the booking flow asks for the package again.
     """
     if not pkg:
         return
@@ -408,7 +410,7 @@ def remember_package(wa_id: str, pkg: dict) -> None:
     }
     sm = _state()
     try:
-        sm.ensure_conversation_row(wa_id)
+        sm.ensure_conversation_row(wa_id, tenant_id)
 
         def apply(ctx):
             ctx["pending_package"] = payload
@@ -599,7 +601,7 @@ async def send_package_details(wa_id: str, pkg: dict, tenant_id: str = None) -> 
     Brochure/PDF files are not attached here — only when the user asks for a
     brochure (uploaded file via brochure_service).
     """
-    remember_package(wa_id, pkg)
+    remember_package(wa_id, pkg, tenant_id)
     sender = _sender()
     name = package_name(pkg)
 
@@ -715,7 +717,7 @@ async def handle_package_action(wa_id: str, text: str, tenant_id: str = None,
     # 4. A package named in free text.
     pkg = find_package(tenant_id, raw_text, packages)
     if pkg:
-        remember_package(wa_id, pkg)
+        remember_package(wa_id, pkg, tenant_id)
         if _has_book_verb(raw_text):
             return await _start_booking(wa_id, pkg, tenant_id)
         if _is_specific_package_question(raw_text, pkg):

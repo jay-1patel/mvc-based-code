@@ -24,7 +24,9 @@ class TestWebhookSetCorrectAllowOverride:
     """Verify routing/webhook uses correct conditional."""
 
     def test_allows_active_test_override(self):
-        source = open("routing/webhook.py", encoding="utf-8").read()
+        source = open(
+            "backend/app/services/whatsapp/webhook.py", encoding="utf-8"
+        ).read()
         assert "allow_test_override=True" in source
         assert "allow_test_override=(tenant_id is None)" not in source
 
