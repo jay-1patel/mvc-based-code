@@ -101,7 +101,7 @@ def resolve_effective_tenant_id(
     """Single-number WhatsApp routing: which tenant profile handles this message.
 
     Order:
-      1. ``active_test_tenant`` from the admin console (or ``#tenant`` in chat)
+      1. ``active_test_tenant`` set by a super admin in the console
       2. An explicit hint (webhook phone binding, simulator, caller)
       3. ``user_states.tenant_id`` for this ``wa_id``
 

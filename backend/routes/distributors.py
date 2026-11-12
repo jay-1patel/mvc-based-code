@@ -115,7 +115,7 @@ def list_distributors(
     q: str = "",
     region: str = "",
     tier: str = "",
-    current_admin: dict = Depends(require_tenant_access),
+    current_admin: dict = Depends(require_tenant_access()),
 ):
     """List this tenant's distributors, with optional search / filter."""
     with get_db_context() as conn:
@@ -151,7 +151,7 @@ def distributor_count(
     region: str = "",
     tier: str = "",
     product_interest: str = "",
-    current_admin: dict = Depends(require_tenant_access),
+    current_admin: dict = Depends(require_tenant_access()),
 ):
     """Count this tenant's distributors matching optional segment filters.
     Used by Campaign Builder for the live 'target N distributors' preview.
@@ -183,7 +183,7 @@ def distributor_count(
 def lookup_distributor(
     tenant_id: str,
     wa_id: str,
-    current_admin: dict = Depends(require_tenant_access),
+    current_admin: dict = Depends(require_tenant_access()),
 ):
     """Fetch one of this tenant's distributors by WhatsApp ID."""
     with get_db_context() as conn:

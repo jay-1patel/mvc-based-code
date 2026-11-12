@@ -29,6 +29,7 @@ import { WebsiteKnowledgePanel } from '@/components/tenants/website-knowledge-pa
 import { AdminChatPanel } from '@/components/tenants/admin-chat'
 
 import { IntentsEditor } from '@/components/tenants/intents-editor'
+import { IntentsAndFlows } from '@/components/tenants/intents-and-flows'
 import { InfoPagePanel } from '@/components/tenants/info-page-panel'
 import { VersionsPanel } from '@/components/tenants/versions-panel'
 import { LayersPanel } from '@/components/tenants/layers-panel'
@@ -90,7 +91,7 @@ function Router() {
   }
 
   if (route.view === 'team') {
-    if (!canManageTeam) return <NotPermitted what="manage the team" />
+    if (!canManageTeam) return <NotPermitted what="manage the team" permission="manage_admins" />
     return (
       <AppShell route={route}>
         <TeamScreen />
@@ -99,7 +100,7 @@ function Router() {
   }
 
   if (route.view === 'api-requests') {
-    if (!isSuperAdmin) return <NotPermitted what="review API access requests" />
+    if (!isSuperAdmin) return <NotPermitted what="review API access requests" permission="super admin" />
     return (
       <AppShell route={route}>
         <ApiOnboardingReview />
@@ -164,6 +165,7 @@ function Router() {
         <MenuEditor tenantId={route.tenantId} focusId={route.query.get('focus')} />
       )}
       {route.view === 'intents' && <IntentsEditor tenantId={route.tenantId} />}
+      {route.view === 'flows' && <IntentsAndFlows tenantId={route.tenantId} />}
       {route.view === 'records' && <RecordsPanel tenantId={route.tenantId} />}
       {route.view === 'customers' && <CustomersPanel tenantId={route.tenantId} />}
       {route.view === 'orders' && <OrdersPanel tenantId={route.tenantId} />}
@@ -260,12 +262,12 @@ function ComingSoon({ view }: { view: string }) {
   )
 }
 
-function NotPermitted({ what }: { what: string }) {
+function NotPermitted({ what, permission = 'manage_operations' }: { what: string; permission?: string }) {
   return (
     <div className="mx-auto max-w-lg py-16">
       <Alert tone="warning" title="Not permitted">
-        Your account cannot {what}. This screen needs the{' '}
-        <strong>manage_operations</strong> permission — a super admin can grant it under Team &amp; permissions.
+        Your account cannot {what}. This screen needs the <strong>{permission}</strong> permission
+        — a super admin can grant it under Team &amp; permissions.
       </Alert>
     </div>
   )

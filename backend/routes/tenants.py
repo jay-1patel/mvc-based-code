@@ -44,6 +44,7 @@ from routes.auth import (
     has_permission,
     hash_tenant_token,
     require_permission,
+    require_super_admin,
     require_tenant_access,
     security,
 )
@@ -278,17 +279,23 @@ def list_tenants(
 ):
     from database import get_active_test_tenant
     rows = [_public_tenant(r) for r in tenancy_store.list_tenants(status=status)]
+    if current_admin.get("role") != "super_admin":
+        own = str(current_admin.get("tenant_id") or "").strip()
+        rows = [r for r in rows if own and (r.get("id") == own or r.get("slug") == own)]
     for row in rows:
         row["current_version"] = tenancy_store.current_version(row["id"])
+    # The global test override reroutes every WhatsApp number. Only a super
+    # admin is allowed to see or set it.
+    active = get_active_test_tenant() if current_admin.get("role") == "super_admin" else None
     return {
         "tenants": rows,
-        "active_test_tenant": get_active_test_tenant(),
+        "active_test_tenant": active,
     }
 
 
 @router.get("/active-test-tenant")
 def get_current_active_test_tenant(
-    current_admin: dict = Depends(require_permission("manage_operations")),
+    current_admin: dict = Depends(require_super_admin),
 ):
     from database import get_active_test_tenant
     return {"active_test_tenant": get_active_test_tenant()}
@@ -297,7 +304,7 @@ def get_current_active_test_tenant(
 @router.post("/active-test-tenant")
 def set_current_active_test_tenant(
     body: ActiveTestTenantRequest,
-    current_admin: dict = Depends(require_permission("manage_operations")),
+    current_admin: dict = Depends(require_super_admin),
 ):
     from database import set_active_test_tenant, get_active_test_tenant
     tid = (body.tenant_id or "").strip() or None
@@ -412,9 +419,11 @@ def create_tenant(
         )
 
     from shared.tenancy import loader as _loader
+    from shared.tenancy.schemas import require_known_vertical
 
     try:
-        # Fail before writing the row if the vertical is unknown.
+        body.vertical = require_known_vertical(body.vertical)
+        # Fail before writing the row if the vertical pack cannot be built.
         _loader.build_profile(tid, db_layer={}, file_layer={}, include_db=False)
     except Exception as exc:
         raise HTTPException(status_code=422, detail=f"Invalid vertical: {exc}")

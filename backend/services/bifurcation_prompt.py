@@ -18,4 +18,3 @@ Return STRICT JSON with this schema:
 }
 Only output JSON. Do not include explanations.
 """
-PY

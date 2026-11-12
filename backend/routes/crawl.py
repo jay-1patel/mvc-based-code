@@ -10,6 +10,7 @@ import csv
 import io
 import json
 import logging
+import os
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response
@@ -33,12 +34,24 @@ logger = logging.getLogger("crawl")
 router = APIRouter(prefix="/api/admin/tenants", tags=["crawl"])
 
 
+def default_max_pages() -> int:
+    """Page cap used when a crawl request does not set one.
+
+    Override with CRAWL_DEFAULT_MAX_PAGES. An explicit positive max_pages on
+    the request still wins.
+    """
+    raw = (os.getenv("CRAWL_DEFAULT_MAX_PAGES") or "50").strip()
+    try:
+        value = int(raw)
+    except ValueError:
+        value = 50
+    return max(1, min(value, 500))
+
+
 class CrawlStartRequest(BaseModel):
     url: str = Field(..., min_length=1)
-    # No page-count limit (product decision 2026-11-11): omitted/None/0 =
-    # unlimited. An explicit positive value is still honoured for backward
-    # compatibility with callers that pass one.
-    max_pages: Optional[int] = Field(default=None, ge=1)
+    # Omitted means the configurable default (50), not an unbounded crawl.
+    max_pages: Optional[int] = Field(default=None, ge=1, le=500)
     max_depth: int = Field(default=4, ge=0, le=10)
 
 
@@ -113,7 +126,7 @@ def start_crawl(
                 resource_type="crawl_run",
                 resource_id=str(run["id"]),
                 tenant_id=tenant_id,
-                details={"url": url[:200], "max_pages": body.max_pages},
+                details={"url": url[:200], "max_pages": body.max_pages or default_max_pages()},
             )
     except Exception:
         logger.exception("AUDIT_EVENT_RECORD_FAILED | action=crawl_run_queued")
@@ -123,7 +136,7 @@ def start_crawl(
         tenant_id,
         url,
         run["id"],
-        body.max_pages,
+        body.max_pages or default_max_pages(),
         body.max_depth,
         principal,
     )

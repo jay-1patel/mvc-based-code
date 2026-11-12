@@ -8,4 +8,3 @@ def bucket_to_table(bucket):
     if bucket == "profile":
         return "tenant_profile_draft"
     return "knowledge_base"
-PY

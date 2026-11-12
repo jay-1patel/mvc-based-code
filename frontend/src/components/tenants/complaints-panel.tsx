@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { AlertTriangle, MessageSquareWarning, Send, Trash2 } from 'lucide-react'
 import { useAction, useAsync } from '@/lib/hooks'
-import { useAuth } from '@/lib/auth'
+import { usePermissions } from '@/lib/permissions'
 import { COMPLAINT_PRIORITIES, COMPLAINT_STATUSES, conversationsApi, stripRoute } from '@/lib/conversations'
 import { formatDate, relativeTime } from '@/lib/format'
 import { cn } from '@/lib/cn'
@@ -40,14 +40,14 @@ const PRIORITY_TONE: Record<string, 'neutral' | 'accent' | 'success' | 'warning'
  * `manage_complaints`.
  */
 export function ComplaintsPanel({ tenantId }: { tenantId: string }) {
-  const { can } = useAuth()
+  const { canWriteTenant } = usePermissions()
   const toast = useToast()
   const confirmDialog = useConfirm()
   const action = useAction()
 
   const [status, setStatus] = useState('all')
   const [selected, setSelected] = useState<string | null>(null)
-  const canManage = can('manage_complaints')
+  const canManage = canWriteTenant('manage_complaints')
 
   const state = useAsync(
     (signal) => conversationsApi.complaints(tenantId, { status: status === 'all' ? undefined : status }, signal),

@@ -107,7 +107,7 @@ export function buildTenantNav(opts: {
     },
     { id: 'customers', label: 'Customers', icon: Users, permissions: ['view_customers'] },
     { id: 'profile', label: 'Profile', icon: ScrollText, permissions: ['manage_operations'] },
-    { id: 'menu', label: 'Menu', icon: ListTree },
+    { id: 'menu', label: 'Menu', icon: ListTree, permissions: ['manage_operations'] },
     { id: 'intents', label: 'Intents Editor', icon: GitBranch, permissions: ['manage_operations'] },
     {
       id: 'uploads',

@@ -15,6 +15,7 @@ import { TagInput } from '@/components/ui/tags'
 import { Alert, EmptyState, LoadingBlock } from '@/components/ui/feedback'
 import { PageHeader } from '@/components/layout/page-header'
 import { useToast } from '@/components/ui/toast'
+import { usePermissions } from '@/lib/permissions'
 import { useTenantDetail } from './hooks'
 
 type ButtonDraft = Omit<MenuButton, 'sort_order'> & { sort_order: number }
@@ -54,6 +55,8 @@ export function MenuEditor({ tenantId, focusId }: { tenantId: string; focusId?: 
   const detail = useTenantDetail(tenantId)
   const action = useAction()
   const toast = useToast()
+  const { canWriteTenant } = usePermissions()
+  const canWrite = canWriteTenant('manage_operations')
   const [menu, setMenu] = useState<MenuSpec | null>(null)
   const [editingIndex, setEditingIndex] = useState<number | null>(null)
   const [draft, setDraft] = useState<ButtonDraft | null>(null)
@@ -331,6 +334,7 @@ export function MenuEditor({ tenantId, focusId }: { tenantId: string; focusId?: 
         title="Menu editor"
         description="Every WhatsApp menu option, editable. A button can require a feature flag (hidden when that capability is off), start a flow, route to an intent, or appear only out of hours."
         actions={
+          canWrite ? (
           <>
             <Button size="sm" variant="secondary" icon={<ListPlus className="h-4 w-4" />} onClick={startAdd}>
               Add option
@@ -342,6 +346,7 @@ export function MenuEditor({ tenantId, focusId }: { tenantId: string; focusId?: 
               Save & publish
             </Button>
           </>
+          ) : undefined
         }
         meta={
           <>
@@ -658,7 +663,7 @@ export function MenuEditor({ tenantId, focusId }: { tenantId: string; focusId?: 
                                 <p className="mt-1 text-xs leading-relaxed text-slate-500">{button.description}</p>
                               )}
                             </div>
-                            <div className="flex shrink-0 items-center gap-1.5">
+                            {canWrite && <div className="flex shrink-0 items-center gap-1.5">
                               <div className="flex items-center gap-1.5 rounded-full border border-surface-line bg-surface-raised px-2 py-1">
                                 <Switch
                                   checked={button.enabled}
@@ -687,7 +692,7 @@ export function MenuEditor({ tenantId, focusId }: { tenantId: string; focusId?: 
                                 icon={<Trash2 className="h-4 w-4" />}
                                 onClick={() => remove(index)}
                               />
-                            </div>
+                            </div>}
                           </div>
                         </div>
                       )
@@ -697,7 +702,7 @@ export function MenuEditor({ tenantId, focusId }: { tenantId: string; focusId?: 
             ))
           )}
 
-          {buttons.length > 0 && (
+          {canWrite && buttons.length > 0 && (
             <Card>
               <CardBody>
                 <SectionTitle hint="The bot only sees the published version. Save a draft as often as you like — nothing changes until you publish.">

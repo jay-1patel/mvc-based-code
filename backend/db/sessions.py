@@ -8,7 +8,7 @@ from .core import (
 )
 
 
-def _resolve_tenant_id(wa_id: str, tenant_id: Optional[str] = None) -> str:
+def _resolve_tenant_id(wa_id: str, tenant_id: Optional[str] = None) -> Optional[str]:
     tid = (tenant_id or get_request_tenant() or _current_tenant.get() or "").strip()
     if tid:
         return tid
@@ -35,6 +35,9 @@ def _resolve_tenant_id(wa_id: str, tenant_id: Optional[str] = None) -> str:
 
 def update_session_inbound(wa_id: str, tenant_id: Optional[str] = None):
     tid = _resolve_tenant_id(wa_id, tenant_id)
+    if not tid:
+        logger.warning("SESSION_INBOUND_SKIPPED | no tenant for wa=%s", wa_id)
+        return
     with get_db_context() as conn:
         conn.execute(
             """INSERT INTO user_sessions (tenant_id, wa_id, last_inbound_at, session_open)
@@ -48,6 +51,9 @@ def update_session_inbound(wa_id: str, tenant_id: Optional[str] = None):
 
 def update_session_outbound(wa_id: str, tenant_id: Optional[str] = None):
     tid = _resolve_tenant_id(wa_id, tenant_id)
+    if not tid:
+        logger.warning("SESSION_OUTBOUND_SKIPPED | no tenant for wa=%s", wa_id)
+        return
     with get_db_context() as conn:
         conn.execute(
             """INSERT INTO user_sessions (tenant_id, wa_id, last_outbound_at)

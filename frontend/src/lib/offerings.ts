@@ -95,9 +95,26 @@ export interface OfferingsState {
   reload: () => void
 }
 
+/** Fired after a catalogue row is created, edited or removed so the sidebar badge reloads. */
+export const OFFERINGS_CHANGED = 'tenant-offerings-changed'
+
+export function notifyOfferingsChanged(tenantId: string) {
+  window.dispatchEvent(new CustomEvent(OFFERINGS_CHANGED, { detail: tenantId }))
+}
+
 /** Live count for the sidebar badge, tolerant of a 403 (no offerings perms). */
 export function useOfferingsCount(tenantId: string | null): number | null {
   const [count, setCount] = useState<number | null>(null)
+  const [revision, setRevision] = useState(0)
+
+  useEffect(() => {
+    const onChange = (event: Event) => {
+      const detail = (event as CustomEvent<string>).detail
+      if (!tenantId || detail === tenantId) setRevision((n) => n + 1)
+    }
+    window.addEventListener(OFFERINGS_CHANGED, onChange)
+    return () => window.removeEventListener(OFFERINGS_CHANGED, onChange)
+  }, [tenantId])
 
   useEffect(() => {
     if (!tenantId) {
@@ -110,7 +127,7 @@ export function useOfferingsCount(tenantId: string | null): number | null {
       .then((rows) => setCount(rows.filter((o) => o.is_active).length))
       .catch(() => setCount(null))
     return () => controller.abort()
-  }, [tenantId])
+  }, [tenantId, revision])
 
   return count
 }

@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from typing import Optional
 
 from database import get_db, get_db_context, save_chat
-from routes.auth import get_current_admin
+from routes.auth import get_current_admin, scoped_tenant_id
 from routing.config import SEND2_USERNAME, SEND2_PASSWORD, SEND2_NUMBER, SEND_MEDIA, IMGHIPPO_API_KEY
 
 logger = logging.getLogger("chat")
@@ -30,17 +30,25 @@ class SendMessageRequest(BaseModel):
 
 @router.get("/history/{wa_id}")
 def get_chat_history_for_user(wa_id: str, current_admin: dict = Depends(get_current_admin)):
+    # A tenant admin only sees this WhatsApp id's thread inside their own tenant.
+    # The same phone can talk to several brands; wa_id alone is not a scope.
+    scope = scoped_tenant_id(current_admin)
+    where = "wa_id = ?"
+    params: list = [wa_id]
+    if scope:
+        where += " AND tenant_id = ?"
+        params.append(scope)
     conn = get_db()
     try:
         rows = conn.execute(
-            """
+            f"""
             SELECT id, wa_id, sender_name, message, response, route, created_at
             FROM chat_history
-            WHERE wa_id = ?
+            WHERE {where}
             ORDER BY id ASC
             LIMIT 200
             """,
-            (wa_id,),
+            params,
         ).fetchall()
 
         messages = []

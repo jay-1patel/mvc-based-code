@@ -405,7 +405,7 @@ def _criteria_errors(audience_type: str, criteria: dict) -> list:
 @router.get("/templates")
 def list_templates(
     tenant_id: str,
-    current_admin: dict = Depends(require_tenant_access),
+    current_admin: dict = Depends(require_tenant_access()),
 ):
     """The WhatsApp template registry the campaign form picks from."""
     with get_db_context() as conn:
@@ -628,7 +628,7 @@ def _segment_to_dict(conn, row: dict, tenant_id: str) -> dict:
 @router.get("/segments")
 def list_segments(
     tenant_id: str,
-    current_admin: dict = Depends(require_tenant_access),
+    current_admin: dict = Depends(require_tenant_access()),
 ):
     """The tenant's saved segments, each with the audience it reaches."""
     with get_db_context() as conn:
@@ -721,7 +721,7 @@ def delete_segment(
 @router.get("")
 def list_campaigns(
     tenant_id: str,
-    current_admin: dict = Depends(require_tenant_access),
+    current_admin: dict = Depends(require_tenant_access()),
 ):
     with get_db_context() as conn:
         rows = conn.execute(
@@ -1041,7 +1041,7 @@ def duplicate_campaign(
 def audience_count(
     tenant_id: str,
     body: AudienceCount,
-    current_admin: dict = Depends(require_tenant_access),
+    current_admin: dict = Depends(require_tenant_access()),
 ):
     """Live preview of how many contacts a set of criteria reaches."""
     errors = _criteria_errors(body.audience_type, body.criteria)
@@ -1059,7 +1059,7 @@ def audience_count(
 def campaign_metrics(
     tenant_id: str,
     campaign_id: int,
-    current_admin: dict = Depends(require_tenant_access),
+    current_admin: dict = Depends(require_tenant_access()),
 ):
     with get_db_context() as conn:
         row = _get_campaign(conn, campaign_id, tenant_id)
@@ -1087,7 +1087,7 @@ def campaign_metrics(
 def campaign_replies(
     tenant_id: str,
     campaign_id: int,
-    current_admin: dict = Depends(require_tenant_access),
+    current_admin: dict = Depends(require_tenant_access()),
 ):
     with get_db_context() as conn:
         _get_campaign(conn, campaign_id, tenant_id)

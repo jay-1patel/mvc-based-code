@@ -1,5 +1,6 @@
 import { Link2, Phone, Rocket, Sparkles } from 'lucide-react'
 import { useTenants } from '@/lib/tenants'
+import { usePermissions } from '@/lib/permissions'
 import { navigate } from '@/lib/router'
 import { getVertical } from '@/lib/verticals'
 import { FEATURE_LABELS } from '@/lib/verticals'
@@ -22,6 +23,7 @@ const GROUPS: { label: string; flags: FeatureFlag[] }[] = [
 
 export function TenantOverview({ tenantId }: { tenantId: string }) {
   const { tenants } = useTenants()
+  const { isSuperAdmin } = usePermissions()
   const tenant = tenants.find((t) => t.id === tenantId) ?? null
   const { data, error, loading } = useResolved(tenantId)
   const vertical = getVertical(tenant?.vertical)
@@ -86,14 +88,16 @@ export function TenantOverview({ tenantId }: { tenantId: string }) {
             <Button size="sm" variant="secondary" onClick={() => navigate(`/tenants/${tenantId}/profile`)}>
               Edit profile
             </Button>
-            <Button
-              size="sm"
-              variant="primary"
-              icon={<Rocket className="h-4 w-4" />}
-              onClick={() => navigate(`/tenants/${tenantId}/versions`)}
-            >
-              Publish
-            </Button>
+            {!isSuperAdmin && (
+              <Button
+                size="sm"
+                variant="primary"
+                icon={<Rocket className="h-4 w-4" />}
+                onClick={() => navigate(`/tenants/${tenantId}/versions`)}
+              >
+                Publish
+              </Button>
+            )}
           </>
         }
       />

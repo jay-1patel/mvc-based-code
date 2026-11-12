@@ -102,7 +102,7 @@ def _get_tenant_integration(conn, tenant_id: str, provider: str) -> Optional[dic
 @router.get("/api/tenants/{tenant_id}/integrations")
 def list_integrations(
     tenant_id: str,
-    current_admin: dict = Depends(require_tenant_access),
+    current_admin: dict = Depends(require_tenant_access()),
 ):
     """List all configured integrations and their live connection status."""
     with get_db_context() as conn:
@@ -134,7 +134,7 @@ async def save_integration_config(
     tenant_id: str,
     provider: str,
     body: IntegrationConfigInput,
-    current_admin: dict = Depends(require_tenant_access),
+    current_admin: dict = Depends(require_tenant_access()),
 ):
     """Save or update real API credentials for Stripe, Razorpay, Blue Dart, Xpressbees or Custom."""
     prov = provider.lower().strip()
@@ -201,7 +201,7 @@ async def test_integration_connection(
     tenant_id: str,
     provider: str,
     body: Optional[TestConnectionInput] = None,
-    current_admin: dict = Depends(require_tenant_access),
+    current_admin: dict = Depends(require_tenant_access()),
 ):
     """Perform a live API connection test with Stripe, Razorpay, Blue Dart, Xpressbees or Custom."""
     prov = provider.lower().strip()
@@ -285,7 +285,7 @@ async def test_integration_connection(
 async def create_payment_session(
     tenant_id: str,
     body: CreatePaymentSessionInput,
-    current_admin: dict = Depends(require_tenant_access),
+    current_admin: dict = Depends(require_tenant_access()),
 ):
     """Create a real payment link / session using active payment integration (Stripe, Razorpay, or Custom)."""
     with get_db_context() as conn:
@@ -392,7 +392,7 @@ async def create_payment_session(
 async def book_shipment(
     tenant_id: str,
     body: BookShipmentInput,
-    current_admin: dict = Depends(require_tenant_access),
+    current_admin: dict = Depends(require_tenant_access()),
 ):
     """Book shipment and generate live AWB with Blue Dart, Xpressbees, or Custom."""
     with get_db_context() as conn:
@@ -496,7 +496,7 @@ async def book_shipment(
 async def track_shipment(
     tenant_id: str,
     awb: str,
-    current_admin: dict = Depends(require_tenant_access),
+    current_admin: dict = Depends(require_tenant_access()),
 ):
     """Track shipment status by AWB."""
     with get_db_context() as conn:
@@ -521,13 +521,10 @@ async def track_shipment(
                 token=creds.get("token") or creds.get("api_token"),
             )
         else:
-            return {
-                "ok": True,
-                "awb": awb,
-                "status": "In Transit",
-                "carrier": prov.capitalize(),
-                "tracking_url": f"https://example.com/track/{awb}",
-            }
+            raise HTTPException(
+                status_code=404,
+                detail="No tracking integration is configured for this shipment",
+            )
 
 
 # ── Webhook Handlers ──────────────────────────────────────────────────
@@ -541,16 +538,23 @@ async def payment_webhook(tenant_id: str, provider: str, request: Request):
 
     with get_db_context() as conn:
         integration = _get_tenant_integration(conn, tenant_id, prov)
-        secret = integration.get("webhook_secret", "") if integration else ""
+        secret = (integration.get("webhook_secret") or "").strip() if integration else ""
+        if not secret:
+            raise HTTPException(
+                status_code=401,
+                detail="Webhook secret is not configured for this provider",
+            )
 
         if "stripe" in prov:
             sig = headers.get("stripe-signature", "")
-            if secret and not StripeService.verify_webhook_signature(payload, sig, secret):
+            if not StripeService.verify_webhook_signature(payload, sig, secret):
                 raise HTTPException(status_code=400, detail="Invalid Stripe signature")
         elif "razorpay" in prov:
             sig = headers.get("x-razorpay-signature", "")
-            if secret and not RazorpayService.verify_webhook_signature(payload, sig, secret):
+            if not RazorpayService.verify_webhook_signature(payload, sig, secret):
                 raise HTTPException(status_code=400, detail="Invalid Razorpay signature")
+        else:
+            raise HTTPException(status_code=400, detail="Unsupported payment provider")
 
     order_id = ""
     payment_id = ""

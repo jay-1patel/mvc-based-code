@@ -1,15 +1,20 @@
-from fastapi import APIRouter, Query
-from routing.config import WHATSAPP_VERIFY_TOKEN, SEND2_USERNAME, SEND2_PASSWORD, SEND2_NUMBER, SEND2_SESSION_MSG_URL
+from fastapi import APIRouter, Depends
+from routing.config import WHATSAPP_VERIFY_TOKEN, SEND2_USERNAME, SEND2_PASSWORD, SEND2_NUMBER
 from database import get_db, get_webhook_stats
-import requests
 import logging
+
+from routes.auth import require_super_admin
 
 logger = logging.getLogger("chiki_webhook")
 router = APIRouter(prefix="/webhook")
 
 
 @router.get("/logs")
-def get_webhook_logs(limit: int = 50, direction: str = None):
+def get_webhook_logs(
+    limit: int = 50,
+    direction: str = None,
+    current_admin: dict = Depends(require_super_admin),
+):
     conn = get_db()
     try:
         if direction:
@@ -28,7 +33,7 @@ def get_webhook_logs(limit: int = 50, direction: str = None):
 
 
 @router.delete("/logs")
-def clear_webhook_logs():
+def clear_webhook_logs(current_admin: dict = Depends(require_super_admin)):
     from database import get_db_context
     with get_db_context() as conn:
         conn.execute("DELETE FROM webhook_logs")
@@ -59,59 +64,25 @@ def webhook_status():
 
 
 @router.get("/health")
-def health_check():
-    results = {}
+def health_check(current_admin: dict = Depends(require_super_admin)):
+    """Report whether messaging credentials are configured.
 
-    # Check send2.digital API - verify credentials and connectivity only (no real message)
-    try:
-        resp = requests.post(SEND2_SESSION_MSG_URL, data={
-            "user_name": SEND2_USERNAME or "",
-            "password": SEND2_PASSWORD or "",
-            "contact_no": SEND2_NUMBER or "",
-            "message_type": "text",
-            "message": "",
-        }, timeout=10)
-        body = resp.text
-        if "Message Sent Successfully" in body:
-            send2_status = "sending_ok"
-        elif "OPT OUT" in body:
-            send2_status = "user_opted_out"
-        elif "INVALID PARAMETER" in body.upper():
-            send2_status = "reachable"
-        elif "invalid" in body.lower() or "error" in body.lower():
-            send2_status = "api_error"
-        elif "missing" in body.lower() or "required" in body.lower():
-            send2_status = "credentials_issue"
-        else:
-            send2_status = "unknown_response"
-        results["send2_api"] = {
-            "url": SEND2_SESSION_MSG_URL,
-            "http_status": resp.status_code,
-            "api_status": send2_status,
-            "response": body[:300],
-            "ok": resp.status_code == 200 and send2_status in ["sending_ok", "reachable"],
-        }
-    except Exception as e:
-        results["send2_api"] = {"url": SEND2_SESSION_MSG_URL, "api_status": "unreachable", "ok": False, "error": str(e)}
-
-    # Check hkdk.events webhook
-    hkdk_url = "https://hkdk.events/63akz9xv0bor2a/webhook"
-    try:
-        resp = requests.post(hkdk_url, json={"type": "health_check"}, timeout=10)
-        body = resp.text
-        results["hkdk_webhook"] = {
-            "url": hkdk_url,
-            "http_status": resp.status_code,
-            "response": body[:300],
-            "ok": resp.status_code in [200, 201, 202],
-        }
-    except Exception as e:
-        results["hkdk_webhook"] = {"url": hkdk_url, "api_status": "unreachable", "ok": False, "error": str(e)}
-
-    all_ok = all(s.get("ok") for s in results.values())
-    return {"all_healthy": all_ok, "services": results}
+    This does not call Send2. Posting the username and password to a health
+    URL is itself a credential use, and an unauthenticated caller must not
+    be able to trigger it.
+    """
+    configured = bool(SEND2_USERNAME and SEND2_PASSWORD and SEND2_NUMBER)
+    return {
+        "all_healthy": configured,
+        "services": {
+            "send2_api": {
+                "configured": configured,
+                "ok": configured,
+            },
+        },
+    }
 
 
 @router.get("/logs/stats")
-def webhook_logs_stats():
+def webhook_logs_stats(current_admin: dict = Depends(require_super_admin)):
     return get_webhook_stats()

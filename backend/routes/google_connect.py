@@ -18,6 +18,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from services.token_storage import get_token, save_token, delete_token
+from routes.auth import require_tenant_access
 
 logger = logging.getLogger("google_connect")
 
@@ -38,7 +39,10 @@ def _get_google_credentials() -> tuple[Optional[str], Optional[str]]:
 
 
 @router.get("/api/tenants/{tenant_id}/google-connect/status")
-def get_google_connect_status(tenant_id: str):
+def get_google_connect_status(
+    tenant_id: str,
+    principal: dict = Depends(require_tenant_access()),
+):
     """Return whether the tenant has a valid Google OAuth connection."""
     token_info = get_token(tenant_id)
     if not token_info:
@@ -64,7 +68,11 @@ def get_google_connect_status(tenant_id: str):
 
 
 @router.get("/api/tenants/{tenant_id}/google-connect/oauth-url")
-def get_google_oauth_url(tenant_id: str, request: Request):
+def get_google_oauth_url(
+    tenant_id: str,
+    request: Request,
+    principal: dict = Depends(require_tenant_access()),
+):
     """Generate the Google OAuth consent URL for a tenant."""
     client_id, _ = _get_google_credentials()
     if not client_id:
@@ -207,7 +215,10 @@ async def google_oauth_callback(
 
 
 @router.post("/api/tenants/{tenant_id}/google-connect/disconnect")
-def disconnect_google_account(tenant_id: str):
+def disconnect_google_account(
+    tenant_id: str,
+    principal: dict = Depends(require_tenant_access()),
+):
     """Disconnect Google OAuth account for a tenant."""
     deleted = delete_token(tenant_id)
     if deleted:

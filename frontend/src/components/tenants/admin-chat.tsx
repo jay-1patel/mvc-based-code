@@ -89,15 +89,14 @@ export function AdminChatPanel({ tenantId }: { tenantId: string }) {
       const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws'
       const url =
         `${scheme}://${window.location.host}/api/admin/tenants/${encodeURIComponent(tenantId)}` +
-        `/chat/ws/${encodeURIComponent(username)}?token=${encodeURIComponent(token)}&conn_id=console`
+        `/chat/ws/${encodeURIComponent(username)}?conn_id=console`
       const ws = new WebSocket(url)
       socket.current = ws
 
       ws.onopen = () => {
-        setConnected(true)
-        if (selectedRef.current) {
-          ws.send(JSON.stringify({ type: 'load_history', chat_id: selectedRef.current }))
-        }
+        // The JWT stays out of the URL. The server ignores every other frame
+        // until this auth message is accepted.
+        ws.send(JSON.stringify({ type: 'auth', token }))
       }
       ws.onclose = () => {
         setConnected(false)
@@ -111,7 +110,12 @@ export function AdminChatPanel({ tenantId }: { tenantId: string }) {
         } catch {
           return
         }
-        if (data.type === 'online_users') {
+        if (data.type === 'auth_ok') {
+          setConnected(true)
+          if (selectedRef.current) {
+            ws.send(JSON.stringify({ type: 'load_history', chat_id: selectedRef.current }))
+          }
+        } else if (data.type === 'online_users') {
           setOnline((data.users as string[]) ?? [])
         } else if (data.type === 'history') {
           const chatId = data.chat_id as string
