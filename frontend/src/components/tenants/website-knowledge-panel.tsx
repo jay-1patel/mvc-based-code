@@ -3,7 +3,9 @@ import {
   BookOpen,
   CheckCircle2,
   Download,
+  FileText,
   HelpCircle,
+  Image as ImageIcon,
   Loader2,
   Package,
   Play,
@@ -40,9 +42,11 @@ import { useToast } from '@/components/ui/toast'
  *
  * The tenant's PDF owns the menu, brand and business hours; the website
  * crawl owns knowledge. This screen starts a crawl, lists past runs, and
- * lets the admin read everything a run staged — KB articles, FAQs and
- * product knowledge — download it, and approve or reject it. Approval
- * publishes knowledge only (the backend locks the PDF-owned sections).
+ * lets the admin read everything a run staged — KB articles, full-text
+ * page chunks, FAQs, product knowledge and captured page images — see the
+ * run's yield (including which pages were skipped and why), download it,
+ * and approve or reject it. Approval publishes knowledge only (the
+ * backend locks the PDF-owned sections).
  */
 
 /**
@@ -74,7 +78,7 @@ function stagedStatusMeta(status: string): { label: string; tone: PillTone } {
   return { label: 'Awaiting review', tone: 'warn' }
 }
 
-type KnowledgeTab = 'kb' | 'faqs' | 'products'
+type KnowledgeTab = 'kb' | 'faqs' | 'products' | 'pages' | 'images'
 
 export function WebsiteKnowledgePanel({ tenantId }: { tenantId: string }) {
   const { isSuperAdmin } = usePermissions()
@@ -268,6 +272,11 @@ function RunDetail({
   const faqs = bifurcation.faqs ?? []
   const products = bifurcation.offerings ?? []
   const pages = staged?.payload?.crawl?.pages ?? staged?.summary?.pages ?? []
+  const chunks = staged?.payload?.page_chunks ?? []
+  const knowledgeImages =
+    staged?.summary?.knowledge_images ?? staged?.payload?.knowledge_images ?? []
+  const yieldData = staged?.summary?.yield ?? staged?.payload?.yield ?? null
+  const skippedPages = yieldData?.pages_skipped ?? []
 
   const download = async (format: CrawlExportFormat) => {
     setDownloading(format)
@@ -341,9 +350,13 @@ function RunDetail({
             <div className="flex flex-wrap items-center gap-2">
               {statusMeta && <Pill tone={statusMeta.tone}>{statusMeta.label}</Pill>}
               <Pill>{articles.length} KB articles</Pill>
+              {chunks.length > 0 && <Pill>{chunks.length} page-text chunks</Pill>}
               <Pill>{faqs.length} FAQs</Pill>
               <Pill>{products.length} products</Pill>
               <Pill>{pages.length} pages</Pill>
+              {knowledgeImages.length > 0 && (
+                <Pill>{knowledgeImages.length} images</Pill>
+              )}
               {staged.decided_by && (
                 <span className="text-xs text-txmuted">
                   decided by {staged.decided_by}
@@ -351,6 +364,47 @@ function RunDetail({
                 </span>
               )}
             </div>
+
+            {yieldData && (
+              <div className="rounded-panel border border-line bg-paper p-4">
+                <h4 className="text-sm font-semibold text-tx">Crawl yield</h4>
+                <p className="mt-1 text-sm text-txmuted">
+                  {yieldData.pages_discovered ?? 0} pages discovered ·{' '}
+                  {yieldData.pages_fetched ?? 0} fetched ·{' '}
+                  {yieldData.pages_staged ?? 0} became knowledge ·{' '}
+                  {skippedPages.length} skipped
+                </p>
+                <p className="mt-1 text-sm text-txmuted">
+                  {yieldData.kb_chunks ?? chunks.length} page-text chunks ·{' '}
+                  {yieldData.kb_articles ?? articles.length} summary articles ·{' '}
+                  {yieldData.faqs ?? faqs.length} FAQs ·{' '}
+                  {yieldData.products ?? products.length} products ·{' '}
+                  {yieldData.images_captured ?? knowledgeImages.length} images
+                  captured
+                  {(yieldData.images_deduped ?? 0) > 0 &&
+                    ` (${yieldData.images_deduped} duplicates merged)`}
+                </p>
+                {skippedPages.length > 0 && (
+                  <div className="mt-2">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-txmuted">
+                      Skipped pages
+                    </p>
+                    <ul className="mt-1 space-y-1">
+                      {skippedPages.slice(0, 6).map((s, i) => (
+                        <li key={i} className="truncate text-xs text-txmuted">
+                          {s.url} — {s.reason}
+                        </li>
+                      ))}
+                    </ul>
+                    {skippedPages.length > 6 && (
+                      <p className="mt-1 text-xs text-txmuted">
+                        …and {skippedPages.length - 6} more in the export.
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
 
             {staged.status === 'published' && (
               <Notice tone="success" title="Published to your bot's knowledge">
@@ -386,8 +440,10 @@ function RunDetail({
               {(
                 [
                   { id: 'kb', label: `Knowledge Base (${articles.length})`, icon: BookOpen },
+                  { id: 'pages', label: `Page text (${chunks.length})`, icon: FileText },
                   { id: 'faqs', label: `FAQs (${faqs.length})`, icon: HelpCircle },
                   { id: 'products', label: `Product Knowledge (${products.length})`, icon: Package },
+                  { id: 'images', label: `Images (${knowledgeImages.length})`, icon: ImageIcon },
                 ] as const
               ).map((t) => (
                 <button
@@ -428,6 +484,36 @@ function RunDetail({
                     </div>
                     <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-txmuted">
                       {art.markdown_content}
+                    </p>
+                  </article>
+                ))}
+              </div>
+            )}
+
+            {tab === 'pages' && (
+              <div className="space-y-3">
+                {chunks.length === 0 && (
+                  <EmptyState
+                    title="No page text"
+                    description="This crawl staged no full-text page chunks (runs from before the extraction fix only have summary articles)."
+                  />
+                )}
+                {chunks.map((chunk, i) => (
+                  <article
+                    key={i}
+                    className="rounded-panel border border-line bg-paper p-4"
+                  >
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h4 className="text-sm font-semibold text-tx">
+                        {chunk.title || '(untitled)'}
+                      </h4>
+                      {chunk.category && <Pill>{chunk.category}</Pill>}
+                    </div>
+                    {chunk.url && (
+                      <p className="mt-1 truncate text-xs text-txmuted">{chunk.url}</p>
+                    )}
+                    <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-txmuted">
+                      {chunk.content}
                     </p>
                   </article>
                 ))}
@@ -493,6 +579,50 @@ function RunDetail({
                         ))}
                       </tbody>
                     </table>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {tab === 'images' && (
+              <div className="space-y-3">
+                {knowledgeImages.length === 0 && (
+                  <EmptyState
+                    title="No images captured"
+                    description="This crawl did not capture any content images from the website's pages."
+                  />
+                )}
+                {knowledgeImages.length > 0 && (
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    {knowledgeImages.map((img, i) => (
+                      <figure
+                        key={i}
+                        className="overflow-hidden rounded-panel border border-line bg-paper"
+                      >
+                        {img.image_url && (
+                          <img
+                            src={img.image_url}
+                            alt={img.alt_text || ''}
+                            loading="lazy"
+                            className="h-36 w-full object-cover"
+                          />
+                        )}
+                        <figcaption className="space-y-1 p-3">
+                          <p className="text-sm font-medium text-tx">
+                            {img.alt_text || '(no alt text)'}
+                          </p>
+                          <div className="flex flex-wrap items-center gap-2">
+                            {img.kind && <Pill>{img.kind}</Pill>}
+                            {img.section && <Pill>{img.section}</Pill>}
+                          </div>
+                          {img.source_page_url && (
+                            <p className="truncate text-xs text-txmuted">
+                              From: {img.source_page_url}
+                            </p>
+                          )}
+                        </figcaption>
+                      </figure>
+                    ))}
                   </div>
                 )}
               </div>

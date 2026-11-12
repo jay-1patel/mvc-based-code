@@ -78,6 +78,39 @@ export interface StagedCrawlPage {
   word_count?: number | null
 }
 
+/** One grounded chunk of a page's real body text (the extraction fix). */
+export interface StagedPageChunk {
+  title?: string
+  category?: string
+  content?: string
+  url?: string
+}
+
+/** A content image captured from a crawled page, linked to its source page. */
+export interface KnowledgeImage {
+  alt_text?: string
+  image_url?: string
+  source_url?: string
+  source_page_url?: string
+  section?: string
+  kind?: string
+}
+
+export interface CrawlYield {
+  pages_discovered?: number
+  pages_fetched?: number
+  pages_staged?: number
+  pages_skipped?: { url: string; reason: string }[]
+  kb_chunks?: number
+  kb_articles?: number
+  faqs?: number
+  products?: number
+  images_captured?: number
+  images_deduped?: number
+  images_skipped?: number
+  extractors?: Record<string, number>
+}
+
 export interface CrawlStagedResponse {
   ok: boolean
   run_id: number
@@ -93,6 +126,9 @@ export interface CrawlStagedResponse {
     pages_found?: number | null
     pages_scraped?: number | null
     pages?: StagedCrawlPage[]
+    yield?: CrawlYield | null
+    kb_chunks_count?: number
+    knowledge_images?: KnowledgeImage[]
   }
   payload: {
     bifurcation?: {
@@ -107,6 +143,9 @@ export interface CrawlStagedResponse {
       pages_scraped?: number | null
       pages?: StagedCrawlPage[]
     }
+    page_chunks?: StagedPageChunk[]
+    knowledge_images?: KnowledgeImage[]
+    yield?: CrawlYield | null
   }
 }
 
@@ -119,7 +158,7 @@ export const crawlApi = {
   listRuns: (tenantId: string, signal?: AbortSignal) =>
     api.get<CrawlRunsResponse>(`${base(tenantId)}/crawl-runs`, signal),
 
-  // The server applies CRAWL_DEFAULT_MAX_PAGES (default 50) when max_pages is omitted.
+  // No max_pages is sent: crawls are unlimited and fetch every page found.
   start: (tenantId: string, url: string) =>
     api.post<{ ok: boolean; status: string; run_id: number; run: CrawlRun }>(
       `${base(tenantId)}/crawl`,

@@ -235,6 +235,73 @@ describe('Website Knowledge panel', () => {
     expect(screen.getAllByText(/View-only/).length).toBeGreaterThan(0)
   })
 
+  it('renders the yield report, page-text chunks and captured images', async () => {
+    const user = userEvent.setup()
+    testState.respond('GET /api/auth/me', () => ({ body: ADMIN_IDENTITY }))
+    testState.respond('GET /api/admin/tenants/acme/crawl-runs', () => ({ body: RUNS }))
+    testState.respond('GET /api/admin/tenants/acme/crawl-runs/7/staged', () => {
+      const body = stagedBody('staged')
+      body.summary = {
+        ...body.summary,
+        yield: {
+          pages_discovered: 8,
+          pages_fetched: 8,
+          pages_staged: 5,
+          pages_skipped: [
+            { url: 'https://acme.example/privacy-policy', reason: 'junk:privacy_page' },
+          ],
+          kb_chunks: 2,
+          kb_articles: 1,
+          faqs: 1,
+          products: 1,
+          images_captured: 1,
+          images_deduped: 1,
+          images_skipped: 2,
+        },
+        knowledge_images: [
+          {
+            alt_text: 'Red shoes on a model',
+            image_url: '/crawl_images/acme/7/image_abc.png',
+            source_url: 'https://acme.example/img/shoes.png',
+            source_page_url: 'https://acme.example/products',
+            section: 'Footwear',
+            kind: 'image',
+          },
+        ],
+      } as typeof body.summary
+      body.payload = {
+        ...body.payload,
+        page_chunks: [
+          {
+            title: 'Products (part 1)',
+            category: 'Website page',
+            content: 'Full body text about red shoes and how they are made.',
+            url: 'https://acme.example/products',
+          },
+        ],
+      } as typeof body.payload
+      return { body }
+    })
+    renderApp('#/tenants/acme/website-knowledge')
+    await waitForScreen()
+
+    // Yield strip: totals + the skipped page with its reason.
+    expect(await screen.findByText('Crawl yield')).toBeTruthy()
+    expect(screen.getByText(/8 pages discovered/)).toBeTruthy()
+    expect(screen.getByText(/junk:privacy_page/)).toBeTruthy()
+    expect(screen.getByText(/duplicates merged/)).toBeTruthy()
+
+    // Page text tab shows the grounded chunk, not a summary.
+    await user.click(screen.getByRole('button', { name: /Page text \(1\)/ }))
+    expect(screen.getByText('Products (part 1)')).toBeTruthy()
+    expect(screen.getByText(/Full body text about red shoes/)).toBeTruthy()
+
+    // Images tab shows the captured image with alt + source page.
+    await user.click(screen.getByRole('button', { name: /Images \(1\)/ }))
+    expect(screen.getByText('Red shoes on a model')).toBeTruthy()
+    expect(screen.getByText(/acme\.example\/products/)).toBeTruthy()
+  })
+
   it('shows the empty state when there are no crawls', async () => {
     testState.respond('GET /api/auth/me', () => ({ body: ADMIN_IDENTITY }))
     testState.respond('GET /api/admin/tenants/acme/crawl-runs', () => ({

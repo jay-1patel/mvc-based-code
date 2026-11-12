@@ -20,7 +20,7 @@ import httpx
 from bs4 import BeautifulSoup
 
 from services.site_crawler import BlockedUrlError, assert_public_url
-from services.url_scraper import USER_AGENT, extract_best_image_url, slugify
+from services.url_scraper import USER_AGENT, clean_text, extract_best_image_url, slugify
 
 logger = logging.getLogger("crawl_images")
 
@@ -110,6 +110,53 @@ def _image_dimensions(content: bytes) -> Tuple[Optional[int], Optional[int]]:
         return None, None
 
 
+def _best_srcset_candidate(srcset: str) -> str:
+    """Pick the best URL from a srcset: largest width descriptor wins,
+    then largest density, else the last candidate."""
+    entries: List[Tuple[float, str]] = []
+    for part in (srcset or "").split(","):
+        tokens = part.strip().split()
+        if not tokens:
+            continue
+        url = tokens[0]
+        score = 0.0
+        if len(tokens) > 1:
+            desc = tokens[1].lower()
+            try:
+                if desc.endswith("w"):
+                    score = float(desc[:-1])
+                elif desc.endswith("x"):
+                    score = float(desc[:-1]) * 1000
+            except ValueError:
+                score = 0.0
+        entries.append((score, url))
+    if not entries:
+        return ""
+    entries.sort(key=lambda e: e[0])
+    return entries[-1][1]
+
+
+def _heuristic_skip_reason(source_url: str, kind: str) -> Optional[str]:
+    """Filename/URL heuristics for images that are never knowledge:
+    sprites, favicons, icons and tracking pixels. Only plain content
+    images (kind == "image") are judged this way — logos keep their
+    existing stored-for-brand behaviour, og/product images are content.
+    """
+    if kind != "image":
+        return None
+    path = urllib.parse.urlparse(source_url or "").path.lower()
+    base = path.rsplit("/", 1)[-1]
+    if "sprite" in base:
+        return "sprite_excluded"
+    if "favicon" in base:
+        return "favicon_excluded"
+    if "pixel" in base or "tracker" in base or "1x1" in base:
+        return "tracking_pixel"
+    if base.startswith("icon") or "-icon" in base or "_icon" in base or "/icons/" in path:
+        return "icon_excluded"
+    return None
+
+
 def collect_image_candidates(pages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Harvest image URLs from crawled page payloads (html + structured fields)."""
     candidates: List[Dict[str, Any]] = []
@@ -122,6 +169,7 @@ def collect_image_candidates(pages: List[Dict[str, Any]]) -> List[Dict[str, Any]
         source_page: str,
         alt: str = "",
         offering_name: str = "",
+        section: str = "",
     ) -> None:
         if not url:
             return
@@ -140,6 +188,7 @@ def collect_image_candidates(pages: List[Dict[str, Any]]) -> List[Dict[str, Any]
                     "source_page_url": source_page,
                     "alt_text": alt or "",
                     "offering_name": offering_name,
+                    "section": section or "",
                     "already_seen": True,
                 })
             return
@@ -150,6 +199,7 @@ def collect_image_candidates(pages: List[Dict[str, Any]]) -> List[Dict[str, Any]
             "source_page_url": source_page,
             "alt_text": alt or "",
             "offering_name": offering_name or "",
+            "section": section or "",
             "already_seen": False,
         })
 
@@ -182,31 +232,43 @@ def collect_image_candidates(pages: List[Dict[str, Any]]) -> List[Dict[str, Any]
         html = page.get("html") or ""
         if html:
             soup = BeautifulSoup(html, "html.parser")
+            # Section tracking: the nearest preceding h1/h2/h3 for each img,
+            # so a captured image knows which part of the page it belongs to.
+            section_by_img: Dict[int, str] = {}
+            current_section = ""
+            for el in soup.find_all(True):
+                if el.name in ("h1", "h2", "h3"):
+                    heading_text = clean_text(el.get_text())
+                    if heading_text:
+                        current_section = heading_text
+                elif el.name == "img":
+                    section_by_img[id(el)] = current_section
             for img in soup.find_all("img"):
-                # Prefer raw src resolution so tiny tracking pixels reach the
-                # download stage (where <2KB / <24px skips are applied). The
-                # legacy extract_best_image_url helper drops "pixel"/"1x1" URLs.
+                # Prefer the srcset best candidate (largest width), then raw
+                # src resolution so tiny tracking pixels still reach the
+                # download stage (where size skips are applied/recorded).
                 alt = (img.get("alt") or "").strip()
                 kind = "logo" if "logo" in (alt + " " + " ".join(img.get("class") or [])).lower() else "image"
+                srcset_best = _best_srcset_candidate(img.get("srcset") or "")
                 raw = (
-                    img.get("src")
+                    srcset_best
+                    or img.get("src")
                     or img.get("data-src")
                     or img.get("data-lazy-src")
                     or ""
                 ).strip()
+                section = section_by_img.get(id(img), "")
                 if raw and not raw.startswith("data:"):
-                    _add(urllib.parse.urljoin(page_url, raw), kind=kind, source_page=page_url, alt=alt)
+                    _add(urllib.parse.urljoin(page_url, raw), kind=kind, source_page=page_url, alt=alt, section=section)
                 else:
                     best = extract_best_image_url(img, page_url)
-                    _add(best, kind=kind, source_page=page_url, alt=alt)
-            # srcset-only picture sources
+                    _add(best, kind=kind, source_page=page_url, alt=alt, section=section)
+            # srcset-only picture sources — best candidate only, matching img srcset
             for source in soup.find_all("source", srcset=True):
-                srcset = source.get("srcset") or ""
-                for part in srcset.split(","):
-                    tokens = part.strip().split()
-                    if tokens:
-                        resolved = urllib.parse.urljoin(page_url, tokens[0])
-                        _add(resolved, kind="image", source_page=page_url)
+                best = _best_srcset_candidate(source.get("srcset") or "")
+                if best:
+                    resolved = urllib.parse.urljoin(page_url, best)
+                    _add(resolved, kind="image", source_page=page_url)
 
     return candidates
 
@@ -278,6 +340,30 @@ def download_and_store_crawl_images(
             offering_name = cand.get("offering_name") or ""
             alt = cand.get("alt_text") or ""
             source_page = cand.get("source_page_url") or ""
+            section = cand.get("section") or ""
+
+            # Filename heuristics: sprites / favicons / icons / tracking
+            # pixels are never knowledge — record the skip, never fetch.
+            heuristic_reason = _heuristic_skip_reason(source_url, kind)
+            if heuristic_reason:
+                row_id = insert_crawl_image({
+                    "run_id": run_id,
+                    "tenant_id": tenant_id,
+                    "source_url": source_url,
+                    "kind": kind,
+                    "alt_text": alt,
+                    "source_page_url": source_page,
+                    "offering_name": offering_name,
+                    "skipped": True,
+                    "skip_reason": heuristic_reason,
+                })
+                results.append({
+                    "id": row_id, "source_url": source_url, "skipped": True,
+                    "skip_reason": heuristic_reason, "kind": kind,
+                    "alt_text": alt, "source_page_url": source_page,
+                    "section": section,
+                })
+                continue
 
             # Cap stored (non-skipped, non-duplicate-new-bytes) images
             if stored_count >= MAX_IMAGES_PER_CRAWL:
@@ -515,6 +601,9 @@ def download_and_store_crawl_images(
                 "sha256": sha,
                 "kind": kind,
                 "offering_name": offering_name,
+                "alt_text": alt,
+                "source_page_url": source_page,
+                "section": section,
                 "width": width,
                 "height": height,
                 "byte_size": byte_size,

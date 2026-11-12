@@ -182,6 +182,7 @@ class CrawlExportApiTests(_CrawlTestBase):
         body = r.json()
         self.assertEqual(body["counts"], {
             "knowledge_base": 1, "faqs": 1, "products": 1, "pages": 2,
+            "images": 0,  # export gained an images count with the extraction fix
         })
         self.assertEqual(body["knowledge_base"][0]["title"], "About Crawled Co")
         self.assertIn("makes widgets", body["knowledge_base"][0]["content"])
