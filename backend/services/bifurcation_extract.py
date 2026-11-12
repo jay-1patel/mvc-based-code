@@ -369,12 +369,29 @@ def _chunk_text(text: str, size: int = _CHUNK_CHARS, overlap: int = _CHUNK_OVERL
 
 
 def _normalize_phone(raw: str) -> str:
-    digits = re.sub(r"[^\d+]", "", raw or "")
-    if digits.startswith("00"):
-        digits = "+" + digits[2:]
-    if len(re.sub(r"\D", "", digits)) < 10:
+    """Return a canonical phone, or "" when the text is not a real number.
+
+    Indian mobiles become +91XXXXXXXXXX. Anything else must already be a
+    country-coded number the profile validator accepts. Digit soup is dropped.
+    """
+    text = (raw or "").strip()
+    if not text:
         return ""
-    return raw.strip()
+    try:
+        from services.shared_validators import validate_mobile
+    except ImportError:
+        from backend.services.shared_validators import validate_mobile
+    checked = validate_mobile(text)
+    if checked.get("valid"):
+        return str(checked.get("normalized") or "")
+    try:
+        from shared.tenancy.schemas import _phone_ok
+    except ImportError:
+        from backend.shared.tenancy.schemas import _phone_ok
+    compact = re.sub(r"[\s\-()]", "", text)
+    if compact and _phone_ok(compact):
+        return compact
+    return ""
 
 
 def _guess_vertical(text: str) -> str:

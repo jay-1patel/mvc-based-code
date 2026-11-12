@@ -40,6 +40,8 @@ class PackageMediaTests(unittest.TestCase):
         self.assertEqual(kind, "image")
 
     def test_package_media_pdf_from_attrs(self):
+        # A brochure is sent only when the user asks for one. A placeholder
+        # image must not promote that PDF onto the package card.
         pkg = {
             "name": "Goa Getaway",
             "media_url": "Add public https image URL",
@@ -49,6 +51,15 @@ class PackageMediaTests(unittest.TestCase):
             },
         }
         url, kind = package_media(pkg)
+        self.assertEqual(url, "")
+        self.assertEqual(kind, "")
+
+        hosted = {
+            "name": "Goa Getaway",
+            "media_url": "/uploaded_files/brochures/goa.pdf",
+            "media_type": "document",
+        }
+        url, kind = package_media(hosted)
         self.assertTrue(url.endswith("goa.pdf"))
         self.assertEqual(kind, "document")
 

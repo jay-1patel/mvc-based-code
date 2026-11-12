@@ -255,13 +255,22 @@ class WhatsAppRoutingDedupTests(unittest.IsolatedAsyncioTestCase):
     async def test_orchestrator_ignores_message_without_active_tenant(self):
         from backend.services import orchestrator
 
-        with patch(
-            "shared.tenancy.resolver.resolve_effective_tenant_id",
-            return_value=None,
-        ):
-            result = await orchestrator.process_incoming_message(
-                "919500000000", "hello", capture_only=True
-            )
+        # The ignore decision happens after a user_states read, so the test
+        # needs its own database. No tenant is assigned, and the message
+        # must not be processed.
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = os.path.join(temp_dir, "orch.sqlite3")
+            with (
+                patch.object(database, "DB_PATH", db_path),
+                patch(
+                    "shared.tenancy.resolver.resolve_effective_tenant_id",
+                    return_value=None,
+                ),
+            ):
+                database.init_db()
+                result = await orchestrator.process_incoming_message(
+                    "919500000000", "hello", capture_only=True
+                )
 
         self.assertEqual(result["status"], "ignored")
         self.assertEqual(result["messages"], [])

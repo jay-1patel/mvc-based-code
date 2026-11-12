@@ -34,6 +34,7 @@ import {
 import { LoadingBlock } from '@/components/ui/feedback'
 import { PageHeader } from '@/components/layout/page-header'
 import { useToast } from '@/components/ui/toast'
+import { PASSWORD_HINT, passwordError } from '@/lib/password'
 
 type Draft = {
   username: string
@@ -130,9 +131,9 @@ export function TeamScreen() {
   }
 
   const reset = async (username: string) => {
-    const passwordValid = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).{12,}$/.test(newPassword)
-    if (!passwordValid) {
-      toast.push('Password must be at least 12 chars with upper/lower/digit/special char')
+    const problem = passwordError(newPassword)
+    if (problem) {
+      toast.push(problem)
       return
     }
     const result = await action.run(() => adminsApi.resetPassword(username, newPassword))
@@ -228,7 +229,11 @@ export function TeamScreen() {
                 value={draft.password}
                 onChange={(e) => setDraft({ ...draft, password: e.target.value })}
                 placeholder="Enter new password"
-                hint="At least 12 chars with upper/lower/digit/special char"
+                hint={
+                  draft.password && passwordError(draft.password)
+                    ? passwordError(draft.password) ?? PASSWORD_HINT
+                    : PASSWORD_HINT
+                }
               />
             </div>
             <FieldSelect
@@ -289,7 +294,7 @@ export function TeamScreen() {
                   action.busy ||
                   !draft.username.trim() ||
                   !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(draft.email.trim()) ||
-                  !/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).{12,}$/.test(draft.password)
+                  passwordError(draft.password) !== null
                 }
                 onClick={create}
               >
@@ -371,11 +376,12 @@ export function TeamScreen() {
                             value={newPassword}
                             onChange={(e) => setNewPassword(e.target.value)}
                             placeholder="New password"
+                            hint={newPassword ? passwordError(newPassword) ?? undefined : PASSWORD_HINT}
                           />
                         </div>
                         <PrimaryButton
                           className={smallBtn}
-                          disabled={action.busy || !/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).{12,}$/.test(newPassword)}
+                          disabled={action.busy || passwordError(newPassword) !== null}
                           onClick={() => reset(admin.username)}
                         >
                           {action.busy && <Loader2 className="h-4 w-4 animate-spin" />}
