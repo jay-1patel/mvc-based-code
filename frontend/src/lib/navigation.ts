@@ -22,6 +22,7 @@
  *   profile           → Profile (Advanced)       menu-edit → Menu editor (Advanced)
  *   layers            → Layers (Advanced)        api-access → API access (Advanced)
  *   chat              → Admin chat (Advanced)    test      → Test & smoke (Advanced)
+ *   whatsapp-tester   → WhatsApp Tester (Advanced)
  *   projects/technologies/careers/benefits keep their names (IT tenants).
  */
 
@@ -32,6 +33,7 @@ import {
   ClipboardList,
   Cpu,
   FileText,
+  FlaskConical,
   FolderOpen,
   Gift,
   Globe,
@@ -264,6 +266,13 @@ export function buildTenantNav(opts: {
       id: 'test',
       label: 'Test & smoke',
       icon: ShieldCheck,
+      group: 'Settings → Advanced',
+      permissions: ['manage_operations'],
+    },
+    {
+      id: 'whatsapp-tester',
+      label: 'WhatsApp Tester',
+      icon: FlaskConical,
       group: 'Settings → Advanced',
       permissions: ['manage_operations'],
     },

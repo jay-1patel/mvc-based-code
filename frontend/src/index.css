@@ -42,7 +42,7 @@
    */
   * {
     scrollbar-width: thin;
-    scrollbar-color: rgba(86, 76, 109, 0.35) transparent;
+    scrollbar-color: rgba(15, 110, 88, 0.35) transparent;
   }
 
   ::-webkit-scrollbar {
@@ -56,14 +56,14 @@
   }
 
   ::-webkit-scrollbar-thumb {
-    background-color: rgba(86, 76, 109, 0.28);
+    background-color: rgba(15, 110, 88, 0.28);
     border: 3px solid transparent;
     background-clip: content-box;
     border-radius: 9999px;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    background-color: rgba(86, 76, 109, 0.5);
+    background-color: rgba(15, 110, 88, 0.5);
   }
 }
 
@@ -78,7 +78,7 @@
 
   .scroll-thin {
     scrollbar-width: thin;
-    scrollbar-color: #c9c3d6 transparent;
+    scrollbar-color: #c9d5cf transparent;
   }
 
   /*
@@ -87,17 +87,17 @@
    */
   .scroll-overlay {
     scrollbar-width: thin;
-    scrollbar-color: rgba(86, 76, 109, 0.35) transparent;
+    scrollbar-color: rgba(15, 110, 88, 0.35) transparent;
     overscroll-behavior: contain;
   }
 
   .scroll-overlay::-webkit-scrollbar-thumb {
-    background-color: rgba(86, 76, 109, 0.28);
+    background-color: rgba(15, 110, 88, 0.28);
   }
 
   .scroll-overlay:hover::-webkit-scrollbar-thumb,
   .scroll-overlay:focus-within::-webkit-scrollbar-thumb {
-    background-color: rgba(86, 76, 109, 0.5);
+    background-color: rgba(15, 110, 88, 0.5);
   }
 
   /*

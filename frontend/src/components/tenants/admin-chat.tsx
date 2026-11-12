@@ -225,8 +225,8 @@ export function AdminChatPanel({ tenantId }: { tenantId: string }) {
   return (
     <div>
       <PageHeader
-        title="Admin chat"
-        description="Talk to the other admins of this tenant. Messages are private to this brand."
+        title="Team chat (internal)"
+        description="Staff-only chat between admins of this tenant — not WhatsApp. Customer WhatsApp lives under Live inbox."
         meta={
           <>
             <Pill tone={connected ? 'ok' : 'bad'}>

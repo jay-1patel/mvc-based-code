@@ -3,6 +3,7 @@ import { useAsync } from '@/lib/hooks'
 import { useAuth } from '@/lib/auth'
 import { formatDate, relativeTime } from '@/lib/format'
 import { auditApiExtended } from '@/lib/audit.extended'
+import { saveBlob } from '@/lib/uploads'
 import { cn } from '@/lib/cn'
 import {
   Card,
@@ -106,18 +107,8 @@ const ExportMenu = ({ events, filters, onExportSuccess, onExportError }: { event
     try {
       const columns = getDefaultExportColumns()
       const request = { filters, format, columns }
-      const response = await auditApiExtended.exportEvents(request)
-
-      // Create download link
-      const url = window.URL.createObjectURL(new Blob([response]))
-      const link = document.createElement('a')
-      link.href = url
-      link.download = `audit-history-${new Date().toISOString().split('T')[0]}.${format}`
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-      window.URL.revokeObjectURL(url)
-
+      const blob = await auditApiExtended.exportEvents(request)
+      saveBlob(blob, `audit-history-${new Date().toISOString().split('T')[0]}.${format}`)
       onExportSuccess()
     } catch (error) {
       // Export failures must be visible on the page, not just the console.
@@ -435,6 +426,7 @@ export function AuditHistory() {
     sort_by: 'created_at',
     sort_order: 'desc'
   })
+  const initialDates = getPresetDates('last_7_days')
   const [draft, setDraft] = useState({
     search: '',
     actor: '',
@@ -442,8 +434,8 @@ export function AuditHistory() {
     category: '',
     tenant_id: '',
     outcome: '' as AuditOutcome | '',
-    start_date: '',
-    end_date: '',
+    start_date: initialDates.start_date,
+    end_date: initialDates.end_date,
     preset: 'last_7_days' as FilterPreset,
   })
   const [viewMode, setViewMode] = useState<ViewMode>('table')
@@ -467,17 +459,20 @@ export function AuditHistory() {
   }, [])
 
   const requestFilters = useMemo(() => ({
-    ...filters,
     limit: filters.limit ?? PAGE_SIZE,
+    offset: filters.offset ?? 0,
+    sort_by: filters.sort_by,
+    sort_order: filters.sort_order,
     start_date: draft.start_date || undefined,
     end_date: draft.end_date || undefined,
-    actor: draft.actor || filters.actor,
-    action: draft.action || filters.action,
-    category: draft.category || filters.category,
-    tenant_id: scopedTenant || draft.tenant_id || filters.tenant_id,
-    outcome: draft.outcome || filters.outcome,
-    search: draft.search || filters.search,
-  }), [filters, draft, scopedTenant])
+    // Draft is the live source of truth so clearing a field clears the query too.
+    actor: draft.actor.trim() || undefined,
+    action: draft.action || undefined,
+    category: draft.category || undefined,
+    tenant_id: scopedTenant || draft.tenant_id || undefined,
+    outcome: draft.outcome || undefined,
+    search: draft.search.trim() || undefined,
+  }), [filters.limit, filters.offset, filters.sort_by, filters.sort_order, draft, scopedTenant])
 
   // Fetch audit data
   const state = useAsync(() => auditApiExtended.list(requestFilters) as Promise<AuditPageState>, [JSON.stringify(requestFilters)])
@@ -485,10 +480,10 @@ export function AuditHistory() {
   const events = page?.events ?? []
   const formattedEvents = useMemo(() => events.map(formatEventForDisplay), [events])
 
-  // Fetch statistics
+  // Fetch statistics with the same filters as the table
   const statistics = useAsync(() =>
-    auditApiExtended.getStatistics(filters) as Promise<AuditStatistics>,
-    [JSON.stringify(filters)]
+    auditApiExtended.getStatistics(requestFilters) as Promise<AuditStatistics>,
+    [JSON.stringify(requestFilters)]
   )
 
   const start = page && page.total ? page.offset + 1 : 0
@@ -529,11 +524,19 @@ export function AuditHistory() {
     }))
   }
 
+  const resetOffset = () => {
+    setFilters(current => (current.offset ? { ...current, offset: 0 } : current))
+  }
+
   const updateDraft = <K extends keyof typeof draft>(key: K, value: (typeof draft)[K]) => {
     setDraft(current => ({ ...current, [key]: value }))
+    // Changing any live filter while on page 2+ must restart at offset 0,
+    // otherwise filtered totals smaller than the page look empty.
+    if (key !== 'preset') resetOffset()
   }
 
   const clearFilters = () => {
+    const dates = getPresetDates('last_7_days')
     const clean = {
       search: '',
       actor: '',
@@ -541,8 +544,8 @@ export function AuditHistory() {
       category: '',
       tenant_id: '',
       outcome: '' as AuditOutcome | '',
-      start_date: '',
-      end_date: '',
+      start_date: dates.start_date,
+      end_date: dates.end_date,
       preset: 'last_7_days' as FilterPreset
     }
     setDraft(clean)
@@ -672,6 +675,7 @@ export function AuditHistory() {
                   preset={draft.preset}
                   onChange={(preset, start_date, end_date) => {
                     setDraft(current => ({ ...current, preset, start_date, end_date }))
+                    resetOffset()
                   }}
                 />
               </div>
