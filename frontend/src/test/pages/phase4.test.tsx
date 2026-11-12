@@ -240,6 +240,21 @@ describe('phase 4 — api access & menu editor', () => {
   })
 
   it('menu editor renders with its draft/publish actions', async () => {
+    // Render as the tenant admin: since the QA-audit fixes, write controls
+    // in the menu editor are hidden from view-only super admins
+    // (canWriteTenant), so the default super-admin fixture would
+    // correctly see none of these actions.
+    testState.respond('GET /api/auth/me', () => ({
+      body: {
+        id: 2,
+        username: 'acme-admin',
+        role: 'admin',
+        email: 'admin@acme.example',
+        permissions: Object.fromEntries(ALL_PERMISSIONS.map((k) => [k, true])),
+        tenant_id: T,
+        onboarding_approved: true,
+      },
+    }))
     await renderView(`#/tenants/${T}/menu-edit`)
     expect(screen.getByRole('heading', { name: 'Menu editor' })).toBeInTheDocument()
     expect(await screen.findByRole('button', { name: 'Add option' })).toBeInTheDocument()

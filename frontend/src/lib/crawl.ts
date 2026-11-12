@@ -119,7 +119,7 @@ export const crawlApi = {
   listRuns: (tenantId: string, signal?: AbortSignal) =>
     api.get<CrawlRunsResponse>(`${base(tenantId)}/crawl-runs`, signal),
 
-  // No max_pages is sent: crawls are unlimited and fetch every page found.
+  // The server applies CRAWL_DEFAULT_MAX_PAGES (default 50) when max_pages is omitted.
   start: (tenantId: string, url: string) =>
     api.post<{ ok: boolean; status: string; run_id: number; run: CrawlRun }>(
       `${base(tenantId)}/crawl`,

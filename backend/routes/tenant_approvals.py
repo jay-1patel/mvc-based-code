@@ -191,9 +191,10 @@ def _create_change_request(body: TenantChangeCreate, current_admin: dict):
             )
 
         from shared.tenancy import loader as _loader
+        from shared.tenancy.schemas import require_known_vertical
 
         try:
-            # Fail before queueing the request if the vertical is unknown.
+            tenant_fields["vertical"] = require_known_vertical(tenant_fields.get("vertical"))
             _loader.build_profile(tenant_id, db_layer={}, file_layer={}, include_db=False)
         except Exception as exc:
             raise HTTPException(status_code=422, detail=f"Invalid vertical: {exc}")
@@ -499,10 +500,15 @@ def _apply_request(row: dict) -> int:
                     f"(conflicts with '{conflict.get('id')}' / slug '{conflict.get('slug')}')"
                 ),
             )
+        from shared.tenancy.schemas import require_known_vertical
+        try:
+            approved_vertical = require_known_vertical(tenant_fields.get("vertical"))
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=f"Invalid vertical: {exc}")
         tenancy_store.ensure_tenant(
             tenant_id,
             slug=tenant_fields.get("slug") or tenant_id,
-            vertical=tenant_fields.get("vertical") or "generic",
+            vertical=approved_vertical,
             waba_phone_id=tenant_fields.get("waba_phone_id") or "",
             mobile_number=tenant_fields.get("mobile_number") or "",
             display_name=tenant_fields.get("display_name") or "",

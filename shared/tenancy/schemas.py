@@ -77,6 +77,16 @@ VERTICALS = (
     "generic",
 )
 
+
+def require_known_vertical(vertical: str | None) -> str:
+    """Return a registered vertical id, or raise ValueError."""
+    candidate = (vertical or "").strip() or "generic"
+    if candidate not in VERTICALS:
+        raise ValueError(
+            f"unknown vertical {candidate!r}; expected one of {sorted(VERTICALS)}"
+        )
+    return candidate
+
 STEP_TYPES = (
     # MVP (build now)
     "ask",          # free-text question, optional validation

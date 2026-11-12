@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { Loader2, Pencil, Plus, Trash2, X } from 'lucide-react'
 import { useAction } from '@/lib/hooks'
 import { useAuth } from '@/lib/auth'
-import { contentWritePerms } from '@/lib/permissions'
+import { contentWritePerms, usePermissions } from '@/lib/permissions'
 import { offeringsApi, useOfferings } from '@/lib/offerings'
 import { useTenants } from '@/lib/tenants'
 import { getVertical } from '@/lib/verticals'
@@ -39,6 +39,7 @@ const smallBtn = 'px-3 py-1.5 text-xs'
 export function OfferingsPanel({ tenantId }: { tenantId: string }) {
   const { active } = useTenants()
   const { can } = useAuth()
+  const { canWriteTenant } = usePermissions()
   const toast = useToast()
   const action = useAction()
 
@@ -46,9 +47,9 @@ export function OfferingsPanel({ tenantId }: { tenantId: string }) {
   const canRead = can('view_products')
   // Add/edit/remove are granted separately per vertical — see contentWritePerms.
   const { add: addPerms, edit: editPerms, remove: removePerms } = contentWritePerms(active?.vertical)
-  const canAdd = addPerms.some(can)
-  const canEditRow = editPerms.some(can)
-  const canRemove = removePerms.some(can)
+  const canAdd = addPerms.some((perm) => canWriteTenant(perm))
+  const canEditRow = editPerms.some((perm) => canWriteTenant(perm))
+  const canRemove = removePerms.some((perm) => canWriteTenant(perm))
   const canEdit = canAdd || canEditRow || canRemove
 
   const [showInactive, setShowInactive] = useState(false)

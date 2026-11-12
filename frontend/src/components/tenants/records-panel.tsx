@@ -13,8 +13,8 @@ import {
 } from 'lucide-react'
 import { useAction, useAsync } from '@/lib/hooks'
 import { useAuth } from '@/lib/auth'
-import { contentWritePerms } from '@/lib/permissions'
-import { offeringsApi } from '@/lib/offerings'
+import { contentWritePerms, usePermissions } from '@/lib/permissions'
+import { notifyOfferingsChanged, offeringsApi } from '@/lib/offerings'
 import { uploadRecordImage } from '@/lib/uploads'
 import { useTenants } from '@/lib/tenants'
 import { getVertical } from '@/lib/verticals'
@@ -100,18 +100,20 @@ function publicImageUrl(value: unknown): string | null {
 export function RecordsPanel({ tenantId }: { tenantId: string }) {
   const { active } = useTenants()
   const { can } = useAuth()
+  const { canWriteTenant } = usePermissions()
   const toast = useToast()
   const action = useAction()
 
   const content = getVertical(active?.vertical).content
   const canRead = can('view_products')
   // Add/edit/remove are granted separately per vertical — see contentWritePerms.
+  // canWriteTenant is false for a super admin: those writes are refused by the API.
   const { add: addPerms, edit: editPerms, remove: removePerms } = contentWritePerms(active?.vertical)
-  const canAdd = addPerms.some(can)
-  const canEditRow = editPerms.some(can)
-  const canRemove = removePerms.some(can)
+  const canAdd = addPerms.some((perm) => canWriteTenant(perm))
+  const canEditRow = editPerms.some((perm) => canWriteTenant(perm))
+  const canRemove = removePerms.some((perm) => canWriteTenant(perm))
   const canEdit = canAdd || canEditRow || canRemove
-  const canSchema = can('manage_operations')
+  const canSchema = canWriteTenant('manage_operations')
 
   const [showInactive, setShowInactive] = useState(false)
   const [search, setSearch] = useState('')
@@ -169,6 +171,7 @@ export function RecordsPanel({ tenantId }: { tenantId: string }) {
       )
       if (updated) {
         reload()
+        notifyOfferingsChanged(tenantId)
         toast.push(`Image saved for ${row.name}`)
       }
     } catch (err) {
@@ -183,6 +186,7 @@ export function RecordsPanel({ tenantId }: { tenantId: string }) {
     if (result) {
       setConfirmDelete(null)
       reload()
+      notifyOfferingsChanged(tenantId)
       toast.push(hard ? 'Deleted permanently' : 'Removed — the bot will not list it again')
     }
   }
@@ -263,6 +267,7 @@ export function RecordsPanel({ tenantId }: { tenantId: string }) {
             if (result) {
               setCreating(false)
               reload()
+              notifyOfferingsChanged(tenantId)
               toast.push(`${result.name} added`)
             }
           }}
@@ -282,6 +287,7 @@ export function RecordsPanel({ tenantId }: { tenantId: string }) {
             if (result) {
               setEditing(null)
               reload()
+              notifyOfferingsChanged(tenantId)
               toast.push('Saved')
             }
           }}

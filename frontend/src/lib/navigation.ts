@@ -166,7 +166,7 @@ export function buildTenantNav(opts: {
     },
 
     // Your business data
-    { id: 'menu', label: 'Bot menu', icon: ListTree, group: 'Your business data' },
+    { id: 'menu', label: 'Bot menu', icon: ListTree, group: 'Your business data', permissions: ['manage_operations'] },
     {
       id: 'records',
       label: `${content.label} & prices`,

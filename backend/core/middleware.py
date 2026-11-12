@@ -250,7 +250,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
         logger.error(f"ERROR_REPORT_FAILED | req={rid} | api={api}", exc_info=True)
     body = {
         "detail": "Internal Server Error",
-        "error": f"{type(exc).__name__}: {str(exc)[:300]}" if str(exc) else "Internal Server Error",
+        "error": "Internal Server Error",
         "request_id": rid,
         "api": api,
     }

@@ -47,6 +47,14 @@ export function AppShell({ route, children }: { route: RouteMatch; children: Rea
   const { identity, logout } = useAuth()
   const { can } = usePermissions()
   const { tenants, active, setActive } = useTenants()
+
+  // The page follows the hash. The switcher must follow the same tenant,
+  // otherwise the sidebar describes a different brand than the screen.
+  useEffect(() => {
+    if (route.tenantId && route.tenantId !== active?.id) {
+      setActive(route.tenantId)
+    }
+  }, [route.tenantId, active?.id, setActive])
   const [switcherOpen, setSwitcherOpen] = useState(false)
   // Below `lg` the sidebar lives behind a hamburger; this tracks that drawer.
   const [navOpen, setNavOpen] = useState(false)
