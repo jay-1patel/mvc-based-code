@@ -99,6 +99,7 @@ class TenantApprovalTests(unittest.TestCase):
                     "vertical": "generic",
                     "display_name": "Acme Ltd",
                     "waba_phone_id": "",
+                    "mobile_number": "919800000001",
                     "status": "active",
                 },
                 "snapshot": {},
@@ -136,7 +137,12 @@ class TenantApprovalTests(unittest.TestCase):
         admin = self._create_admin("plain-admin")
         blocked = self.client.post(
             "/api/admin/tenants",
-            json={"tenant_id": "acme", "vertical": "generic"},
+            json={
+                "tenant_id": "acme",
+                "vertical": "generic",
+                "mobile_number": "919800000021",
+                "auto_scrape": False,
+            },
             headers=admin,
         )
         self.assertEqual(blocked.status_code, 403)
@@ -145,7 +151,12 @@ class TenantApprovalTests(unittest.TestCase):
         # The super admin still creates tenants directly.
         direct = self.client.post(
             "/api/admin/tenants",
-            json={"tenant_id": "acme", "vertical": "generic"},
+            json={
+                "tenant_id": "acme",
+                "vertical": "generic",
+                "mobile_number": "919800000022",
+                "auto_scrape": False,
+            },
             headers=self._login("root"),
         )
         self.assertEqual(direct.status_code, 200)
@@ -174,7 +185,7 @@ class TenantApprovalTests(unittest.TestCase):
         self.assertEqual(approved.status_code, 200)
         self.assertEqual(self._current_version("acme"), 1)
 
-        # The super admin still publishes directly.
+        # A super admin is view-only inside a tenant and cannot publish.
         tenancy_store.save_draft(
             "acme",
             {"brand": {"support_email": "care@acme.example", "support_phone": "+91 98765 43210"}},
@@ -182,9 +193,8 @@ class TenantApprovalTests(unittest.TestCase):
         direct_pub = self.client.post(
             "/api/admin/tenants/acme/publish", headers=self._login("root")
         )
-        self.assertEqual(direct_pub.status_code, 200)
-        self.assertIn("version", direct_pub.json())
-        self.assertEqual(self._current_version("acme"), 2)
+        self.assertEqual(direct_pub.status_code, 403)
+        self.assertEqual(self._current_version("acme"), 1)
 
     # ── contact-detail validation ───────────────────────────────
 
@@ -219,6 +229,7 @@ class TenantApprovalTests(unittest.TestCase):
                     "vertical": "generic",
                     "display_name": "Acme Ltd",
                     "waba_phone_id": "12345",
+                    "mobile_number": "919800000001",
                     "status": "active",
                 },
             },
@@ -243,7 +254,12 @@ class TenantApprovalTests(unittest.TestCase):
         admin = self._create_admin("profile-admin")
         self.client.post(
             "/api/admin/tenants",
-            json={"tenant_id": "acme", "vertical": "generic"},
+            json={
+                "tenant_id": "acme",
+                "vertical": "generic",
+                "mobile_number": "919800000031",
+                "auto_scrape": False,
+            },
             headers=self._login("root"),
         )
         # Saving a broken draft is allowed; the problem comes back as a
@@ -333,7 +349,12 @@ class TenantApprovalTests(unittest.TestCase):
         # Someone (a super admin) registers the same id before review.
         self.client.post(
             "/api/admin/tenants",
-            json={"tenant_id": "acme", "vertical": "generic"},
+            json={
+                "tenant_id": "acme",
+                "vertical": "generic",
+                "mobile_number": "919800000032",
+                "auto_scrape": False,
+            },
             headers=self._login("root"),
         )
         conflict = self._decide(request_id, "approved")
@@ -360,9 +381,18 @@ class TenantApprovalTests(unittest.TestCase):
     # ── publish flow ────────────────────────────────────────────────────
 
     def _register_tenant(self, tenant_id="acme"):
+        mobiles = {
+            "acme": "919800000040",
+            "ghost": "919800000041",
+        }
         res = self.client.post(
             "/api/admin/tenants",
-            json={"tenant_id": tenant_id, "vertical": "generic"},
+            json={
+                "tenant_id": tenant_id,
+                "vertical": "generic",
+                "mobile_number": mobiles.get(tenant_id, "919800000049"),
+                "auto_scrape": False,
+            },
             headers=self._login("root"),
         )
         assert res.status_code == 200, res.text
@@ -422,7 +452,13 @@ class TenantApprovalTests(unittest.TestCase):
         # 1. Super admin creates the tenant with the company basics only.
         created = self.client.post(
             "/api/admin/tenants",
-            json={"tenant_id": "acme", "vertical": "generic", "display_name": "Acme Ltd"},
+            json={
+                "tenant_id": "acme",
+                "vertical": "generic",
+                "display_name": "Acme Ltd",
+                "mobile_number": "919800000098",
+                "auto_scrape": False,
+            },
             headers=self._login("root"),
         )
         self.assertEqual(created.status_code, 200)
@@ -491,15 +527,19 @@ class TenantApprovalTests(unittest.TestCase):
             {"brand": {"name": "Acme", "support_email": "care@acme.example", "support_phone": "+91 98765 43210"}},
         )
 
-        # Publish once so the tenant has a live version.
-        self.client.post("/api/admin/tenants/acme/publish", headers=self._login("root"))
+        # A super admin cannot publish inside a tenant. The tenant admin
+        # submits, and the super admin's approval is what goes live.
+        scoped = self._create_admin("scoped-admin-2", tenant_id="acme")
+        first = self._submit_publish(scoped, "acme")
+        self.assertEqual(first.status_code, 201, first.text)
+        approved = self._decide(first.json()["request"]["id"], "approved")
+        self.assertEqual(approved.status_code, 200, approved.text)
         self.assertEqual(self._current_version("acme"), 1)
 
         tenancy_store.save_draft(
             "acme",
             {"brand": {"name": "Changed", "support_email": "care@acme.example", "support_phone": "+91 98765 43210"}},
         )
-        scoped = self._create_admin("scoped-admin-2", tenant_id="acme")
         request_id = self._submit_publish(scoped, "acme").json()["request"]["id"]
 
         rejected = self._decide(request_id, "rejected")

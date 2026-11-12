@@ -253,7 +253,12 @@ class ImageStorageTests(unittest.TestCase):
         self.upload = Path(self.temp.name) / "uploads"
         self.upload.mkdir()
         self.db_patch = patch.object(database, "DB_PATH", self.db_path)
-        self.env_patch = patch.dict(os.environ, {"UPLOAD_DIR": str(self.upload)})
+        self.env_patch = patch.dict(os.environ, {
+            "UPLOAD_DIR": str(self.upload),
+            # The fixture server is on localhost. The SSRF check stays on;
+            # this test opts the loopback address into the allowlist.
+            "CRAWL_URL_ALLOWLIST": "127.0.0.1,localhost",
+        })
         self.resolver_patch = patch(
             "shared.tenancy.resolver.resolve_default_tenant", return_value="default"
         )
@@ -382,7 +387,12 @@ class CrawlApiAndE2ETests(unittest.TestCase):
         self.clients_root.mkdir()
 
         self.db_patch = patch.object(database, "DB_PATH", self.db_path)
-        self.env_patch = patch.dict(os.environ, {"UPLOAD_DIR": str(self.upload)})
+        self.env_patch = patch.dict(os.environ, {
+            "UPLOAD_DIR": str(self.upload),
+            # The fixture server is on localhost. The SSRF check stays on;
+            # this test opts the loopback address into the allowlist.
+            "CRAWL_URL_ALLOWLIST": "127.0.0.1,localhost",
+        })
         self.clients_patch = patch("shared.tenancy.paths.CLIENTS_DIR", self.clients_root)
         self.resolver_patch = patch(
             "shared.tenancy.resolver.resolve_default_tenant", return_value="default"

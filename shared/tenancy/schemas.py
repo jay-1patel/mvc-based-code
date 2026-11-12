@@ -289,18 +289,25 @@ def is_valid_phone_input(value: str, wanted: int = 10) -> bool:
     # subscriber digits (e.g. +91 98765 43210). This is checked first: a string
     # like "+91 12345678" totals 10 digits but only 8 after the country code, so
     # it must NOT pass the bare-length rule below.
+    def _indian_subscriber_ok(subscriber: str) -> bool:
+        # A 10-digit local number has to be an Indian mobile. Landlines and
+        # 1–5 prefixes are not accepted on the chat/checkout path.
+        return wanted != 10 or (bool(subscriber) and subscriber[0] in "6789")
+
     if raw.startswith("+"):
         return any(
-            digits.startswith(cc) and len(digits) - len(cc) == wanted
+            digits.startswith(cc)
+            and len(digits) - len(cc) == wanted
+            and (cc != "91" or _indian_subscriber_ok(digits[len(cc):]))
             for cc in _PHONE_COUNTRY_CODES
         )
 
     if len(digits) == wanted:
-        return True
+        return _indian_subscriber_ok(digits)
     if digits.startswith("0") and len(digits) == wanted + 1:
-        return True
+        return _indian_subscriber_ok(digits[1:])
     if wanted == 10 and len(digits) == 12 and digits.startswith("91"):
-        return True
+        return _indian_subscriber_ok(digits[2:])
     return False
 
 

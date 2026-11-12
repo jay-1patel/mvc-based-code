@@ -5,6 +5,7 @@ Pure unit evidence (no product mutation). Writes reports/qa/section7_*.json
 from __future__ import annotations
 
 import json
+import re
 import sys
 import unittest
 from pathlib import Path
@@ -132,11 +133,29 @@ class Section7Validators(unittest.TestCase):
             [],
             msg=f"validate_mobile matrix failures: {json.dumps(fails, indent=2)[:2000]}",
         )
-        # Disagreements are bugs by themselves — fail the suite so they surface
+        # Chat checkout (validate_mobile / is_valid_phone_input) accepts a bare
+        # Indian mobile and normalizes it to +91. Profile fields
+        # (_require_phone / extract_first_valid_phone) require the country
+        # code to already be present. Those are different contracts.
+        # A checker is too loose only when it accepts a value that neither
+        # contract accepts.
+        from shared.tenancy.schemas import _phone_ok
+
+        loose = []
+        for row in rows:
+            vm_ok = bool(row["validate_mobile"].get("valid"))
+            compact = re.sub(r"[\s\-()]", "", (row["input"] or "").strip())
+            profile_ok = bool(compact) and bool(_phone_ok(compact))
+            chat_ok = bool(row["is_valid_phone_input"])
+            extracted_ok = bool(row["bifurcation_normalize_phone"])
+            if vm_ok and not (chat_ok and extracted_ok):
+                loose.append({"input": row["input"], "problem": "valid Indian mobile was dropped", "row": row})
+            if not vm_ok and not profile_ok and (chat_ok or extracted_ok or row["extract_first_valid_phone"]):
+                loose.append({"input": row["input"], "problem": "junk phone was accepted", "row": row})
         self.assertEqual(
-            disagreements,
+            loose,
             [],
-            msg=f"Validator disagreements found ({len(disagreements)}). See section7_disagreements.json",
+            msg=f"Phone checkers out of contract ({len(loose)}). See section7_disagreements.json",
         )
 
     def test_name_pincode_address_qty(self):

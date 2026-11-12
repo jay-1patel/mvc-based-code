@@ -193,9 +193,10 @@ class RolePanelTests(unittest.TestCase):
             "/api/admin/tenants",
             json={
                 "tenant_id": "leeway",
-                "vertical": "it_services",
+                "vertical": "it_software",
                 "display_name": "Leeway",
                 "website": "leewaysoftech.com",
+                "mobile_number": "919800000077",
                 "auto_scrape": False,
             },
             headers=self.root,

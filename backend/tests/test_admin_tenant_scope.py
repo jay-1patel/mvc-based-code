@@ -70,7 +70,11 @@ class AdminTenantScopeTests(unittest.TestCase):
         self.assertEqual(delete_error.exception.status_code, 404)
 
         with self.assertRaises(HTTPException) as reset_error:
-            auth.reset_admin_password("sub-b", auth.ResetAdminPasswordRequest(new_password="test-password"), actor)
+            auth.reset_admin_password(
+                "sub-b",
+                auth.ResetAdminPasswordRequest(new_password="Test-password1!"),
+                actor,
+            )
         self.assertEqual(reset_error.exception.status_code, 404)
 
         self.assertEqual(database.get_admin_record("sub-b")["password_hash"], "hash-sub-b")
