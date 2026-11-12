@@ -1,18 +1,27 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowDown, ArrowUp, ListPlus, Pencil, Save, Send, Trash2, X } from 'lucide-react'
+import { ArrowDown, ArrowUp, ListPlus, Loader2, Pencil, Save, Send, Trash2, X } from 'lucide-react'
 import { tenantsApi } from '@/lib/tenants'
 import { useAction } from '@/lib/hooks'
 import { slugify } from '@/lib/profile'
 import { FEATURE_FLAGS, type FeatureFlag, type IntentSpec, type MenuButton, type MenuSpec, type ProfileSnapshot } from '@/lib/types'
 import { FEATURE_LABELS, getVertical } from '@/lib/verticals'
-import { Button } from '@/components/ui/button'
-import { Card, CardBody, CardHeader, SectionTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { Input, Textarea } from '@/components/ui/input'
-import { Select } from '@/components/ui/select'
-import { Switch } from '@/components/ui/switch'
-import { TagInput } from '@/components/ui/tags'
-import { Alert, EmptyState, LoadingBlock } from '@/components/ui/feedback'
+import {
+  Card,
+  EmptyState,
+  ErrorBanner,
+  FieldInput,
+  FieldSelect,
+  FieldTextarea,
+  GhostButton,
+  IconButton,
+  Notice,
+  Panel,
+  Pill,
+  PrimaryButton,
+  TagField,
+  Toggle,
+} from '@/components/remake/ui'
+import { LoadingBlock } from '@/components/ui/feedback'
 import { PageHeader } from '@/components/layout/page-header'
 import { useToast } from '@/components/ui/toast'
 import { useTenantDetail } from './hooks'
@@ -22,6 +31,9 @@ type ButtonDraft = Omit<MenuButton, 'sort_order'> & { sort_order: number }
 /** Select sentinel: the operator is creating a new informational page. */
 const NEW_INTENT = '__new_page__'
 const INTENT_ID_RE = /^[a-z][a-z0-9_]{0,39}$/
+
+/** The compact size the legacy `size="sm"` buttons had in this editor. */
+const smallBtn = 'px-3 py-1.5 text-xs'
 
 interface IntentEdit {
   answer: string
@@ -132,17 +144,13 @@ export function MenuEditor({ tenantId, focusId }: { tenantId: string; focusId?: 
 
   if (detail.loading) return <LoadingBlock label="Loading the menu…" />
   if (detail.error) {
-    return (
-      <Alert tone="danger" title="Could not load the menu">
-        {detail.error}
-      </Alert>
-    )
+    return <ErrorBanner title="Could not load the menu" message={detail.error} />
   }
   if (!menu || !effective) {
     return (
-      <Alert tone="warning" title="No effective profile">
+      <Notice tone="warn" title="No effective profile">
         The merged profile could not be built, so there is no menu to edit.
-      </Alert>
+      </Notice>
     )
   }
 
@@ -332,40 +340,39 @@ export function MenuEditor({ tenantId, focusId }: { tenantId: string; focusId?: 
         description="Every WhatsApp menu option, editable. A button can require a feature flag (hidden when that capability is off), start a flow, route to an intent, or appear only out of hours."
         actions={
           <>
-            <Button size="sm" variant="secondary" icon={<ListPlus className="h-4 w-4" />} onClick={startAdd}>
+            <GhostButton className={smallBtn} onClick={startAdd}>
+              <ListPlus className="h-4 w-4" />
               Add option
-            </Button>
-            <Button size="sm" variant="secondary" loading={action.busy} icon={<Save className="h-4 w-4" />} onClick={() => commit(false)}>
+            </GhostButton>
+            <GhostButton className={smallBtn} disabled={action.busy} onClick={() => commit(false)}>
+              {action.busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
               Save draft
-            </Button>
-            <Button size="sm" variant="primary" loading={action.busy} icon={<Send className="h-4 w-4" />} onClick={() => commit(true)}>
+            </GhostButton>
+            <PrimaryButton className={smallBtn} disabled={action.busy} onClick={() => commit(true)}>
+              {action.busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
               Save & publish
-            </Button>
+            </PrimaryButton>
           </>
         }
         meta={
           <>
-            <Badge tone="accent">{vertical.short}</Badge>
-            <Badge tone="neutral">{buttons.length} options in the editor</Badge>
-            {detail.data?.has_draft && <Badge tone="warning">draft in progress</Badge>}
-            {removed.length > 0 && <Badge tone="danger">{removed.length} marked for deletion</Badge>}
-            <Badge tone="muted">live v{detail.data?.current_version ?? 0}</Badge>
+            <Pill tone="ok">{vertical.short}</Pill>
+            <Pill>{buttons.length} options in the editor</Pill>
+            {detail.data?.has_draft && <Pill tone="warn">draft in progress</Pill>}
+            {removed.length > 0 && <Pill tone="bad">{removed.length} marked for deletion</Pill>}
+            <Pill>live v{detail.data?.current_version ?? 0}</Pill>
           </>
         }
       />
 
-      {action.error && (
-        <Alert tone="danger" title="Action failed" className="mb-4">
-          {action.error}
-        </Alert>
-      )}
+      {action.error && <ErrorBanner title="Action failed" message={action.error} className="mb-4" />}
       {error && (
-        <Alert tone="warning" title="Fix this first" className="mb-4">
+        <Notice tone="warn" title="Fix this first" className="mb-4">
           {error}
-        </Alert>
+        </Notice>
       )}
       {uncleared.length > 0 && (
-        <Alert tone="warning" title="Inherited values that will not clear" className="mb-4">
+        <Notice tone="warn" title="Inherited values that will not clear" className="mb-4">
           <ul className="list-disc space-y-1 pl-4">
             {uncleared.map((note) => (
               <li key={note}>{note}</li>
@@ -375,59 +382,62 @@ export function MenuEditor({ tenantId, focusId }: { tenantId: string; focusId?: 
             A layer never blanks out a lower layer with an empty value, so removing an inherited flag, flow or
             intent needs a backend change. Everything else you set will apply.
           </p>
-        </Alert>
+        </Notice>
       )}
 
       <div className="grid gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-1">
-          <CardHeader title="Menu text" description="What the customer sees above the options." />
-          <CardBody className="space-y-4">
-            <Input
+        <Panel title="Menu text" className="lg:col-span-1">
+          <p className="-mt-1 mb-4 text-sm text-txmuted">What the customer sees above the options.</p>
+          <div className="space-y-4">
+            <FieldInput
               label="Header"
               value={menu.header}
               onChange={(e) => setMenu({ ...menu, header: e.target.value })}
               placeholder="Leeway Softech"
             />
-            <Textarea
+            <FieldTextarea
               label="Body"
               value={menu.body}
               onChange={(e) => setMenu({ ...menu, body: e.target.value })}
               rows={3}
             />
-            <Input
+            <FieldInput
               label="Footer"
               value={menu.footer}
               onChange={(e) => setMenu({ ...menu, footer: e.target.value })}
             />
-            <Input
+            <FieldInput
               label="Button text"
               value={menu.button_text}
               onChange={(e) => setMenu({ ...menu, button_text: e.target.value })}
             />
-          </CardBody>
-        </Card>
+          </div>
+        </Panel>
 
         <div className="space-y-4 lg:col-span-2">
           {draft && (
             <div ref={formRef}>
-            <Card>
-              <CardHeader
-                title={editingIndex === -1 ? 'New menu option' : `Edit "${buttons[editingIndex ?? 0]?.title}"`}
-                description="The id is what the flow runner and routing dispatcher switch on — keep it stable."
-                actions={
-                  <Button size="sm" variant="ghost" onClick={() => { setDraft(null); setEditingIndex(null) }} icon={<X className="h-4 w-4" />} />
-                }
-              />
-              <CardBody className="space-y-4">
+            <Panel
+              title={editingIndex === -1 ? 'New menu option' : `Edit "${buttons[editingIndex ?? 0]?.title}"`}
+              action={
+                <IconButton onClick={() => { setDraft(null); setEditingIndex(null) }} title="Close">
+                  <X className="h-4 w-4" />
+                </IconButton>
+              }
+            >
+              <p className="-mt-1 mb-4 text-sm text-txmuted">
+                The id is what the flow runner and routing dispatcher switch on — keep it stable.
+              </p>
+              <div className="space-y-4">
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <Input
+                  <FieldInput
                     label="Id"
                     value={draft.id}
                     onChange={(e) => setDraft({ ...draft, id: e.target.value })}
                     placeholder="menu_quote"
                      hint="Lowercase, no spaces. Referenced by intents."
                   />
-                  <Input
+                  <FieldInput
                     label="Title"
                     value={draft.title}
                     onChange={(e) => {
@@ -440,7 +450,7 @@ export function MenuEditor({ tenantId, focusId }: { tenantId: string; focusId?: 
                     placeholder="Get a Quote"
                   />
                   <div className="space-y-3">
-                    <Select
+                    <FieldSelect
                       label="Add to section"
                       value={sections.includes(draft.section) ? draft.section : '__new_section__'}
                       onChange={(e) => {
@@ -457,9 +467,9 @@ export function MenuEditor({ tenantId, focusId }: { tenantId: string; focusId?: 
                         <option key={section} value={section}>{section}</option>
                       ))}
                       <option value="__new_section__">+ New section</option>
-                    </Select>
+                    </FieldSelect>
                     {(!sections.length || !sections.includes(draft.section)) && (
-                      <Input
+                      <FieldInput
                         label="New section name"
                         value={draft.section}
                         onChange={(e) => setDraft({ ...draft, section: e.target.value })}
@@ -467,7 +477,7 @@ export function MenuEditor({ tenantId, focusId }: { tenantId: string; focusId?: 
                       />
                     )}
                   </div>
-                  <Input
+                  <FieldInput
                     label="Icon"
                     value={draft.icon}
                     onChange={(e) => setDraft({ ...draft, icon: e.target.value })}
@@ -475,14 +485,14 @@ export function MenuEditor({ tenantId, focusId }: { tenantId: string; focusId?: 
                     hint="An emoji. Shown in section headers."
                   />
                 </div>
-                <Textarea
+                <FieldTextarea
                   label="Description"
                   value={draft.description}
                   onChange={(e) => setDraft({ ...draft, description: e.target.value })}
                   rows={2}
                 />
                 <div className="grid gap-4 sm:grid-cols-3">
-                  <Select
+                  <FieldSelect
                     label="Requires feature"
                     value={draft.requires_feature ?? ''}
                     onChange={(e) => setDraft({ ...draft, requires_feature: e.target.value || null })}
@@ -494,8 +504,8 @@ export function MenuEditor({ tenantId, focusId }: { tenantId: string; focusId?: 
                         {FEATURE_LABELS[flag].label}
                       </option>
                     ))}
-                  </Select>
-                  <Select
+                  </FieldSelect>
+                  <FieldSelect
                     label="Starts flow"
                     value={draft.flow ?? ''}
                     onChange={(e) => setDraft({ ...draft, flow: e.target.value || null })}
@@ -506,8 +516,8 @@ export function MenuEditor({ tenantId, focusId }: { tenantId: string; focusId?: 
                         {name}
                       </option>
                     ))}
-                  </Select>
-                  <Select
+                  </FieldSelect>
+                  <FieldSelect
                     label="Routes to intent"
                     value={draft.intent ?? ''}
                     onChange={(e) => {
@@ -529,13 +539,13 @@ export function MenuEditor({ tenantId, focusId }: { tenantId: string; focusId?: 
                       </option>
                     ))}
                     <option value={NEW_INTENT}>+ New page — write its answer…</option>
-                  </Select>
+                  </FieldSelect>
                 </div>
 
                 {draft.intent && (
-                  <div className="space-y-4 rounded-lg bg-surface-panel p-4 ring-1 ring-inset ring-surface-line">
+                  <div className="space-y-4 rounded-panel border border-line bg-paper p-4">
                     {draft.intent === NEW_INTENT ? (
-                      <Input
+                      <FieldInput
                         label="New page id"
                         value={newIntentName}
                         onChange={(e) => {
@@ -561,7 +571,7 @@ export function MenuEditor({ tenantId, focusId }: { tenantId: string; focusId?: 
                       }
                       return (
                         <>
-                          <Textarea
+                          <FieldTextarea
                             label={draft.intent === NEW_INTENT ? 'Answer text' : `Answer text — ${key}`}
                             rows={5}
                             value={answer}
@@ -569,12 +579,13 @@ export function MenuEditor({ tenantId, focusId }: { tenantId: string; focusId?: 
                             hint='What the bot replies when this option is tapped, or a typed question matches. "• " starts a bullet, *stars* make a word bold. Leave empty and questions fall through to the knowledge base.'
                           />
                           <div>
-                            <TagInput
+                            <p className="mb-1.5 block text-sm font-medium text-tx">Keywords</p>
+                            <TagField
                               value={keywords}
                               onChange={(next) => setEdit({ keywords: next })}
                               placeholder="Add a keyword and press Enter"
                             />
-                            <p className="hint">
+                            <p className="mt-1.5 text-xs leading-relaxed text-txmuted">
                               Phrases that route a typed question to this answer. Editing a
                               built-in page (technologies, careers…) needs its own permission.
                             </p>
@@ -584,22 +595,22 @@ export function MenuEditor({ tenantId, focusId }: { tenantId: string; focusId?: 
                     })()}
                   </div>
                 )}
-                <Switch
+                <Toggle
                   checked={draft.out_of_hours_only}
                   onChange={(out_of_hours_only) => setDraft({ ...draft, out_of_hours_only })}
                   label="Show only out of hours"
                   description="Useful for a 'request a callback' option that is hidden while the team is online."
                 />
                 <div className="flex justify-end gap-2">
-                  <Button variant="ghost" onClick={() => { setDraft(null); setEditingIndex(null) }}>
+                  <GhostButton onClick={() => { setDraft(null); setEditingIndex(null) }}>
                     Cancel
-                  </Button>
-                  <Button variant="primary" onClick={saveDraftButton}>
+                  </GhostButton>
+                  <PrimaryButton onClick={saveDraftButton}>
                     {editingIndex === -1 ? 'Add option' : 'Save changes'}
-                  </Button>
+                  </PrimaryButton>
                 </div>
-              </CardBody>
-            </Card>
+              </div>
+            </Panel>
             </div>
           )}
 
@@ -609,20 +620,23 @@ export function MenuEditor({ tenantId, focusId }: { tenantId: string; focusId?: 
                 title="No menu options yet"
                 description="This tenant currently sends a plain text menu. Add the first option, or publish a version to inherit the field defaults."
                 action={
-                  <Button variant="primary" onClick={startAdd} icon={<ListPlus className="h-4 w-4" />}>
+                  <PrimaryButton onClick={startAdd}>
+                    <ListPlus className="h-4 w-4" />
                     Add the first option
-                  </Button>
+                  </PrimaryButton>
                 }
               />
             </Card>
           ) : (
             sections.map((section) => (
-              <Card key={section}>
-                <CardHeader
-                  title={section}
-                  description={`${buttons.filter((b) => (b.section || 'General') === section).length} option(s)`}
-                />
-                <CardBody className="space-y-2">
+              <Panel
+                key={section}
+                title={section}
+              >
+                <p className="-mt-1 mb-4 text-sm text-txmuted">
+                  {buttons.filter((b) => (b.section || 'General') === section).length} option(s)
+                </p>
+                <div className="space-y-2">
                   {buttons
                     .map((button, index) => ({ button, index }))
                     .filter(({ button }) => (button.section || 'General') === section)
@@ -632,35 +646,36 @@ export function MenuEditor({ tenantId, focusId }: { tenantId: string; focusId?: 
                       return (
                         <div
                           key={button.id}
-                          className={`rounded-lg bg-surface-panel p-3 ring-1 ring-inset ${
-                            editingIndex === index ? 'ring-accent-400' : 'ring-surface-line'
+                          className={`rounded-lg bg-paper p-3 ring-1 ring-inset ${
+                            editingIndex === index ? 'ring-acc' : 'ring-line'
                           }`}
                         >
                           <div className="flex flex-wrap items-start gap-3">
                             <div className="min-w-0 flex-1">
                               <div className="flex flex-wrap items-center gap-2">
                                 {button.icon && <span className="text-sm">{button.icon}</span>}
-                                <span className="text-sm font-medium text-slate-100">{button.title}</span>
-                                <code className="rounded bg-surface-raised px-1.5 py-0.5 font-mono text-xs text-slate-500 ring-1 ring-surface-line">
+                                <span className="text-sm font-medium text-tx">{button.title}</span>
+                                <code className="rounded bg-card px-1.5 py-0.5 font-mono text-xs text-txfaint ring-1 ring-line">
                                   {button.id}
                                 </code>
-                                {button.flow && <Badge tone="accent">flow: {button.flow}</Badge>}
-                                {button.intent && <Badge tone="neutral">intent: {button.intent}</Badge>}
-                                {button.out_of_hours_only && <Badge tone="warning">out of hours only</Badge>}
-                                {!button.enabled && <Badge tone="muted">disabled</Badge>}
+                                {button.flow && <Pill tone="ok">flow: {button.flow}</Pill>}
+                                {button.intent && <Pill>intent: {button.intent}</Pill>}
+                                {button.out_of_hours_only && <Pill tone="warn">out of hours only</Pill>}
+                                {!button.enabled && <Pill>disabled</Pill>}
                                 {button.requires_feature && gated && (
-                                  <Badge tone="danger">
+                                  <Pill tone="bad">
                                     needs {FEATURE_LABELS[button.requires_feature as FeatureFlag]?.label}
-                                  </Badge>
+                                  </Pill>
                                 )}
                               </div>
                               {button.description && (
-                                <p className="mt-1 text-xs leading-relaxed text-slate-500">{button.description}</p>
+                                <p className="mt-1 text-xs leading-relaxed text-txmuted">{button.description}</p>
                               )}
                             </div>
                             <div className="flex shrink-0 items-center gap-1.5">
-                              <div className="flex items-center gap-1.5 rounded-full border border-surface-line bg-surface-raised px-2 py-1">
-                                <Switch
+                              <div className="flex items-center gap-1.5 rounded-full border border-line bg-card px-2 py-1">
+                                <Toggle
+                                  size="sm"
                                   checked={button.enabled}
                                   onChange={(enabled) => {
                                     const next = [...buttons]
@@ -668,51 +683,54 @@ export function MenuEditor({ tenantId, focusId }: { tenantId: string; focusId?: 
                                     setButtons(next)
                                   }}
                                   ariaLabel={`${button.enabled ? 'Deactivate' : 'Activate'} ${button.title}`}
-                                  className="w-auto items-center"
-                                  size="sm"
                                 />
-                                <span className={`text-xs font-medium ${button.enabled ? 'text-emerald-400' : 'text-slate-400'}`}>
+                                <span className={`text-xs font-medium ${button.enabled ? 'text-ok' : 'text-txmuted'}`}>
                                   {button.enabled ? 'Active' : 'Inactive'}
                                 </span>
                               </div>
-                              <Button size="sm" variant="ghost" onClick={() => move(index, -1)} title="Move up" icon={<ArrowUp className="h-4 w-4" />} />
-                              <Button size="sm" variant="ghost" onClick={() => move(index, 1)} title="Move down" icon={<ArrowDown className="h-4 w-4" />} />
-                              <Button size="sm" variant="secondary" onClick={() => startEdit(index)} icon={<Pencil className="h-4 w-4" />}>
+                              <IconButton title="Move up" onClick={() => move(index, -1)}>
+                                <ArrowUp className="h-4 w-4" />
+                              </IconButton>
+                              <IconButton title="Move down" onClick={() => move(index, 1)}>
+                                <ArrowDown className="h-4 w-4" />
+                              </IconButton>
+                              <GhostButton className={smallBtn} onClick={() => startEdit(index)}>
+                                <Pencil className="h-4 w-4" />
                                 Edit
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="ghost"
+                              </GhostButton>
+                              <IconButton
+                                danger
                                 title={loaded.some((b) => b.id === button.id) ? 'Delete this option' : 'Remove this option'}
-                                icon={<Trash2 className="h-4 w-4" />}
                                 onClick={() => remove(index)}
-                              />
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </IconButton>
                             </div>
                           </div>
                         </div>
                       )
                     })}
-                </CardBody>
-              </Card>
+                </div>
+              </Panel>
             ))
           )}
 
           {buttons.length > 0 && (
-            <Card>
-              <CardBody>
-                <SectionTitle hint="The bot only sees the published version. Save a draft as often as you like — nothing changes until you publish.">
-                  Publishing
-                </SectionTitle>
-                <div className="flex flex-wrap gap-2">
-                  <Button variant="secondary" loading={action.busy} icon={<Save className="h-4 w-4" />} onClick={() => commit(false)}>
-                    Save draft
-                  </Button>
-                  <Button variant="primary" loading={action.busy} icon={<Send className="h-4 w-4" />} onClick={() => commit(true)}>
-                    Save & publish
-                  </Button>
-                </div>
-              </CardBody>
-            </Card>
+            <Panel title="Publishing">
+              <p className="-mt-1 mb-4 text-sm text-txmuted">
+                The bot only sees the published version. Save a draft as often as you like — nothing changes until you publish.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <GhostButton disabled={action.busy} onClick={() => commit(false)}>
+                  {action.busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                  Save draft
+                </GhostButton>
+                <PrimaryButton disabled={action.busy} onClick={() => commit(true)}>
+                  {action.busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                  Save & publish
+                </PrimaryButton>
+              </div>
+            </Panel>
           )}
         </div>
       </div>

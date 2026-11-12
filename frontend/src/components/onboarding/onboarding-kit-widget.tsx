@@ -13,10 +13,7 @@ import {
   type OnboardingTemplate,
   type StagedOnboardingDraft,
 } from '@/lib/uploads'
-import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { Card, CardBody } from '@/components/ui/card'
-import { Alert } from '@/components/ui/feedback'
+import { GhostButton, Notice, PrimaryButton } from '@/components/remake/ui'
 import { useToast } from '@/components/ui/toast'
 import { OnboardingReviewModal } from './onboarding-review-modal'
 
@@ -152,25 +149,24 @@ export function OnboardingKitWidget({
       <div className="space-y-4">
         {/* Option A — any document */}
         {!kitOnly && (
-        <Card className="border-sky-500/30 bg-sky-500/[0.02]">
-          <CardBody className="p-4 sm:p-5">
-            <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
-              <div className="space-y-2 flex-1">
+        <div className="rounded-panel border border-chipwebink/30 bg-chipwebbg/40 p-4 sm:p-5">
+            <div className="flex flex-col items-start justify-between gap-4 lg:flex-row lg:items-center">
+              <div className="flex-1 space-y-2">
                 <div className="flex items-center gap-2">
-                  <span className="flex h-7 w-7 items-center justify-center rounded-md bg-sky-500/10 text-sky-600">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-md bg-chipwebbg text-chipwebink">
                     <Files className="h-4 w-4" />
                   </span>
-                  <h3 className="text-sm font-semibold text-surface-fg">Option A — Any document</h3>
-                  <Badge tone="neutral" className="border-sky-500/40 text-sky-700 bg-sky-500/10">
+                  <h3 className="text-sm font-semibold text-tx">Option A — Any document</h3>
+                  <span className="inline-flex rounded-full border border-chipwebink/30 bg-chipwebbg px-2 py-0.5 text-2xs font-medium text-chipwebink">
                     Universal extract
-                  </Badge>
+                  </span>
                 </div>
-                <p className="text-xs text-surface-muted max-w-xl">
+                <p className="max-w-xl text-xs leading-relaxed text-txmuted">
                   Website scrape, PDF, Word, Markdown, or CSV. Fills brand, menu, offerings, FAQs, intents and KB for
                   this tenant — no kit template required.
                 </p>
               </div>
-              <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-sky-500/40 bg-sky-500/5 p-4 text-center sm:min-w-[240px]">
+              <div className="flex flex-col items-center justify-center rounded-panel border border-dashed border-chipwebink/40 bg-chipwebbg/40 p-4 text-center sm:min-w-[240px]">
                 <input
                   ref={anyFileRef}
                   type="file"
@@ -181,65 +177,63 @@ export function OnboardingKitWidget({
                     if (f) handleFileUpload(f, 'any')
                   }}
                 />
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-sky-500/15 text-sky-600 mb-2">
+                <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-chipwebbg text-chipwebink">
                   {parsing && parsingLane === 'any' ? (
                     <Loader2 className="h-5 w-5 animate-spin" />
                   ) : (
                     <FolderUp className="h-5 w-5" />
                   )}
                 </div>
-                <p className="text-xs font-medium text-surface-fg">
+                <p className="text-xs font-medium text-tx">
                   {parsing && parsingLane === 'any' ? 'Extracting…' : 'Upload any company file'}
                 </p>
-                <Button
-                  variant="primary"
-                  size="sm"
-                  loading={parsing && parsingLane === 'any'}
+                <PrimaryButton
+                  className="mt-2 px-2.5 py-1.5 text-xs"
                   disabled={parsing}
                   onClick={() => anyFileRef.current?.click()}
-                  className="mt-2 text-xs"
                 >
-                  Upload & stage
-                </Button>
+                  {parsing && parsingLane === 'any' && (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  )}
+                  Upload &amp; stage
+                </PrimaryButton>
               </div>
             </div>
-          </CardBody>
-        </Card>
+        </div>
         )}
 
         {/* Option B — filled industry kit */}
-        <Card className="border-teal-500/30 bg-teal-500/[0.02]">
-          <CardBody className="p-4 sm:p-5">
-            <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
-              <div className="space-y-2 flex-1">
+        <div className="rounded-panel border border-acc/30 bg-accsoft/40 p-4 sm:p-5">
+            <div className="flex flex-col items-start justify-between gap-4 lg:flex-row lg:items-center">
+              <div className="flex-1 space-y-2">
                 <div className="flex items-center gap-2">
-                  <span className="flex h-7 w-7 items-center justify-center rounded-md bg-teal-500/10 text-teal-600">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-md bg-accsoft text-acc">
                     <Sparkles className="h-4 w-4" />
                   </span>
-                  <h3 className="text-sm font-semibold text-surface-fg">Option B — Filled industry kit</h3>
-                  <Badge tone="neutral" className="border-teal-500/40 text-teal-700 bg-teal-500/10">
+                  <h3 className="text-sm font-semibold text-tx">Option B — Filled industry kit</h3>
+                  <span className="inline-flex rounded-full border border-acc/40 bg-accsoft px-2 py-0.5 text-2xs font-medium text-acc">
                     Structured sections
-                  </Badge>
+                  </span>
                 </div>
-                <p className="text-xs text-surface-muted max-w-xl">
+                <p className="max-w-xl text-xs leading-relaxed text-txmuted">
                   Download a template, keep <code className="text-2xs">[SECTION: …]</code> headers (Brand, WhatsApp,
                   Catalog, FAQs, Bot Persona). Incomplete kits fall back to general extraction with a warning.
                 </p>
 
                 {templatesError && (
-                  <Alert tone="danger" title="Industry kits failed to load" className="max-w-xl">
+                  <Notice tone="bad" title="Industry kits failed to load" className="max-w-xl">
                     {templatesError}
                     <div className="mt-2">
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        loading={loadingTemplates}
+                      <GhostButton
+                        className="px-2.5 py-1.5 text-xs"
+                        disabled={loadingTemplates}
                         onClick={() => setTemplatesAttempt((n) => n + 1)}
                       >
+                        {loadingTemplates && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                         Retry
-                      </Button>
+                      </GhostButton>
                     </div>
-                  </Alert>
+                  </Notice>
                 )}
 
                 <div className="flex flex-wrap items-center gap-2 pt-1">
@@ -248,14 +242,14 @@ export function OnboardingKitWidget({
                       type="button"
                       onClick={() => setShowDropdown(!showDropdown)}
                       disabled={loadingTemplates}
-                      className="flex items-center gap-2 rounded-lg border border-surface-line bg-surface-card px-3 py-1.5 text-xs font-medium text-surface-fg hover:border-teal-500/50 transition"
+                      className="flex items-center gap-2 rounded-lg border border-line bg-card px-3 py-1.5 text-xs font-medium text-tx transition hover:border-acc"
                     >
                       <span>{currentTemplate?.icon || '🏢'}</span>
                       <span>{currentTemplate?.title || 'Select Industry'}</span>
-                      <ChevronDown className="h-3 w-3 text-surface-muted" />
+                      <ChevronDown className="h-3 w-3 text-txmuted" />
                     </button>
                     {showDropdown && (
-                      <div className="absolute left-0 top-full z-30 mt-1 w-64 rounded-lg border border-surface-line bg-surface-card p-1 shadow-xl">
+                      <div className="absolute left-0 top-full z-30 mt-1 w-64 rounded-lg border border-line bg-card p-1 shadow-xl">
                         {templates.map((tpl) => (
                           <button
                             key={tpl.vertical}
@@ -266,8 +260,8 @@ export function OnboardingKitWidget({
                             }}
                             className={`flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs transition ${
                               selectedVertical === tpl.vertical
-                                ? 'bg-teal-500/15 text-teal-700 font-medium'
-                                : 'text-surface-fg hover:bg-surface-elevated'
+                                ? 'bg-accsoft font-medium text-acc'
+                                : 'text-tx hover:bg-paper'
                             }`}
                           >
                             <span>{tpl.icon}</span>
@@ -277,26 +271,24 @@ export function OnboardingKitWidget({
                       </div>
                     )}
                   </div>
-                  <Button
-                    variant="secondary"
-                    size="sm"
+                  <GhostButton
+                    className="px-2.5 py-1.5 text-xs"
                     onClick={() => handleDownload('docx')}
-                    icon={<Download className="h-3.5 w-3.5 text-blue-600" />}
                   >
+                    <Download className="h-3.5 w-3.5 text-acc" />
                     Word (.docx)
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    size="sm"
+                  </GhostButton>
+                  <GhostButton
+                    className="px-2.5 py-1.5 text-xs"
                     onClick={() => handleDownload('pdf')}
-                    icon={<FileText className="h-3.5 w-3.5 text-rose-600" />}
                   >
+                    <FileText className="h-3.5 w-3.5 text-badink" />
                     PDF
-                  </Button>
+                  </GhostButton>
                 </div>
               </div>
 
-              <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-teal-500/40 bg-teal-500/5 p-4 text-center sm:min-w-[240px]">
+              <div className="flex flex-col items-center justify-center rounded-panel border border-dashed border-acc/40 bg-accsoft/40 p-4 text-center sm:min-w-[240px]">
                 <input
                   ref={kitFileRef}
                   type="file"
@@ -307,31 +299,30 @@ export function OnboardingKitWidget({
                     if (f) handleFileUpload(f, 'kit')
                   }}
                 />
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-teal-500/15 text-teal-600 mb-2">
+                <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-accsoft text-acc">
                   {parsing && parsingLane === 'kit' ? (
                     <Loader2 className="h-5 w-5 animate-spin" />
                   ) : (
                     <FolderUp className="h-5 w-5" />
                   )}
                 </div>
-                <p className="text-xs font-medium text-surface-fg">
+                <p className="text-xs font-medium text-tx">
                   {parsing && parsingLane === 'kit' ? 'Parsing kit…' : 'Upload filled kit'}
                 </p>
-                <p className="text-[10px] text-surface-muted mt-0.5">Requires all 5 core sections</p>
-                <Button
-                  variant="primary"
-                  size="sm"
-                  loading={parsing && parsingLane === 'kit'}
+                <p className="mt-0.5 text-[10px] text-txmuted">Requires all 5 core sections</p>
+                <PrimaryButton
+                  className="mt-2 px-2.5 py-1.5 text-xs"
                   disabled={parsing}
                   onClick={() => kitFileRef.current?.click()}
-                  className="mt-2 text-xs"
                 >
-                  Upload kit & stage
-                </Button>
+                  {parsing && parsingLane === 'kit' && (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  )}
+                  Upload kit &amp; stage
+                </PrimaryButton>
               </div>
             </div>
-          </CardBody>
-        </Card>
+        </div>
       </div>
 
       {stagedDraft && (

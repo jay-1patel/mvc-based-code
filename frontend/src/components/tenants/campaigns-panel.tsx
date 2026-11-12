@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Pencil, Plus, RefreshCw, Send, Trash2 } from 'lucide-react'
+import { Loader2, Pencil, Plus, RefreshCw, Send, Trash2 } from 'lucide-react'
 import { useAction, useAsync } from '@/lib/hooks'
 import { usePermissions } from '@/lib/permissions'
 import {
@@ -12,27 +12,38 @@ import {
 } from '@/lib/operations'
 import { timezoneOptions } from '@/lib/profile'
 import { formatDate } from '@/lib/format'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Card, CardBody, CardHeader } from '@/components/ui/card'
-import { Input, Textarea } from '@/components/ui/input'
-import { Select } from '@/components/ui/select'
-import { Alert, EmptyState, LoadingBlock } from '@/components/ui/feedback'
+import {
+  Card,
+  DangerButton,
+  EmptyState,
+  ErrorBanner,
+  FieldInput,
+  FieldSelect,
+  FieldTextarea,
+  GhostButton,
+  Pill,
+  PrimaryButton,
+  type PillTone,
+} from '@/components/remake/ui'
+import { LoadingBlock } from '@/components/ui/feedback'
 import { PageHeader } from '@/components/layout/page-header'
 import { useToast } from '@/components/ui/toast'
 import { useConfirm } from '@/components/ui/confirm'
 
 /** The full engine-owned lifecycle; tones apply to list, table and form. */
-const STATUS_TONE: Record<string, 'neutral' | 'accent' | 'success' | 'warning' | 'danger' | 'muted'> = {
-  draft: 'muted',
-  scheduled: 'accent',
-  sending: 'warning',
-  completed: 'success',
-  paused: 'warning',
-  failed: 'danger',
-  cancelled: 'danger',
-  sent: 'success',
+const STATUS_TONE: Record<string, PillTone> = {
+  draft: 'neutral',
+  scheduled: 'ok',
+  sending: 'warn',
+  completed: 'ok',
+  paused: 'warn',
+  failed: 'bad',
+  cancelled: 'bad',
+  sent: 'ok',
 }
+
+const FIELD_LABEL = 'mb-1.5 block text-sm font-medium text-tx'
+const SMALL = 'px-2.5 py-1.5 text-xs'
 
 const CAMPAIGN_TYPES = ['promotional', 'transactional', 'informational'] as const
 
@@ -282,40 +293,39 @@ export function CampaignsPanel({ tenantId }: { tenantId: string }) {
   return (
     <div>
       <PageHeader
-        title="Campaigns"
+        title="Send an offer"
         description="Scheduled and sent broadcast messages, with delivery and reply metrics per campaign."
         actions={
           canManage && !creating && !editing ? (
             <>
-              <Button variant="secondary" icon={<Plus className="h-4 w-4" />} onClick={() => setManagingTemplates((v) => !v)}>
+              <GhostButton onClick={() => setManagingTemplates((v) => !v)}>
+                <Plus className="h-4 w-4" />
                 {managingTemplates ? 'Hide templates' : 'Manage templates'}
-              </Button>
-              <Button variant="secondary" icon={<Plus className="h-4 w-4" />} onClick={() => setManagingSegments((v) => !v)}>
+              </GhostButton>
+              <GhostButton onClick={() => setManagingSegments((v) => !v)}>
+                <Plus className="h-4 w-4" />
                 {managingSegments ? 'Hide segments' : 'Manage segments'}
-              </Button>
-              <Button
-                variant="secondary"
-                icon={<RefreshCw className="h-4 w-4" />}
-                loading={syncing}
-                onClick={syncRecipients}
-              >
+              </GhostButton>
+              <GhostButton onClick={syncRecipients} disabled={syncing}>
+                {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
                 {recipients ? `Recipients (${recipients.length})` : 'Sync recipients'}
-              </Button>
-              <Button variant="primary" icon={<Plus className="h-4 w-4" />} onClick={() => setCreating(true)}>
+              </GhostButton>
+              <PrimaryButton onClick={() => setCreating(true)}>
+                <Plus className="h-4 w-4" />
                 New campaign
-              </Button>
+              </PrimaryButton>
             </>
           ) : undefined
         }
         meta={
           stats && (
             <>
-              <Badge tone={stats.active_campaigns ? 'accent' : 'muted'}>
+              <Pill tone={stats.active_campaigns ? 'ok' : 'neutral'}>
                 {stats.active_campaigns} active
-              </Badge>
-              <Badge tone="success">{stats.total_sent_24h} sent (24h)</Badge>
-              <Badge tone="muted">{stats.delivery_rate}% delivered</Badge>
-              <Badge tone="muted">{stats.reply_rate}% replied</Badge>
+              </Pill>
+              <Pill tone="ok">{stats.total_sent_24h} sent (24h)</Pill>
+              <Pill>{stats.delivery_rate}% delivered</Pill>
+              <Pill>{stats.reply_rate}% replied</Pill>
             </>
           )
         }
@@ -345,29 +355,31 @@ export function CampaignsPanel({ tenantId }: { tenantId: string }) {
 
       {recipients !== null && canManage && (
         <Card className="mb-4">
-          <CardHeader
-            title={`Recipients (${recipients.length})`}
-            description="Everyone from the customer directory and the distributor network. Tick exactly who should receive a campaign, then press Send on it."
-            actions={
-              <>
-                <Button size="sm" variant="ghost" onClick={() => setPicked(new Set(recipients.filter((r) => !r.opted_out).map((r) => r.wa_id)))}>
-                  Select all
-                </Button>
-                <Button size="sm" variant="ghost" onClick={() => setPicked(new Set())}>
-                  Clear
-                </Button>
-              </>
-            }
-          />
-          <CardBody className="space-y-3">
-            <Input
+          <div className="flex flex-wrap items-start justify-between gap-3 border-b border-linesoft px-4 py-3 sm:px-5">
+            <div className="min-w-0">
+              <h2 className="text-sm font-semibold text-tx">{`Recipients (${recipients.length})`}</h2>
+              <p className="text-xs text-txmuted">
+                Everyone from the customer directory and the distributor network. Tick exactly who should receive a campaign, then press Send on it.
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <GhostButton className={SMALL} onClick={() => setPicked(new Set(recipients.filter((r) => !r.opted_out).map((r) => r.wa_id)))}>
+                Select all
+              </GhostButton>
+              <GhostButton className={SMALL} onClick={() => setPicked(new Set())}>
+                Clear
+              </GhostButton>
+            </div>
+          </div>
+          <div className="space-y-3 p-4 sm:p-5">
+            <FieldInput
               label="Search"
               value={recipientSearch}
               onChange={(e) => setRecipientSearch(e.target.value)}
               placeholder="Name, number or city"
             />
-            <p className="text-2xs text-slate-500">{picked.size} selected</p>
-            <div className="max-h-72 divide-y divide-surface-line overflow-y-auto scroll-thin">
+            <p className="text-[11px] text-txmuted">{picked.size} selected</p>
+            <div className="max-h-72 divide-y divide-linesoft overflow-y-auto">
               {recipients
                 .filter((r) => {
                   const needle = recipientSearch.trim().toLowerCase()
@@ -378,25 +390,25 @@ export function CampaignsPanel({ tenantId }: { tenantId: string }) {
                   <label key={r.wa_id} className="flex cursor-pointer items-center gap-3 py-2">
                     <input
                       type="checkbox"
-                      className="h-4 w-4 accent-accent-500"
+                      className="h-4 w-4 shrink-0 accent-acc"
                       checked={picked.has(r.wa_id)}
                       disabled={r.opted_out}
                       onChange={() => togglePicked(r.wa_id)}
                     />
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm text-slate-100">{r.name}</span>
-                      <span className="block truncate text-2xs text-slate-500">
+                      <span className="block truncate text-sm text-tx">{r.name}</span>
+                      <span className="block truncate text-[11px] text-txmuted">
                         {r.wa_id}
                         {r.phone && r.phone !== r.wa_id ? ` · ${r.phone}` : ''}
                         {r.city ? ` · ${r.city}` : ''}
                       </span>
                     </span>
-                    <Badge tone={r.source.includes('distributor') ? 'accent' : 'neutral'}>{r.source}</Badge>
-                    {r.opted_out && <Badge tone="danger">opted out</Badge>}
+                    <Pill tone={r.source.includes('distributor') ? 'ok' : 'neutral'}>{r.source}</Pill>
+                    {r.opted_out && <Pill tone="bad">opted out</Pill>}
                   </label>
                 ))}
             </div>
-          </CardBody>
+          </div>
         </Card>
       )}
 
@@ -419,9 +431,7 @@ export function CampaignsPanel({ tenantId }: { tenantId: string }) {
 
       {state.loading && <LoadingBlock label="Reading campaigns…" />}
       {state.error && (
-        <Alert tone="danger" title="Could not read campaigns">
-          {state.error}
-        </Alert>
+        <ErrorBanner title="Could not read campaigns" message={state.error} />
       )}
 
       {state.data && campaigns.length === 0 && !creating && !editing && (
@@ -430,23 +440,24 @@ export function CampaignsPanel({ tenantId }: { tenantId: string }) {
             title="No campaigns yet"
             description="The campaign will be sent to all contacts included in the selected audience when the schedule fires."
             action={
-              canManage && (
-                <Button variant="subtle" icon={<Plus className="h-4 w-4" />} onClick={() => setCreating(true)}>
+              canManage ? (
+                <GhostButton onClick={() => setCreating(true)}>
+                  <Plus className="h-4 w-4" />
                   New campaign
-                </Button>
-              )
+                </GhostButton>
+              ) : undefined
             }
           />
         </Card>
       )}
 
       {campaigns.length > 0 && (
-        <Card>
-          <CardBody className="p-0">
+        <Card className="overflow-hidden">
+          <div>
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm">
                 <thead>
-                  <tr className="border-b border-surface-line text-xs uppercase tracking-wide text-slate-500">
+                  <tr className="border-b border-line text-xs uppercase tracking-wide text-txmuted">
                     <th className="px-4 py-2.5 font-medium">Campaign</th>
                     <th className="px-4 py-2.5 font-medium">Audience</th>
                     <th className="px-4 py-2.5 font-medium">Scheduled</th>
@@ -458,29 +469,29 @@ export function CampaignsPanel({ tenantId }: { tenantId: string }) {
                     {canManage && <th className="px-4 py-2.5" />}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-surface-line">
+                <tbody className="divide-y divide-linesoft">
                   {campaigns.map((campaign) => (
                     <tr key={campaign.id} className="align-middle">
                       <td className="px-4 py-2.5">
-                        <p className="font-medium text-slate-100">
+                        <p className="font-medium text-tx">
                           {campaign.name || `Campaign #${campaign.id}`}
                         </p>
-                        <p className="text-xs text-slate-500">
+                        <p className="text-xs text-txmuted">
                           {campaign.campaign_type || 'campaign'} · {campaign.target_count} targeted
                         </p>
                       </td>
-                      <td className="px-4 py-2.5 text-xs text-slate-300">{campaign.audience_type}</td>
-                      <td className="px-4 py-2.5 text-xs text-slate-300">
+                      <td className="px-4 py-2.5 text-xs text-tx">{campaign.audience_type}</td>
+                      <td className="px-4 py-2.5 text-xs text-tx">
                         {campaign.schedule_mode === 'scheduled' && campaign.scheduled_at
                           ? formatDate(campaign.scheduled_at)
                           : '—'}
                       </td>
-                      <td className="px-4 py-2.5 text-xs text-slate-200">{campaign.metrics?.sent ?? 0}</td>
-                      <td className="px-4 py-2.5 text-xs text-slate-200">{campaign.metrics?.delivered ?? 0}</td>
-                      <td className="px-4 py-2.5 text-xs text-slate-200">{campaign.metrics?.read ?? 0}</td>
-                      <td className="px-4 py-2.5 text-xs text-slate-200">{campaign.metrics?.replied ?? 0}</td>
+                      <td className="px-4 py-2.5 text-xs text-tx">{campaign.metrics?.sent ?? 0}</td>
+                      <td className="px-4 py-2.5 text-xs text-tx">{campaign.metrics?.delivered ?? 0}</td>
+                      <td className="px-4 py-2.5 text-xs text-tx">{campaign.metrics?.read ?? 0}</td>
+                      <td className="px-4 py-2.5 text-xs text-tx">{campaign.metrics?.replied ?? 0}</td>
                       <td className="px-4 py-2.5">
-                        <Badge tone={STATUS_TONE[campaign.status] ?? 'neutral'}>{campaign.status}</Badge>
+                        <Pill tone={STATUS_TONE[campaign.status] ?? 'neutral'}>{campaign.status}</Pill>
                       </td>
                       {canManage && (
                         <td className="px-4 py-2.5">
@@ -488,44 +499,45 @@ export function CampaignsPanel({ tenantId }: { tenantId: string }) {
                               wrapped labels) — the table wrapper scrolls
                               horizontally instead of clipping Delete. */}
                           <div className="flex items-center justify-end gap-1 [&_button]:shrink-0 [&_button]:whitespace-nowrap">
-                            <Button
-                              size="sm"
-                              variant="subtle"
-                              loading={sendingTo === campaign.id}
+                            <PrimaryButton
+                              className={SMALL}
+                              disabled={sendingTo === campaign.id}
                               onClick={() => sendToAudience(campaign)}
                             >
-                              <Send className="h-3.5 w-3.5" /> Send all
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              disabled={!recipients || picked.size === 0}
-                              loading={sendingTo === campaign.id}
+                              {sendingTo === campaign.id ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <Send className="h-3.5 w-3.5" />
+                              )}{' '}
+                              Send all
+                            </PrimaryButton>
+                            <GhostButton
+                              className={SMALL}
+                              disabled={!recipients || picked.size === 0 || sendingTo === campaign.id}
                               onClick={() => sendToSelection(campaign)}
                             >
                               <Send className="h-3.5 w-3.5" /> Picked{picked.size ? ` (${picked.size})` : ''}
-                            </Button>
-                            <Button size="sm" variant="ghost" onClick={() => setEditing(campaign)}>
+                            </GhostButton>
+                            <GhostButton className={SMALL} onClick={() => setEditing(campaign)}>
                               <Pencil className="h-3.5 w-3.5" /> Edit
-                            </Button>
+                            </GhostButton>
                             {confirmDelete === campaign.id ? (
                               <>
-                                <Button size="sm" variant="danger" loading={action.busy} onClick={() => remove(campaign)}>
+                                <DangerButton className={SMALL} disabled={action.busy} onClick={() => remove(campaign)}>
+                                  {action.busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                                   Delete forever
-                                </Button>
-                                <Button size="sm" variant="ghost" onClick={() => setConfirmDelete(null)}>
+                                </DangerButton>
+                                <GhostButton className={SMALL} onClick={() => setConfirmDelete(null)}>
                                   Cancel
-                                </Button>
+                                </GhostButton>
                               </>
                             ) : (
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="text-rose-400 hover:text-rose-300"
+                              <GhostButton
+                                className={`${SMALL} text-badink`}
                                 onClick={() => setConfirmDelete(campaign.id)}
                               >
                                 <Trash2 className="h-3.5 w-3.5" /> Delete
-                              </Button>
+                              </GhostButton>
                             )}
                           </div>
                         </td>
@@ -535,7 +547,7 @@ export function CampaignsPanel({ tenantId }: { tenantId: string }) {
                 </tbody>
               </table>
             </div>
-          </CardBody>
+          </div>
         </Card>
       )}
     </div>
@@ -614,108 +626,107 @@ function TemplatesManager({
 
   return (
     <Card className="mb-4">
-      <CardHeader
-        title="WhatsApp templates"
-        description="Approved templates are what campaigns broadcast. Each carries the Meta category and language the campaign type must match."
-      />
-      <CardBody className="space-y-4">
+      <div className="border-b border-linesoft px-4 py-3 sm:px-5">
+        <h2 className="text-sm font-semibold text-tx">WhatsApp templates</h2>
+        <p className="text-xs text-txmuted">
+          Approved templates are what campaigns broadcast. Each carries the Meta category and language the campaign type must match.
+        </p>
+      </div>
+      <div className="space-y-4 p-4 sm:p-5">
         {templates.length > 0 ? (
-          <div className="divide-y divide-surface-line rounded-lg ring-1 ring-inset ring-surface-line">
+          <div className="divide-y divide-linesoft rounded-panel border border-line">
             {templates.map((template) => (
               <div key={template.id} className="flex flex-wrap items-start gap-3 px-4 py-2.5">
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-slate-100">
+                  <p className="text-sm font-medium text-tx">
                     {template.name}{' '}
-                    <span className="text-xs font-normal text-slate-500">
+                    <span className="text-xs font-normal text-txmuted">
                       ({template.category} · {template.language})
                     </span>
                   </p>
                   {template.header && (
-                    <p className="mt-0.5 text-xs font-medium text-slate-300">{template.header}</p>
+                    <p className="mt-0.5 text-xs font-medium text-tx">{template.header}</p>
                   )}
-                  <p className="mt-0.5 whitespace-pre-wrap text-xs text-slate-400">{template.body}</p>
+                  <p className="mt-0.5 whitespace-pre-wrap text-xs text-txmuted">{template.body}</p>
                   {template.footer && (
-                    <p className="mt-0.5 text-xs italic text-slate-500">{template.footer}</p>
+                    <p className="mt-0.5 text-xs italic text-txfaint">{template.footer}</p>
                   )}
                   {template.provider_response && template.status !== 'registered' && (
-                    <p className="mt-1 text-xs text-rose-400">Provider: {template.provider_response.slice(0, 160)}</p>
+                    <p className="mt-1 text-xs text-badink">Provider: {template.provider_response.slice(0, 160)}</p>
                   )}
                 </div>
                 <div className="flex flex-wrap items-center gap-1.5">
-                  <Badge
+                  <Pill
                     tone={
                       template.status === 'registered' || template.status === 'already_exists'
-                        ? 'success'
+                        ? 'ok'
                         : template.status === 'rejected' || template.status === 'failed' || template.status === 'error'
-                          ? 'danger'
-                          : 'muted'
+                          ? 'bad'
+                          : 'neutral'
                     }
                   >
                     {template.status}
-                  </Badge>
+                  </Pill>
                   {template.status !== 'registered' && template.status !== 'already_exists' && (
-                    <Button size="sm" variant="ghost" onClick={() => setStatus(template, 'registered')}>
+                    <GhostButton className={SMALL} onClick={() => setStatus(template, 'registered')}>
                       Approve
-                    </Button>
+                    </GhostButton>
                   )}
                   {template.status !== 'rejected' && (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="text-rose-400 hover:text-rose-300"
+                    <GhostButton
+                      className={`${SMALL} text-badink`}
                       onClick={() => setStatus(template, 'rejected')}
                     >
                       Reject
-                    </Button>
+                    </GhostButton>
                   )}
                   {confirmDelete === template.id ? (
                     <>
-                      <Button size="sm" variant="danger" loading={action.busy} onClick={() => remove(template)}>
+                      <DangerButton className={SMALL} disabled={action.busy} onClick={() => remove(template)}>
+                        {action.busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                         Delete forever
-                      </Button>
-                      <Button size="sm" variant="ghost" onClick={() => setConfirmDelete(null)}>
+                      </DangerButton>
+                      <GhostButton className={SMALL} onClick={() => setConfirmDelete(null)}>
                         Cancel
-                      </Button>
+                      </GhostButton>
                     </>
                   ) : (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="text-rose-400 hover:text-rose-300"
+                    <GhostButton
+                      className={`${SMALL} text-badink`}
                       onClick={() => setConfirmDelete(template.id)}
                     >
                       <Trash2 className="h-3.5 w-3.5" /> Delete
-                    </Button>
+                    </GhostButton>
                   )}
                 </div>
               </div>
             ))}
           </div>
         ) : (
-          <p className="text-xs text-slate-500">
+          <p className="text-xs text-txmuted">
             No templates yet — add the first one below, then it appears in the campaign form's dropdown.
           </p>
         )}
 
         <div className="grid gap-4 sm:grid-cols-2">
-          <Input
+          <FieldInput
             label="Template name *"
             value={name}
             error={nameMissing ? 'A template name is required' : undefined}
             onChange={(e) => setName(e.target.value)}
             placeholder="diwali_restock_offer"
           />
-          <Select label="Category *" value={category} onChange={(e) => setCategory(e.target.value)}>
+          <FieldSelect label="Category *" value={category} onChange={(e) => setCategory(e.target.value)}>
             {['MARKETING', 'UTILITY', 'AUTHENTICATION'].map((type) => (
               <option key={type} value={type}>
                 {type}
               </option>
             ))}
-          </Select>
-          <Input label="Language" value={language} onChange={(e) => setLanguage(e.target.value)} hint="Meta requires one locale per template (e.g. en, hi, gu)." />
-          <Input label="Header (optional)" value={header} onChange={(e) => setHeader(e.target.value)} placeholder="🎉 Diwali Restock Offer" />
-          <Input label="Footer (optional)" value={footer} onChange={(e) => setFooter(e.target.value)} placeholder="Reply STOP to unsubscribe" />
-          <Input
+          </FieldSelect>
+          <FieldInput label="Language" value={language} onChange={(e) => setLanguage(e.target.value)} hint="Meta requires one locale per template (e.g. en, hi, gu)." />
+          <FieldInput label="Header (optional)" value={header} onChange={(e) => setHeader(e.target.value)} placeholder="🎉 Diwali Restock Offer" />
+          <FieldInput label="Footer (optional)" value={footer} onChange={(e) => setFooter(e.target.value)} placeholder="Reply STOP to unsubscribe" />
+          <FieldInput
             label="Sample values (optional)"
             value={params}
             onChange={(e) => setParams(e.target.value)}
@@ -723,7 +734,7 @@ function TemplatesManager({
             placeholder="Rajesh, 20%"
           />
         </div>
-        <Textarea
+        <FieldTextarea
           label="Template body *"
           rows={3}
           value={body}
@@ -732,11 +743,12 @@ function TemplatesManager({
           hint="Use {{name}} style placeholders; campaigns map them to each recipient's details."
           placeholder="Hi {{name}}, get {{discount}} off on your Diwali restock."
         />
-        <Button variant="primary" loading={action.busy} onClick={add}>
+        <PrimaryButton onClick={add} disabled={action.busy}>
+          {action.busy && <Loader2 className="h-4 w-4 animate-spin" />}
           Add template
-        </Button>
-        {action.error && <Alert tone="danger" title="Could not save template">{action.error}</Alert>}
-      </CardBody>
+        </PrimaryButton>
+        {action.error && <ErrorBanner title="Could not save template" message={action.error} />}
+      </div>
     </Card>
   )
 }
@@ -919,91 +931,92 @@ function SegmentsManager({
 
   return (
     <Card className="mb-4">
-      <CardHeader
-        title="Segments"
-        description="Named, reusable audiences. Criteria combine as AND by default (or ANY); contacts who replied STOP are always excluded, and every saved segment shows its live contact count."
-      />
-      <CardBody className="space-y-4">
+      <div className="border-b border-linesoft px-4 py-3 sm:px-5">
+        <h2 className="text-sm font-semibold text-tx">Segments</h2>
+        <p className="text-xs text-txmuted">
+          Named, reusable audiences. Criteria combine as AND by default (or ANY); contacts who replied STOP are always excluded, and every saved segment shows its live contact count.
+        </p>
+      </div>
+      <div className="space-y-4 p-4 sm:p-5">
         {segments.length > 0 ? (
-          <div className="divide-y divide-surface-line rounded-lg ring-1 ring-inset ring-surface-line">
+          <div className="divide-y divide-linesoft rounded-panel border border-line">
             {segments.map((segment) => (
               <div key={segment.id} className="flex flex-wrap items-start gap-3 px-4 py-2.5">
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-slate-100">{segment.name}</p>
-                  <p className="mt-0.5 text-xs text-slate-400">
+                  <p className="text-sm font-medium text-tx">{segment.name}</p>
+                  <p className="mt-0.5 text-xs text-txmuted">
                     Audience Type: {segment.audience_type === 'customers' ? 'Customer' : 'Distributor'} ·{' '}
                     Criteria: {criteriaSummary(segment)}
                   </p>
                 </div>
                 <div className="flex max-w-full flex-wrap items-center justify-end gap-1.5">
-                  <Badge tone="muted">{segment.target_count} contacts</Badge>
-                  <Button size="sm" variant="ghost" onClick={() => startEdit(segment)}>
+                  <Pill>{segment.target_count} contacts</Pill>
+                  <GhostButton className={SMALL} onClick={() => startEdit(segment)}>
                     <Pencil className="h-3.5 w-3.5" /> Edit
-                  </Button>
+                  </GhostButton>
                   {confirmDelete === segment.id ? (
                     <>
-                      <Button size="sm" variant="danger" loading={action.busy} onClick={() => remove(segment)}>
+                      <DangerButton className={SMALL} disabled={action.busy} onClick={() => remove(segment)}>
+                        {action.busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                         Delete forever
-                      </Button>
-                      <Button size="sm" variant="ghost" onClick={() => setConfirmDelete(null)}>
+                      </DangerButton>
+                      <GhostButton className={SMALL} onClick={() => setConfirmDelete(null)}>
                         Cancel
-                      </Button>
+                      </GhostButton>
                     </>
                   ) : (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="text-rose-400 hover:text-rose-300"
+                    <GhostButton
+                      className={`${SMALL} text-badink`}
                       onClick={() => setConfirmDelete(segment.id)}
                     >
                       <Trash2 className="h-3.5 w-3.5" /> Delete
-                    </Button>
+                    </GhostButton>
                   )}
                 </div>
               </div>
             ))}
           </div>
         ) : (
-          <p className="text-xs text-slate-500">
+          <p className="text-xs text-txmuted">
             No segments yet — create one below, then campaigns can target it.
           </p>
         )}
 
         <div className="grid gap-4 sm:grid-cols-2">
-          <Input
+          <FieldInput
             label="Segment Name *"
             value={name}
             error={nameMissing ? 'A segment name is required' : undefined}
             onChange={(e) => setName(e.target.value)}
             placeholder={audienceType === 'customers' ? 'High-Value Customers' : 'Gujarat Distributors'}
           />
-          <Select
+          <FieldSelect
             label="Audience Type *"
             value={audienceType}
             onChange={(e) => setAudienceType(e.target.value as 'distributors' | 'customers')}
           >
             <option value="distributors">Distributor</option>
             <option value="customers">Customer</option>
-          </Select>
+          </FieldSelect>
         </div>
 
         {audienceType === 'distributors' ? (
           <>
             <div className="grid gap-4 sm:grid-cols-2">
-              <Input
+              <FieldInput
                 label="State / Region"
                 value={regions}
                 onChange={(e) => setRegions(e.target.value)}
                 hint="Comma separated, e.g. Gujarat, Maharashtra"
               />
-              <Input label="City" value={city} onChange={(e) => setCity(e.target.value)} placeholder="Ahmedabad" />
-              <Input
+              <FieldInput label="City" value={city} onChange={(e) => setCity(e.target.value)} placeholder="Ahmedabad" />
+              <FieldInput
                 label="Tier(s)"
                 value={tiers}
                 onChange={(e) => setTiers(e.target.value)}
                 hint="Comma separated, e.g. Gold, Platinum"
               />
-              <Input
+              <FieldInput
                 label="Product interests"
                 value={interests}
                 onChange={(e) => setInterests(e.target.value)}
@@ -1011,14 +1024,14 @@ function SegmentsManager({
               />
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
-              <Input
+              <FieldInput
                 label="Sales volume ≥ (₹)"
                 type="number"
                 value={minSalesVolume}
                 onChange={(e) => setMinSalesVolume(e.target.value)}
                 placeholder="100000"
               />
-              <Select
+              <FieldSelect
                 label="Credit status"
                 value={creditStatus}
                 onChange={(e) => setCreditStatus(e.target.value as 'any' | 'outstanding' | 'clear')}
@@ -1026,15 +1039,15 @@ function SegmentsManager({
                 <option value="any">Any</option>
                 <option value="outstanding">Has outstanding payments</option>
                 <option value="clear">No outstanding payments</option>
-              </Select>
-              <Input
+              </FieldSelect>
+              <FieldInput
                 label="Registered within (days)"
                 type="number"
                 value={registeredWithin}
                 onChange={(e) => setRegisteredWithin(e.target.value)}
                 placeholder="30"
               />
-              <Select
+              <FieldSelect
                 label="Criteria combination"
                 value={match}
                 onChange={(e) => setMatch(e.target.value as 'all' | 'any')}
@@ -1042,26 +1055,26 @@ function SegmentsManager({
               >
                 <option value="all">Match ALL (AND)</option>
                 <option value="any">Match ANY (OR)</option>
-              </Select>
+              </FieldSelect>
             </div>
             <div>
-              <p className="field-label mb-1.5">Exclusions</p>
+              <p className={FIELD_LABEL}>Exclusions</p>
               <div className="grid gap-4 sm:grid-cols-3">
-                <Input
+                <FieldInput
                   label="Except state(s)"
                   value={excludeRegions}
                   onChange={(e) => setExcludeRegions(e.target.value)}
                   hint="Comma separated"
                   placeholder="Maharashtra"
                 />
-                <Input
+                <FieldInput
                   label="Except tier(s)"
                   value={excludeTiers}
                   onChange={(e) => setExcludeTiers(e.target.value)}
                   hint="Comma separated"
                   placeholder="Bronze"
                 />
-                <Input
+                <FieldInput
                   label="Except city"
                   value={excludeCity}
                   onChange={(e) => setExcludeCity(e.target.value)}
@@ -1073,28 +1086,28 @@ function SegmentsManager({
         ) : (
           <>
             <div className="grid gap-4 sm:grid-cols-2">
-              <Input
+              <FieldInput
                 label="Total purchases > (₹)"
                 type="number"
                 value={minPurchases}
                 onChange={(e) => setMinPurchases(e.target.value)}
                 placeholder="10000"
               />
-              <Input
+              <FieldInput
                 label="Total purchases < (₹)"
                 type="number"
                 value={maxPurchases}
                 onChange={(e) => setMaxPurchases(e.target.value)}
                 placeholder="50000"
               />
-              <Input
+              <FieldInput
                 label="Order count ≥"
                 type="number"
                 value={orderCountMin}
                 onChange={(e) => setOrderCountMin(e.target.value)}
                 placeholder="3"
               />
-              <Input
+              <FieldInput
                 label="Order count ≤"
                 type="number"
                 value={orderCountMax}
@@ -1103,14 +1116,14 @@ function SegmentsManager({
               />
             </div>
             <div className="grid gap-4 sm:grid-cols-3">
-              <Input
+              <FieldInput
                 label="Last order within (days)"
                 type="number"
                 value={lastOrderWithin}
                 onChange={(e) => setLastOrderWithin(e.target.value)}
                 placeholder="30"
               />
-              <Input
+              <FieldInput
                 label="Inactive for (days+)"
                 type="number"
                 value={inactiveFor}
@@ -1118,7 +1131,7 @@ function SegmentsManager({
                 hint="No order in at least this many days."
                 placeholder="90"
               />
-              <Input
+              <FieldInput
                 label="Registered within (days)"
                 type="number"
                 value={registeredWithin}
@@ -1131,17 +1144,18 @@ function SegmentsManager({
         )}
 
         <div className="flex items-center gap-2">
-          <Button variant="primary" loading={action.busy} onClick={save}>
+          <PrimaryButton onClick={save} disabled={action.busy}>
+            {action.busy && <Loader2 className="h-4 w-4 animate-spin" />}
             {editing ? 'Save segment' : 'Add segment'}
-          </Button>
+          </PrimaryButton>
           {editing && (
-            <Button variant="ghost" onClick={reset}>
+            <GhostButton onClick={reset}>
               Cancel
-            </Button>
+            </GhostButton>
           )}
         </div>
-        {action.error && <Alert tone="danger" title="Could not save segment">{action.error}</Alert>}
-      </CardBody>
+        {action.error && <ErrorBanner title="Could not save segment" message={action.error} />}
+      </div>
     </Card>
   )
 }
@@ -1279,20 +1293,24 @@ function CampaignForm({
 
   return (
     <Card className="mb-4">
-      <CardHeader
-        title={initial ? `Edit ${initial.name || `Campaign #${initial.id}`}` : 'New campaign'}
-        description="The campaign will be sent to all contacts included in the selected audience when the schedule fires."
-      />
-      <CardBody className="space-y-4">
+      <div className="border-b border-linesoft px-4 py-3 sm:px-5">
+        <h2 className="text-sm font-semibold text-tx">
+          {initial ? `Edit ${initial.name || `Campaign #${initial.id}`}` : 'New campaign'}
+        </h2>
+        <p className="text-xs text-txmuted">
+          The campaign will be sent to all contacts included in the selected audience when the schedule fires.
+        </p>
+      </div>
+      <div className="space-y-4 p-4 sm:p-5">
         <div className="grid gap-4 sm:grid-cols-2">
-          <Input
+          <FieldInput
             label="Campaign Name *"
             value={form.name}
             error={nameMissing ? 'Campaign name is required' : undefined}
             onChange={(e) => set('name', e.target.value)}
             placeholder="Diwali Restock Offer"
           />
-          <Select
+          <FieldSelect
             label="Campaign Type *"
             value={form.campaign_type}
             onChange={(e) => set('campaign_type', e.target.value)}
@@ -1302,8 +1320,8 @@ function CampaignForm({
                 {type}
               </option>
             ))}
-          </Select>
-          <Select
+          </FieldSelect>
+          <FieldSelect
             label="WhatsApp Template *"
             value={form.whatsapp_template}
             error={templateMissing ? 'An approved WhatsApp template is required' : undefined}
@@ -1320,18 +1338,18 @@ function CampaignForm({
                 {template.name}
               </option>
             ))}
-          </Select>
+          </FieldSelect>
           {initial &&
             (ADMIN_STATUSES.includes(form.status as (typeof ADMIN_STATUSES)[number]) ? (
-              <Select label="Status" value={form.status} onChange={(e) => set('status', e.target.value)}>
+              <FieldSelect label="Status" value={form.status} onChange={(e) => set('status', e.target.value)}>
                 {ADMIN_STATUSES.map((status) => (
                   <option key={status} value={status}>
                     {status}
                   </option>
                 ))}
-              </Select>
+              </FieldSelect>
             ) : (
-              <Input
+              <FieldInput
                 label="Status"
                 value={form.status}
                 disabled
@@ -1342,14 +1360,14 @@ function CampaignForm({
 
         {/* Audience */}
         <div>
-          <p className="field-label mb-1.5">Audience *</p>
+          <p className={FIELD_LABEL}>Audience *</p>
           <div className="flex flex-wrap gap-4">
             {AUDIENCES.map((audience) => (
-              <label key={audience.value} className="flex cursor-pointer items-center gap-1.5 text-sm text-slate-200">
+              <label key={audience.value} className="flex cursor-pointer items-center gap-1.5 text-sm text-tx">
                 <input
                   type="radio"
                   name="campaign-audience"
-                  className="accent-accent-500"
+                  className="accent-acc"
                   checked={form.audience_type === audience.value}
                   onChange={() => set('audience_type', audience.value)}
                 />
@@ -1359,7 +1377,7 @@ function CampaignForm({
           </div>
         </div>
         {form.audience_type === 'segments' && (
-          <Select
+          <FieldSelect
             label="Select Segment *"
             value={form.segment_id ?? ''}
             error={segmentMissing ? 'A segment is required' : undefined}
@@ -1377,21 +1395,21 @@ function CampaignForm({
                 {segment.target_count} contacts
               </option>
             ))}
-          </Select>
+          </FieldSelect>
         )}
 
         {/* Message preview from the selected template */}
         <div>
-          <p className="field-label mb-1.5">Message preview</p>
+          <p className={FIELD_LABEL}>Message preview</p>
           {selectedTemplate ? (
-            <div className="rounded-lg bg-surface p-4 text-sm leading-relaxed text-slate-200 ring-1 ring-inset ring-surface-line">
+            <div className="rounded-panel bg-paper p-4 text-sm leading-relaxed text-tx">
               <p className="whitespace-pre-wrap">{selectedTemplate.body}</p>
-              <p className="mt-2 text-xs text-slate-500">
+              <p className="mt-2 text-xs text-txmuted">
                 Variables will be replaced automatically for each recipient.
               </p>
             </div>
           ) : (
-            <p className="rounded-lg bg-surface-panel p-3 text-xs text-slate-500">
+            <p className="rounded-panel bg-paper p-3 text-xs text-txmuted">
               Select an approved WhatsApp template to preview its message.
             </p>
           )}
@@ -1400,13 +1418,13 @@ function CampaignForm({
         {/* Template variables mapped per variable, not raw JSON */}
         {templateVariables.length > 0 && (
           <div className="space-y-2">
-            <p className="field-label">Template Variables *</p>
+            <p className={FIELD_LABEL}>Template Variables *</p>
             {templateVariables.map((variable) => {
               const mapping = form.var_map[variable] ?? { source: 'name', value: '' }
               return (
                 <div key={variable} className="grid gap-2 sm:grid-cols-2">
-                  <Input label={`{{${variable}}}`} value={`{{${variable}}}`} disabled />
-                  <Select
+                  <FieldInput label={`{{${variable}}}`} value={`{{${variable}}}`} disabled />
+                  <FieldSelect
                     label="Map to"
                     value={mapping.source}
                     onChange={(e) => setVarMap(variable, { source: e.target.value })}
@@ -1416,16 +1434,16 @@ function CampaignForm({
                         {option.label}
                       </option>
                     ))}
-                  </Select>
+                  </FieldSelect>
                   {mapping.source === 'fixed' && (
-                    <Input
+                    <FieldInput
                       label="Fixed value"
                       value={mapping.value}
                       onChange={(e) => setVarMap(variable, { value: e.target.value })}
                       placeholder={`Value for {{${variable}}}`}
                     />
                   )}
-                  <Input
+                  <FieldInput
                     label="Fallback (optional)"
                     value={form.var_fallbacks[variable] ?? ''}
                     onChange={(e) =>
@@ -1445,17 +1463,17 @@ function CampaignForm({
         {/* Schedule */}
         <div className="space-y-3">
           <div>
-            <p className="field-label mb-1.5">Schedule Mode *</p>
+            <p className={FIELD_LABEL}>Schedule Mode *</p>
             <div className="flex flex-wrap gap-4">
               {[
                 { value: 'now', label: 'Send Now' },
                 { value: 'scheduled', label: 'Schedule for Later' },
               ].map((mode) => (
-                <label key={mode.value} className="flex cursor-pointer items-center gap-1.5 text-sm text-slate-200">
+                <label key={mode.value} className="flex cursor-pointer items-center gap-1.5 text-sm text-tx">
                   <input
                     type="radio"
                     name="campaign-schedule"
-                    className="accent-accent-500"
+                    className="accent-acc"
                     checked={form.schedule_mode === mode.value}
                     onChange={() => set('schedule_mode', mode.value as 'now' | 'scheduled')}
                   />
@@ -1466,37 +1484,37 @@ function CampaignForm({
           </div>
           {form.schedule_mode === 'scheduled' && (
             <div className="grid gap-4 sm:grid-cols-3">
-              <Input
+              <FieldInput
                 label="Schedule Date *"
                 type="date"
                 value={form.scheduled_date}
                 error={scheduleDateMissing ? 'Schedule date is required' : undefined}
                 onChange={(e) => set('scheduled_date', e.target.value)}
               />
-              <Input
+              <FieldInput
                 label="Schedule Time *"
                 type="time"
                 value={form.scheduled_time}
                 error={scheduleTimeMissing ? 'Schedule time is required' : undefined}
                 onChange={(e) => set('scheduled_time', e.target.value)}
               />
-              <Select label="Timezone" value={form.timezone} onChange={(e) => set('timezone', e.target.value)}>
+              <FieldSelect label="Timezone" value={form.timezone} onChange={(e) => set('timezone', e.target.value)}>
                 {timezoneOptions(form.timezone).map((tz) => (
                   <option key={tz} value={tz}>
                     {tz}
                   </option>
                 ))}
-              </Select>
+              </FieldSelect>
             </div>
           )}
         </div>
 
         {/* Media upload + CTA */}
         <div>
-          <p className="field-label mb-1.5">Media (optional)</p>
+          <p className={FIELD_LABEL}>Media (optional)</p>
           <div className="flex flex-wrap items-center gap-2">
             <label
-              className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-surface-panel px-3 py-2 text-sm text-slate-200 ring-1 ring-inset ring-surface-line transition hover:bg-surface ${
+              className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-line bg-card px-3 py-2 text-sm font-medium text-tx transition hover:bg-paper ${
                 mediaUploading ? 'pointer-events-none opacity-60' : ''
               }`}
             >
@@ -1511,28 +1529,28 @@ function CampaignForm({
             </label>
             {form.media_filename && (
               <>
-                <span className="max-w-full truncate rounded bg-surface-panel px-2 py-1 text-xs text-slate-300">
+                <span className="max-w-full truncate rounded bg-paper px-2 py-1 text-xs text-tx">
                   {form.media_filename}
                 </span>
-                <Button size="sm" variant="ghost" onClick={() => set('media_filename', '')}>
+                <GhostButton className={SMALL} onClick={() => set('media_filename', '')}>
                   Remove
-                </Button>
+                </GhostButton>
               </>
             )}
           </div>
-          {mediaError && <p className="mt-1 text-xs text-rose-400">{mediaError}</p>}
-          <p className="mt-1 text-xs text-slate-500">
+          {mediaError && <p className="mt-1 text-xs text-badink">{mediaError}</p>}
+          <p className="mt-1 text-xs text-txmuted">
             Supported: JPG, PNG, MP4 — up to 16 MB. The file uploads immediately and attaches to the campaign.
           </p>
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
-          <Input
+          <FieldInput
             label="CTA Button Text (optional)"
             value={form.cta_button_text}
             onChange={(e) => set('cta_button_text', e.target.value)}
             placeholder="Shop Now"
           />
-          <Input
+          <FieldInput
             label="CTA Button URL (optional)"
             value={form.cta_button_url}
             error={!ctaValid ? ctaError : undefined}
@@ -1543,7 +1561,7 @@ function CampaignForm({
 
         {initial && (
           <div className="grid gap-4 sm:grid-cols-2">
-            <Input
+            <FieldInput
               label="Send a test to"
               value={testWaId}
               onChange={(e) => setTestWaId(e.target.value)}
@@ -1551,28 +1569,28 @@ function CampaignForm({
               hint="Sends the rendered message (with fallbacks) to one number before the broadcast."
             />
             <div className="flex items-end">
-              <Button
-                variant="secondary"
+              <GhostButton
                 disabled={!testWaId.trim()}
                 onClick={() => onTestSend(testWaId.trim())}
               >
                 Send test
-              </Button>
+              </GhostButton>
             </div>
           </div>
         )}
 
-        {error && <Alert tone="danger" title="Could not save">{error}</Alert>}
+        {error && <ErrorBanner title="Could not save" message={error} />}
 
         <div className="flex items-center gap-2">
-          <Button variant="primary" loading={busy} onClick={submit}>
+          <PrimaryButton onClick={submit} disabled={busy}>
+            {busy && <Loader2 className="h-4 w-4 animate-spin" />}
             {initial ? 'Save changes' : 'Create campaign'}
-          </Button>
-          <Button variant="ghost" onClick={onCancel}>
+          </PrimaryButton>
+          <GhostButton onClick={onCancel}>
             Cancel
-          </Button>
+          </GhostButton>
         </div>
-      </CardBody>
+      </div>
     </Card>
   )
 }

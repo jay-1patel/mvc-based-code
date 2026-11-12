@@ -1,22 +1,30 @@
 import { useState } from 'react'
-import { Pencil, Plus, Save, Send, Trash2, X } from 'lucide-react'
+import { Loader2, Pencil, Plus, Save, Send, Trash2, X } from 'lucide-react'
 import { tenantsApi } from '@/lib/tenants'
 import { useAction } from '@/lib/hooks'
 import { FEATURE_FLAGS, type IntentSpec } from '@/lib/types'
 import { FEATURE_LABELS } from '@/lib/verticals'
-import { Button } from '@/components/ui/button'
-import { Card, CardBody, CardHeader } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { Input, Textarea } from '@/components/ui/input'
-import { Select } from '@/components/ui/select'
-import { Switch } from '@/components/ui/switch'
-import { TagInput } from '@/components/ui/tags'
+import {
+  Card,
+  FieldInput,
+  FieldSelect,
+  FieldTextarea,
+  GhostButton,
+  IconButton,
+  Notice,
+  Pill,
+  PrimaryButton,
+  TagField,
+  Toggle,
+} from '@/components/remake/ui'
 import { Alert, LoadingBlock } from '@/components/ui/feedback'
 import { PageHeader } from '@/components/layout/page-header'
 import { useToast } from '@/components/ui/toast'
 import { useConfirm } from '@/components/ui/confirm'
 import { useTenantDetail } from '@/components/tenants/hooks'
 import { usePermissions } from '@/lib/permissions'
+
+const FIELD_LABEL = 'mb-1.5 block text-sm font-medium text-tx'
 
 export function IntentsEditor({ tenantId }: { tenantId: string }) {
   const { data, loading, error, reload } = useTenantDetail(tenantId)
@@ -117,73 +125,101 @@ export function IntentsEditor({ tenantId }: { tenantId: string }) {
   return (
     <div>
       <PageHeader
-        title="Intents Editor"
+        title="Questions the bot understands"
         description="Add, edit, enable/disable intents. Changes go to draft and need publishing."
         actions={
           canWrite ? (
-            <Button size="sm" variant="primary" icon={<Plus className="h-4 w-4" />} onClick={startAdd}>
+            <PrimaryButton onClick={startAdd}>
+              <Plus className="h-4 w-4" />
               Add intent
-            </Button>
+            </PrimaryButton>
           ) : undefined
         }
       />
 
       {editing && draft && (
         <Card className="mb-4">
-          <CardHeader
-            title={draft.name ? `Edit ${draft.name}` : 'Add new intent'}
-            actions={<Button size="sm" variant="ghost" onClick={() => { setEditing(false); setDraft(null) }} icon={<X className="h-4 w-4" />} />}
-          />
-          <CardBody className="space-y-4">
-            <Input label="Name" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} disabled={Boolean(all.find((a) => a.name === draft.name) && !editing)} placeholder="intent_name" />
-            <Textarea label="Answer" rows={4} value={draft.answer ?? ''} onChange={(e) => setDraft({ ...draft, answer: e.target.value })} />
-            <TagInput value={draft.keywords ?? []} onChange={(k) => setDraft({ ...draft, keywords: k })} placeholder="Keywords" />
-            <TagInput value={draft.examples ?? []} onChange={(e) => setDraft({ ...draft, examples: e })} placeholder="Examples" />
+          <div className="flex items-center justify-between gap-3 border-b border-linesoft px-4 py-3 sm:px-5">
+            <h2 className="text-sm font-semibold text-tx">
+              {draft.name ? `Edit ${draft.name}` : 'Add new intent'}
+            </h2>
+            <IconButton
+              title="Close"
+              onClick={() => { setEditing(false); setDraft(null) }}
+            >
+              <X className="h-4 w-4" />
+            </IconButton>
+          </div>
+          <div className="space-y-4 p-4 sm:p-5">
+            <FieldInput label="Name" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} disabled={Boolean(all.find((a) => a.name === draft.name) && !editing)} placeholder="intent_name" />
+            <FieldTextarea label="Answer" rows={4} value={draft.answer ?? ''} onChange={(e) => setDraft({ ...draft, answer: e.target.value })} />
+            <div>
+              <span className={FIELD_LABEL}>Keywords</span>
+              <TagField value={draft.keywords ?? []} onChange={(k) => setDraft({ ...draft, keywords: k })} placeholder="Keywords" />
+            </div>
+            <div>
+              <span className={FIELD_LABEL}>Examples</span>
+              <TagField value={draft.examples ?? []} onChange={(e) => setDraft({ ...draft, examples: e })} placeholder="Examples" />
+            </div>
             <div className="grid gap-4 sm:grid-cols-3">
-              <Select label="Requires feature" value={draft.requires_feature ?? ''} onChange={(e) => setDraft({ ...draft, requires_feature: e.target.value || null })}>
+              <FieldSelect label="Requires feature" value={draft.requires_feature ?? ''} onChange={(e) => setDraft({ ...draft, requires_feature: e.target.value || null })}>
                 <option value="">None</option>
                 {FEATURE_FLAGS.map((f) => (
                   <option key={f} value={f}>{FEATURE_LABELS[f]?.label ?? f}</option>
                 ))}
-              </Select>
-              <Input label="Flow" value={draft.flow ?? ''} onChange={(e) => setDraft({ ...draft, flow: e.target.value || '' })} placeholder="flow_name" />
-              <Switch checked={draft.enabled ?? true} onChange={(en) => setDraft({ ...draft, enabled: en })} label="Enabled" />
+              </FieldSelect>
+              <FieldInput label="Flow" value={draft.flow ?? ''} onChange={(e) => setDraft({ ...draft, flow: e.target.value || '' })} placeholder="flow_name" />
+              <div className="flex items-end pb-1">
+                <Toggle checked={draft.enabled ?? true} onChange={(en) => setDraft({ ...draft, enabled: en })} label="Enabled" />
+              </div>
             </div>
             <div className="flex gap-2">
-              <Button size="sm" variant="primary" onClick={() => save(false)} loading={action.busy} icon={<Save className="h-4 w-4" />}>Save draft</Button>
-              <Button size="sm" variant="secondary" onClick={() => save(true)} loading={action.busy} icon={<Send className="h-4 w-4" />}>Save & publish</Button>
+              <PrimaryButton onClick={() => save(false)} disabled={action.busy}>
+                {action.busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                Save draft
+              </PrimaryButton>
+              <GhostButton onClick={() => save(true)} disabled={action.busy}>
+                <Send className="h-4 w-4" />
+                Save & publish
+              </GhostButton>
             </div>
-            {validation.length > 0 && <Alert tone="warning">{validation.join(', ')}</Alert>}
-          </CardBody>
+            {validation.length > 0 && <Notice tone="warn">{validation.join(', ')}</Notice>}
+          </div>
         </Card>
       )}
 
       <Card>
-        <CardHeader title="All intents" />
-        <CardBody className="space-y-2">
+        <div className="border-b border-linesoft px-4 py-3 sm:px-5">
+          <h2 className="text-sm font-semibold text-tx">All intents</h2>
+        </div>
+        <div className="space-y-2 p-4 sm:p-5">
           {all.map((i) => (
-            <div key={i.name} className="rounded-lg p-3 ring-1 ring-inset bg-surface-panel ring-surface-line">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium">{i.name}</span>
-                  {!publishedNames.has(i.name) && <Badge tone="accent">draft</Badge>}
-                  {i.enabled ? <Badge tone="success">enabled</Badge> : <Badge tone="muted">disabled</Badge>}
-                  {i.flow && <Badge tone="accent">flow:{i.flow}</Badge>}
-                  {i.requires_feature && <Badge tone="neutral">needs:{i.requires_feature}</Badge>}
+            <div key={i.name} className="rounded-panel bg-paper p-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-medium text-tx">{i.name}</span>
+                  {!publishedNames.has(i.name) && <Pill tone="ok">draft</Pill>}
+                  {i.enabled ? <Pill tone="ok">enabled</Pill> : <Pill>disabled</Pill>}
+                  {i.flow && <Pill tone="ok">flow:{i.flow}</Pill>}
+                  {i.requires_feature && <Pill>needs:{i.requires_feature}</Pill>}
                 </div>
                 {canWrite && (
                   <div className="flex gap-1">
-                    <Button size="sm" variant="ghost" onClick={() => startEdit(i)} icon={<Pencil className="h-4 w-4" />} />
-                    <Button size="sm" variant="ghost" onClick={() => remove(i.name)} icon={<Trash2 className="h-4 w-4" />} />
+                    <IconButton title="Edit" onClick={() => startEdit(i)}>
+                      <Pencil className="h-4 w-4" />
+                    </IconButton>
+                    <IconButton title="Delete" danger onClick={() => remove(i.name)}>
+                      <Trash2 className="h-4 w-4" />
+                    </IconButton>
                   </div>
                 )}
               </div>
-              {i.keywords?.length > 0 && <p className="text-xs text-slate-500 mt-1">Keywords: {i.keywords.join(', ')}</p>}
-              {i.examples?.length > 0 && <p className="text-xs text-slate-500 mt-1">Examples: {i.examples.join(', ')}</p>}
-              {i.answer && <p className="text-xs text-slate-500 mt-1 truncate">{i.answer}</p>}
+              {i.keywords?.length > 0 && <p className="mt-1 text-xs text-txmuted">Keywords: {i.keywords.join(', ')}</p>}
+              {i.examples?.length > 0 && <p className="mt-1 text-xs text-txmuted">Examples: {i.examples.join(', ')}</p>}
+              {i.answer && <p className="mt-1 truncate text-xs text-txmuted">{i.answer}</p>}
             </div>
           ))}
-        </CardBody>
+        </div>
       </Card>
     </div>
   )

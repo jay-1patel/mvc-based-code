@@ -14,7 +14,7 @@ describe('sidebar navigation', () => {
   it('navigates between views via the sidebar', async () => {
     await renderView(`#/tenants/${T}/overview`)
     const user = userEvent.setup()
-    await user.click(await screen.findByRole('button', { name: /api tokens/i }))
+    await user.click(await screen.findByRole('button', { name: /connections/i }))
     await waitFor(
       () => expect(screen.getByRole('heading', { name: 'API tokens' })).toBeInTheDocument(),
       { timeout: 3000 },

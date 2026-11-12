@@ -7,12 +7,15 @@ import { ConfirmProvider } from '@/components/ui/confirm'
 import { LoginView } from '@/components/auth/login-view'
 import { AppShell } from '@/components/layout/app-shell'
 import { PageHeader } from '@/components/layout/page-header'
-import { Alert, LoadingBlock } from '@/components/ui/feedback'
+import { LoadingBlock } from '@/components/ui/feedback'
+import { Notice } from '@/components/remake/ui'
 import { Button } from '@/components/ui/button'
 import { TenantList } from '@/components/tenants/tenant-list'
-import { TenantOverview } from '@/components/tenants/tenant-overview'
 import { ProfileEditor } from '@/components/tenants/profile-editor'
-import { MenuPreview } from '@/components/tenants/menu-preview'
+import { BotMenuPanel } from '@/components/tenants/bot-menu-panel'
+import { TodayPanel } from '@/components/tenants/today-panel'
+import { SuperToday } from '@/components/tenants/super-today'
+import { ChatsPanel } from '@/components/tenants/chats-panel'
 import { MenuEditor } from '@/components/tenants/menu-editor'
 import { OfferingsPanel } from '@/components/tenants/offerings-panel'
 import { RecordsPanel } from '@/components/tenants/records-panel'
@@ -21,7 +24,6 @@ import { OrdersPanel } from '@/components/tenants/orders-panel'
 import { CampaignsPanel } from '@/components/tenants/campaigns-panel'
 import { DistributorsPanel } from '@/components/tenants/distributors-panel'
 import { ChatHistoryPanel } from '@/components/tenants/chat-history-panel'
-import { LiveInboxPanel } from '@/components/tenants/live-inbox-panel'
 import { CallbacksPanel } from '@/components/tenants/callbacks-panel'
 import { ComplaintsPanel } from '@/components/tenants/complaints-panel'
 import { UploadsPanel } from '@/components/tenants/uploads-panel'
@@ -131,7 +133,7 @@ function Router() {
   if (!route.tenantId) {
     return (
       <AppShell route={route}>
-        <TenantList />
+        {isSuperAdmin ? <SuperToday /> : <TenantList />}
       </AppShell>
     )
   }
@@ -158,9 +160,9 @@ function Router() {
 
   return (
     <AppShell route={route}>
-      {route.view === 'overview' && <TenantOverview tenantId={route.tenantId} />}
+      {route.view === 'overview' && <TodayPanel tenantId={route.tenantId} />}
       {route.view === 'profile' && <ProfileEditor tenantId={route.tenantId} />}
-      {route.view === 'menu' && <MenuPreview tenantId={route.tenantId} />}
+      {route.view === 'menu' && <BotMenuPanel tenantId={route.tenantId} />}
       {route.view === 'menu-edit' && (
         <MenuEditor tenantId={route.tenantId} focusId={route.query.get('focus')} />
       )}
@@ -173,7 +175,7 @@ function Router() {
       {route.view === 'offerings' && <OfferingsPanel tenantId={route.tenantId} />}
       {route.view === 'projects' && <InfoPagePanel tenantId={route.tenantId} page="projects" />}
       {route.view === 'chat-history' && <ChatHistoryPanel tenantId={route.tenantId} />}
-      {route.view === 'inbox' && <LiveInboxPanel tenantId={route.tenantId} />}
+      {route.view === 'inbox' && <ChatsPanel tenantId={route.tenantId} />}
       {route.view === 'complaints' && <ComplaintsPanel tenantId={route.tenantId} />}
       {route.view === 'callbacks' && <CallbacksPanel tenantId={route.tenantId} />}
       {route.view === 'uploads' && <UploadsPanel tenantId={route.tenantId} />}
@@ -188,9 +190,9 @@ function Router() {
       {route.view === 'whatsapp-tester' && <WhatsAppTester tenantId={route.tenantId} />}
       {PENDING_VIEWS.has(route.view) && <ComingSoon view={route.view} />}
       {!KNOWN_VIEWS.includes(route.view) && (
-        <Alert tone="warning" title="Unknown view">
+        <Notice tone="warn" title="Unknown view">
           <code>{route.view}</code> is not a screen in this console.
-        </Alert>
+        </Notice>
       )}
     </AppShell>
   )
@@ -218,7 +220,6 @@ const KNOWN_VIEWS = [
   'profile',
   'menu',
   'menu-edit',
-  'flows',
   'intents',
   'records',
   'offerings',
@@ -256,9 +257,9 @@ function ComingSoon({ view }: { view: string }) {
   return (
     <div>
       <PageHeader title={label.replace(/\b\w/g, (c) => c.toUpperCase())} />
-      <Alert tone="info" title="Coming next">
+      <Notice tone="info" title="Coming next">
         This screen is wired into the navigation but its panel is not built yet.
-      </Alert>
+      </Notice>
     </div>
   )
 }
@@ -266,10 +267,10 @@ function ComingSoon({ view }: { view: string }) {
 function NotPermitted({ what }: { what: string }) {
   return (
     <div className="mx-auto max-w-lg py-16">
-      <Alert tone="warning" title="Not permitted">
+      <Notice tone="warn" title="Not permitted">
         Your account cannot {what}. This screen needs the{' '}
         <strong>manage_operations</strong> permission — a super admin can grant it under Team &amp; permissions.
-      </Alert>
+      </Notice>
     </div>
   )
 }
@@ -295,9 +296,9 @@ function AuthedApp() {
   if (error && canManageTeam && route.view !== 'team') {
     return (
       <div className="mx-auto max-w-lg px-6 py-20">
-        <Alert tone="danger" title="Cannot list tenants">
+        <Notice tone="bad" title="Cannot list tenants">
           {error}
-        </Alert>
+        </Notice>
         <Button className="mt-4" onClick={reload}>
           Retry
         </Button>

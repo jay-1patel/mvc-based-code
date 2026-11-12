@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useState, type ChangeEvent } from 'react'
 import {
   Building2,
   HelpCircle,
   Layers,
+  Loader2,
   MessageSquare,
   Package,
   Rocket,
@@ -12,9 +13,8 @@ import {
   X,
 } from 'lucide-react'
 import type { StagedOnboardingDraft } from '@/lib/uploads'
-import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { Input } from '@/components/ui/input'
+import { cn } from '@/lib/cn'
+import { GhostButton, PrimaryButton } from '@/components/remake/ui'
 import { Modal } from '@/components/ui/modal'
 import { useToast } from '@/components/ui/toast'
 
@@ -26,6 +26,59 @@ interface OnboardingReviewModalProps {
 }
 
 type TabType = 'brand' | 'menu' | 'catalog' | 'faqs' | 'intents' | 'guardrails'
+
+/** The modal's dense editors use 10px uppercase labels, not the standard
+ *  field label — these mini inputs keep that look on the token layer. */
+function MiniInput({
+  value,
+  onChange,
+  className,
+  invalid,
+}: {
+  value: string
+  onChange: (e: ChangeEvent<HTMLInputElement>) => void
+  className?: string
+  invalid?: boolean
+}) {
+  return (
+    <input
+      value={value}
+      onChange={onChange}
+      className={cn(
+        'w-full rounded-lg border bg-inputbg px-2.5 py-1.5 text-xs text-tx outline-none transition placeholder:text-txfaint focus:border-acc',
+        invalid ? 'border-badline' : 'border-line',
+        className,
+      )}
+    />
+  )
+}
+
+function MiniArea({
+  value,
+  onChange,
+  rows,
+}: {
+  value: string
+  onChange: (e: ChangeEvent<HTMLTextAreaElement>) => void
+  rows: number
+}) {
+  return (
+    <textarea
+      rows={rows}
+      value={value}
+      onChange={onChange}
+      className="mt-1 w-full rounded-lg border border-line bg-inputbg p-2 text-xs text-tx outline-none transition focus:border-acc"
+    />
+  )
+}
+
+function MiniLabel({ children }: { children: string }) {
+  return (
+    <span className="text-[10px] font-semibold uppercase tracking-wider text-txmuted">
+      {children}
+    </span>
+  )
+}
 
 function normalizeDraft(d: StagedOnboardingDraft): StagedOnboardingDraft {
   return {
@@ -147,142 +200,99 @@ export function OnboardingReviewModal({
     await onConfirm(draft)
   }
 
+  const tabs: { id: TabType; label: string; icon: typeof Package }[] = [
+    { id: 'catalog', label: `Catalog & Properties (${draft.offerings.length})`, icon: Package },
+    { id: 'menu', label: `WhatsApp Menu (${draft.menu_items.length})`, icon: MessageSquare },
+    { id: 'faqs', label: `FAQs & Knowledge (${draft.faqs.length})`, icon: HelpCircle },
+    { id: 'intents', label: `Intents (${(draft.intents || []).length})`, icon: Layers },
+    { id: 'brand', label: 'Brand Profile', icon: Building2 },
+    { id: 'guardrails', label: 'Guardrails & Persona', icon: ShieldAlert },
+  ]
+
   return (
     <Modal
       onClose={onClose}
       persistent={publishing}
-      className="relative flex max-h-[92vh] w-full max-w-5xl flex-col rounded-xl border border-surface-line bg-surface-card shadow-2xl"
+      className="relative flex max-h-[92vh] w-full max-w-5xl flex-col rounded-panel border border-line bg-card shadow-2xl"
     >
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-surface-line px-6 py-4">
+        <div className="flex items-center justify-between border-b border-line px-6 py-4">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-teal-500/10 text-teal-600">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-accsoft text-acc">
               <Sparkles className="h-5 w-5" />
             </div>
             <div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <h3 className="text-base font-semibold text-surface-fg">
-                  Review & Confirm Bifurcated Onboarding Data
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="text-base font-semibold text-tx">
+                  Review &amp; Confirm Bifurcated Onboarding Data
                 </h3>
-                <Badge tone="neutral" className="uppercase tracking-wider">
+                <span className="inline-flex rounded-full border border-line px-2 py-0.5 text-2xs font-medium uppercase tracking-wider text-txmuted">
                   {draft.vertical.replace('_', ' ')}
-                </Badge>
-                <Badge
-                  tone="neutral"
+                </span>
+                <span
                   className={
                     draft.extraction_mode === 'kit'
-                      ? 'border-teal-500/40 text-teal-700 bg-teal-500/10'
-                      : 'border-sky-500/40 text-sky-700 bg-sky-500/10'
+                      ? 'inline-flex rounded-full border border-acc/40 bg-accsoft px-2 py-0.5 text-2xs font-medium text-acc'
+                      : 'inline-flex rounded-full border border-chipwebink/40 bg-chipwebbg px-2 py-0.5 text-2xs font-medium text-chipwebink'
                   }
                 >
                   {draft.extraction_mode === 'kit' ? 'Kit parse' : 'General extraction'}
-                </Badge>
+                </span>
               </div>
-              <p className="text-xs text-surface-muted">
+              <p className="text-xs text-txmuted">
                 From {(draft.source_files || []).join(', ') || 'upload'} • {draft.offerings.length} offerings •{' '}
                 {draft.faqs.length} FAQs • {(draft.intents || []).length} intents
               </p>
               {draft.warning ? (
-                <p className="text-xs text-amber-700 mt-1">{draft.warning}</p>
+                <p className="mt-1 text-xs text-attink">{draft.warning}</p>
               ) : null}
             </div>
           </div>
           <button
             onClick={onClose}
-            className="rounded-lg p-1.5 text-surface-muted hover:bg-surface-elevated hover:text-surface-fg transition"
+            aria-label="Close"
+            className="rounded-lg p-1.5 text-txmuted transition hover:bg-paper hover:text-tx"
           >
             <X className="h-5 w-5" />
           </button>
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex border-b border-surface-line bg-surface-bg/40 px-6">
-          <button
-            onClick={() => setActiveTab('catalog')}
-            className={`flex items-center gap-2 border-b-2 px-4 py-3 text-xs font-medium transition ${
-              activeTab === 'catalog'
-                ? 'border-teal-500 text-teal-600'
-                : 'border-transparent text-surface-muted hover:text-surface-fg'
-            }`}
-          >
-            <Package className="h-4 w-4" />
-            Catalog & Properties ({draft.offerings.length})
-          </button>
-          <button
-            onClick={() => setActiveTab('menu')}
-            className={`flex items-center gap-2 border-b-2 px-4 py-3 text-xs font-medium transition ${
-              activeTab === 'menu'
-                ? 'border-teal-500 text-teal-600'
-                : 'border-transparent text-surface-muted hover:text-surface-fg'
-            }`}
-          >
-            <MessageSquare className="h-4 w-4" />
-            WhatsApp Menu ({draft.menu_items.length})
-          </button>
-          <button
-            onClick={() => setActiveTab('faqs')}
-            className={`flex items-center gap-2 border-b-2 px-4 py-3 text-xs font-medium transition ${
-              activeTab === 'faqs'
-                ? 'border-teal-500 text-teal-600'
-                : 'border-transparent text-surface-muted hover:text-surface-fg'
-            }`}
-          >
-            <HelpCircle className="h-4 w-4" />
-            FAQs & Knowledge ({draft.faqs.length})
-          </button>
-          <button
-            onClick={() => setActiveTab('intents')}
-            className={`flex items-center gap-2 border-b-2 px-4 py-3 text-xs font-medium transition ${
-              activeTab === 'intents'
-                ? 'border-teal-500 text-teal-600'
-                : 'border-transparent text-surface-muted hover:text-surface-fg'
-            }`}
-          >
-            <Layers className="h-4 w-4" />
-            Intents ({(draft.intents || []).length})
-          </button>
-          <button
-            onClick={() => setActiveTab('brand')}
-            className={`flex items-center gap-2 border-b-2 px-4 py-3 text-xs font-medium transition ${
-              activeTab === 'brand'
-                ? 'border-teal-500 text-teal-600'
-                : 'border-transparent text-surface-muted hover:text-surface-fg'
-            }`}
-          >
-            <Building2 className="h-4 w-4" />
-            Brand Profile
-          </button>
-          <button
-            onClick={() => setActiveTab('guardrails')}
-            className={`flex items-center gap-2 border-b-2 px-4 py-3 text-xs font-medium transition ${
-              activeTab === 'guardrails'
-                ? 'border-teal-500 text-teal-600'
-                : 'border-transparent text-surface-muted hover:text-surface-fg'
-            }`}
-          >
-            <ShieldAlert className="h-4 w-4" />
-            Guardrails & Persona
-          </button>
+        <div className="flex border-b border-line bg-paper/60 px-6">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex items-center gap-2 border-b-2 px-4 py-3 text-xs font-medium transition ${
+                activeTab === tab.id
+                  ? 'border-acc text-acc'
+                  : 'border-transparent text-txmuted hover:text-tx'
+              }`}
+            >
+              <tab.icon className="h-4 w-4" />
+              {tab.label}
+            </button>
+          ))}
         </div>
 
         {/* Content Area */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-4">
+        <div className="flex-1 space-y-4 overflow-y-auto p-6">
           {/* TAB 1: CATALOG & OFFERINGS */}
           {activeTab === 'catalog' && (
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <h4 className="text-sm font-semibold text-surface-fg">
+                  <h4 className="text-sm font-semibold text-tx">
                     Extracted Offerings / Real Estate Properties
                   </h4>
-                  <p className="text-xs text-surface-muted">
+                  <p className="text-xs text-txmuted">
                     These items will be inserted into your active catalog and indexed for conversational product inquiries.
                   </p>
                 </div>
               </div>
 
               {draft.offerings.length === 0 ? (
-                <div className="rounded-lg border border-dashed border-surface-line p-8 text-center text-xs text-surface-muted">
+                <div className="rounded-panel border border-dashed border-line p-8 text-center text-xs text-txmuted">
                   No catalog items found in the document. You can add items or continue.
                 </div>
               ) : (
@@ -290,45 +300,39 @@ export function OnboardingReviewModal({
                   {draft.offerings.map((item, idx) => (
                     <div
                       key={idx}
-                      className="rounded-lg border border-surface-line bg-surface-bg/50 p-4 transition hover:border-teal-500/40"
+                      className="rounded-panel border border-line bg-paper p-4 transition hover:border-acc/50"
                     >
                       <div className="flex items-start justify-between gap-4">
                         <div className="grid flex-1 grid-cols-1 gap-3 sm:grid-cols-3">
                           <div>
-                            <label className="text-[10px] font-semibold uppercase tracking-wider text-surface-muted">
-                              Item / Property Name
-                            </label>
-                            <Input
+                            <MiniLabel>Item / Property Name</MiniLabel>
+                            <MiniInput
                               value={item.name}
                               onChange={(e) => updateOffering(idx, 'name', e.target.value)}
-                              className="mt-1 text-xs"
+                              className="mt-1"
                             />
                           </div>
                           <div>
-                            <label className="text-[10px] font-semibold uppercase tracking-wider text-surface-muted">
-                              Category / Type
-                            </label>
-                            <Input
+                            <MiniLabel>Category / Type</MiniLabel>
+                            <MiniInput
                               value={item.category}
                               onChange={(e) => updateOffering(idx, 'category', e.target.value)}
-                              className="mt-1 text-xs"
+                              className="mt-1"
                             />
                           </div>
                           <div>
-                            <label className="text-[10px] font-semibold uppercase tracking-wider text-surface-muted">
-                              Price / Pricing Range
-                            </label>
-                            <Input
+                            <MiniLabel>Price / Pricing Range</MiniLabel>
+                            <MiniInput
                               value={item.price}
                               onChange={(e) => updateOffering(idx, 'price', e.target.value)}
-                              className="mt-1 text-xs"
+                              className="mt-1"
                             />
                           </div>
                         </div>
                         <button
                           type="button"
                           onClick={() => removeOffering(idx)}
-                          className="mt-5 rounded p-1.5 text-surface-muted hover:bg-rose-500/10 hover:text-rose-600 transition"
+                          className="mt-5 rounded p-1.5 text-txmuted transition hover:bg-badbg hover:text-badink"
                           title="Remove item"
                         >
                           <Trash2 className="h-4 w-4" />
@@ -337,17 +341,17 @@ export function OnboardingReviewModal({
 
                       {/* Attributes (BHK, sqft, location, amenities, rera) */}
                       {item.attrs && Object.keys(item.attrs).length > 0 && (
-                        <div className="mt-3 grid grid-cols-2 gap-2 border-t border-surface-line/60 pt-3 sm:grid-cols-4">
+                        <div className="mt-3 grid grid-cols-2 gap-2 border-t border-linesoft pt-3 sm:grid-cols-4">
                           {Object.entries(item.attrs).map(([k, val]) => (
                             <div key={k} className="text-xs">
-                              <span className="text-[10px] font-medium uppercase text-surface-muted">
+                              <span className="text-[10px] font-medium uppercase text-txmuted">
                                 {k.replace('_', ' ')}:
                               </span>
                               <input
                                 type="text"
                                 value={val}
                                 onChange={(e) => updateOfferingAttr(idx, k, e.target.value)}
-                                className="mt-0.5 w-full rounded border border-surface-line/80 bg-surface-card px-2 py-1 text-xs text-surface-fg"
+                                className="mt-0.5 w-full rounded border border-line bg-inputbg px-2 py-1 text-xs text-tx outline-none focus:border-acc"
                               />
                             </div>
                           ))}
@@ -355,14 +359,11 @@ export function OnboardingReviewModal({
                       )}
 
                       <div className="mt-3">
-                        <label className="text-[10px] font-semibold uppercase tracking-wider text-surface-muted">
-                          Detailed Description (for Bot RAG Retrieval)
-                        </label>
-                        <textarea
+                        <MiniLabel>Detailed Description (for Bot RAG Retrieval)</MiniLabel>
+                        <MiniArea
                           rows={2}
                           value={item.description}
                           onChange={(e) => updateOffering(idx, 'description', e.target.value)}
-                          className="mt-1 w-full rounded border border-surface-line/80 bg-surface-card p-2 text-xs text-surface-fg"
                         />
                       </div>
                     </div>
@@ -376,10 +377,10 @@ export function OnboardingReviewModal({
           {activeTab === 'menu' && (
             <div className="space-y-4">
               <div>
-                <h4 className="text-sm font-semibold text-surface-fg">
+                <h4 className="text-sm font-semibold text-tx">
                   WhatsApp Interactive List Navigation
                 </h4>
-                <p className="text-xs text-surface-muted">
+                <p className="text-xs text-txmuted">
                   Meta WhatsApp API strictly limits Title to $\le$ 24 characters and Description to $\le$ 72 characters.
                 </p>
               </div>
@@ -391,62 +392,58 @@ export function OnboardingReviewModal({
                   return (
                     <div
                       key={idx}
-                      className="flex items-center gap-3 rounded-lg border border-surface-line bg-surface-bg/50 p-3"
+                      className="flex items-center gap-3 rounded-panel border border-line bg-paper p-3"
                     >
-                      <div className="flex-1 grid grid-cols-1 gap-2 sm:grid-cols-4">
+                      <div className="grid flex-1 grid-cols-1 gap-2 sm:grid-cols-4">
                         <div>
                           <div className="flex justify-between">
-                            <label className="text-[10px] font-semibold uppercase text-surface-muted">
-                              Title
-                            </label>
+                            <MiniLabel>Title</MiniLabel>
                             <span
                               className={`text-[10px] ${
-                                titleTooLong ? 'font-bold text-rose-600' : 'text-surface-muted'
+                                titleTooLong ? 'font-bold text-badink' : 'text-txmuted'
                               }`}
                             >
                               {item.title.length}/24
                             </span>
                           </div>
-                          <Input
+                          <MiniInput
                             value={item.title}
                             onChange={(e) => updateMenuItem(idx, 'title', e.target.value)}
-                            className={`mt-1 text-xs ${titleTooLong ? 'border-rose-500' : ''}`}
+                            className="mt-1"
+                            invalid={titleTooLong}
                           />
                         </div>
                         <div className="sm:col-span-2">
                           <div className="flex justify-between">
-                            <label className="text-[10px] font-semibold uppercase text-surface-muted">
-                              Description
-                            </label>
+                            <MiniLabel>Description</MiniLabel>
                             <span
                               className={`text-[10px] ${
-                                descTooLong ? 'font-bold text-rose-600' : 'text-surface-muted'
+                                descTooLong ? 'font-bold text-badink' : 'text-txmuted'
                               }`}
                             >
                               {item.description.length}/72
                             </span>
                           </div>
-                          <Input
+                          <MiniInput
                             value={item.description}
                             onChange={(e) => updateMenuItem(idx, 'description', e.target.value)}
-                            className={`mt-1 text-xs ${descTooLong ? 'border-rose-500' : ''}`}
+                            className="mt-1"
+                            invalid={descTooLong}
                           />
                         </div>
                         <div>
-                          <label className="text-[10px] font-semibold uppercase text-surface-muted">
-                            Action
-                          </label>
-                          <Input
+                          <MiniLabel>Action</MiniLabel>
+                          <MiniInput
                             value={item.action}
                             onChange={(e) => updateMenuItem(idx, 'action', e.target.value)}
-                            className="mt-1 text-xs"
+                            className="mt-1"
                           />
                         </div>
                       </div>
                       <button
                         type="button"
                         onClick={() => removeMenuItem(idx)}
-                        className="rounded p-1.5 text-surface-muted hover:bg-rose-500/10 hover:text-rose-600 transition"
+                        className="rounded p-1.5 text-txmuted transition hover:bg-badbg hover:text-badink"
                       >
                         <Trash2 className="h-4 w-4" />
                       </button>
@@ -461,11 +458,11 @@ export function OnboardingReviewModal({
           {activeTab === 'faqs' && (
             <div className="space-y-4">
               <div>
-                <h4 className="text-sm font-semibold text-surface-fg">
-                  Extracted FAQs & Knowledge Base
+                <h4 className="text-sm font-semibold text-tx">
+                  Extracted FAQs &amp; Knowledge Base
                 </h4>
-                <p className="text-xs text-surface-muted">
-                  These verified Q&A pairs will be embedded into your tenant vector search index for accurate AI answers.
+                <p className="text-xs text-txmuted">
+                  These verified Q&amp;A pairs will be embedded into your tenant vector search index for accurate AI answers.
                 </p>
               </div>
 
@@ -473,46 +470,39 @@ export function OnboardingReviewModal({
                 {draft.faqs.map((faq, idx) => (
                   <div
                     key={idx}
-                    className="rounded-lg border border-surface-line bg-surface-bg/50 p-4 space-y-2"
+                    className="space-y-2 rounded-panel border border-line bg-paper p-4"
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex-1">
-                        <label className="text-[10px] font-semibold uppercase tracking-wider text-surface-muted">
-                          Customer Question
-                        </label>
-                        <Input
+                        <MiniLabel>Customer Question</MiniLabel>
+                        <MiniInput
                           value={faq.question}
                           onChange={(e) => updateFaq(idx, 'question', e.target.value)}
-                          className="mt-1 text-xs font-medium"
+                          className="mt-1 font-medium"
                         />
                       </div>
                       <div className="w-36">
-                        <label className="text-[10px] font-semibold uppercase tracking-wider text-surface-muted">
-                          Category
-                        </label>
-                        <Input
+                        <MiniLabel>Category</MiniLabel>
+                        <MiniInput
                           value={faq.category}
                           onChange={(e) => updateFaq(idx, 'category', e.target.value)}
-                          className="mt-1 text-xs"
+                          className="mt-1"
                         />
                       </div>
                       <button
                         type="button"
                         onClick={() => removeFaq(idx)}
-                        className="mt-5 rounded p-1.5 text-surface-muted hover:bg-rose-500/10 hover:text-rose-600 transition"
+                        className="mt-5 rounded p-1.5 text-txmuted transition hover:bg-badbg hover:text-badink"
                       >
                         <Trash2 className="h-4 w-4" />
                       </button>
                     </div>
                     <div>
-                      <label className="text-[10px] font-semibold uppercase tracking-wider text-surface-muted">
-                        Verified Official Answer
-                      </label>
-                      <textarea
+                      <MiniLabel>Verified Official Answer</MiniLabel>
+                      <MiniArea
                         rows={2}
                         value={faq.answer}
                         onChange={(e) => updateFaq(idx, 'answer', e.target.value)}
-                        className="mt-1 w-full rounded border border-surface-line/80 bg-surface-card p-2 text-xs text-surface-fg"
                       />
                     </div>
                   </div>
@@ -525,13 +515,13 @@ export function OnboardingReviewModal({
           {activeTab === 'intents' && (
             <div className="space-y-4">
               <div>
-                <h4 className="text-sm font-semibold text-surface-fg">Intents for Intents Editor</h4>
-                <p className="text-xs text-surface-muted">
+                <h4 className="text-sm font-semibold text-tx">Intents for Intents Editor</h4>
+                <p className="text-xs text-txmuted">
                   These answers publish into the tenant draft (technologies, careers, service_enquiry, pricing, etc.).
                 </p>
               </div>
               {(draft.intents || []).length === 0 ? (
-                <div className="rounded-lg border border-dashed border-surface-line p-8 text-center text-xs text-surface-muted">
+                <div className="rounded-panel border border-dashed border-line p-8 text-center text-xs text-txmuted">
                   No intents extracted. Catalog-linked service/pricing intents are added on publish when offerings exist.
                 </div>
               ) : (
@@ -539,25 +529,21 @@ export function OnboardingReviewModal({
                   {(draft.intents || []).map((intent, idx) => (
                     <div
                       key={`${intent.name}-${idx}`}
-                      className="rounded-lg border border-surface-line bg-surface-bg/50 p-4 space-y-2"
+                      className="space-y-2 rounded-panel border border-line bg-paper p-4"
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="grid flex-1 grid-cols-1 gap-3 sm:grid-cols-2">
                           <div>
-                            <label className="text-[10px] font-semibold uppercase tracking-wider text-surface-muted">
-                              Intent name
-                            </label>
-                            <Input
+                            <MiniLabel>Intent name</MiniLabel>
+                            <MiniInput
                               value={intent.name}
                               onChange={(e) => updateIntent(idx, 'name', e.target.value)}
-                              className="mt-1 text-xs font-medium"
+                              className="mt-1 font-medium"
                             />
                           </div>
                           <div>
-                            <label className="text-[10px] font-semibold uppercase tracking-wider text-surface-muted">
-                              Keywords (comma-separated)
-                            </label>
-                            <Input
+                            <MiniLabel>Keywords (comma-separated)</MiniLabel>
+                            <MiniInput
                               value={(intent.keywords || []).join(', ')}
                               onChange={(e) => {
                                 const kws = e.target.value
@@ -570,27 +556,24 @@ export function OnboardingReviewModal({
                                   return { ...prev, intents: updated }
                                 })
                               }}
-                              className="mt-1 text-xs"
+                              className="mt-1"
                             />
                           </div>
                         </div>
                         <button
                           type="button"
                           onClick={() => removeIntent(idx)}
-                          className="mt-5 rounded p-1.5 text-surface-muted hover:bg-rose-500/10 hover:text-rose-600 transition"
+                          className="mt-5 rounded p-1.5 text-txmuted transition hover:bg-badbg hover:text-badink"
                         >
                           <Trash2 className="h-4 w-4" />
                         </button>
                       </div>
                       <div>
-                        <label className="text-[10px] font-semibold uppercase tracking-wider text-surface-muted">
-                          Bot answer
-                        </label>
-                        <textarea
+                        <MiniLabel>Bot answer</MiniLabel>
+                        <MiniArea
                           rows={4}
                           value={intent.answer || ''}
                           onChange={(e) => updateIntent(idx, 'answer', e.target.value)}
-                          className="mt-1 w-full rounded border border-surface-line/80 bg-surface-card p-2 text-xs text-surface-fg"
                         />
                       </div>
                     </div>
@@ -604,56 +587,56 @@ export function OnboardingReviewModal({
           {activeTab === 'brand' && (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
-                <label className="text-xs font-semibold text-surface-fg">Company Brand Name</label>
-                <Input
+                <span className="text-xs font-semibold text-tx">Company Brand Name</span>
+                <MiniInput
                   value={draft.brand.name}
                   onChange={(e) => patchBrand('name', e.target.value)}
-                  className="mt-1 text-xs"
+                  className="mt-1"
                 />
               </div>
               <div>
-                <label className="text-xs font-semibold text-surface-fg">AI Bot Assistant Name</label>
-                <Input
+                <span className="text-xs font-semibold text-tx">AI Bot Assistant Name</span>
+                <MiniInput
                   value={draft.brand.bot_name}
                   onChange={(e) => patchBrand('bot_name', e.target.value)}
-                  className="mt-1 text-xs"
+                  className="mt-1"
                 />
               </div>
               <div className="sm:col-span-2">
-                <label className="text-xs font-semibold text-surface-fg">Brand Tagline / Value Proposition</label>
-                <Input
+                <span className="text-xs font-semibold text-tx">Brand Tagline / Value Proposition</span>
+                <MiniInput
                   value={draft.brand.tagline}
                   onChange={(e) => patchBrand('tagline', e.target.value)}
-                  className="mt-1 text-xs"
+                  className="mt-1"
                 />
               </div>
               <div>
-                <label className="text-xs font-semibold text-surface-fg">Support Email</label>
-                <Input
+                <span className="text-xs font-semibold text-tx">Support Email</span>
+                <MiniInput
                   value={draft.brand.support_email}
                   onChange={(e) => patchBrand('support_email', e.target.value)}
-                  className="mt-1 text-xs"
+                  className="mt-1"
                 />
               </div>
               <div>
-                <label className="text-xs font-semibold text-surface-fg">Support Helpline Phone</label>
-                <Input
+                <span className="text-xs font-semibold text-tx">Support Helpline Phone</span>
+                <MiniInput
                   value={draft.brand.support_phone}
                   onChange={(e) => patchBrand('support_phone', e.target.value)}
-                  className="mt-1 text-xs"
+                  className="mt-1"
                 />
               </div>
               <div>
-                <label className="text-xs font-semibold text-surface-fg">Official Website</label>
-                <Input
+                <span className="text-xs font-semibold text-tx">Official Website</span>
+                <MiniInput
                   value={draft.brand.website}
                   onChange={(e) => patchBrand('website', e.target.value)}
-                  className="mt-1 text-xs"
+                  className="mt-1"
                 />
               </div>
               <div>
-                <label className="text-xs font-semibold text-surface-fg">Working Hours</label>
-                <Input
+                <span className="text-xs font-semibold text-tx">Working Hours</span>
+                <MiniInput
                   value={draft.business_hours.raw || '09:30 AM - 06:30 PM (Mon-Sat)'}
                   onChange={(e) =>
                     setDraft((prev) => ({
@@ -661,7 +644,7 @@ export function OnboardingReviewModal({
                       business_hours: { ...prev.business_hours, raw: e.target.value },
                     }))
                   }
-                  className="mt-1 text-xs"
+                  className="mt-1"
                 />
               </div>
             </div>
@@ -671,8 +654,8 @@ export function OnboardingReviewModal({
           {activeTab === 'guardrails' && (
             <div className="space-y-4">
               <div>
-                <label className="text-xs font-semibold text-surface-fg">Bot Tone & Persona</label>
-                <Input
+                <span className="text-xs font-semibold text-tx">Bot Tone &amp; Persona</span>
+                <MiniInput
                   value={draft.guardrails.tone}
                   onChange={(e) =>
                     setDraft((prev) => ({
@@ -680,18 +663,18 @@ export function OnboardingReviewModal({
                       guardrails: { ...prev.guardrails, tone: e.target.value },
                     }))
                   }
-                  className="mt-1 text-xs"
+                  className="mt-1"
                 />
               </div>
               <div>
-                <label className="text-xs font-semibold text-surface-fg">
+                <span className="text-xs font-semibold text-tx">
                   Strict Guardrails (What the bot must NEVER do)
-                </label>
+                </span>
                 <div className="mt-2 space-y-2">
                   {draft.guardrails.never_state.map((rule, rIdx) => (
                     <div key={rIdx} className="flex items-center gap-2">
-                      <span className="text-xs text-rose-500 font-bold">•</span>
-                      <Input
+                      <span className="text-xs font-bold text-badink">•</span>
+                      <MiniInput
                         value={rule}
                         onChange={(e) => {
                           const updated = [...draft.guardrails.never_state]
@@ -701,7 +684,7 @@ export function OnboardingReviewModal({
                             guardrails: { ...prev.guardrails, never_state: updated },
                           }))
                         }}
-                        className="text-xs flex-1"
+                        className="flex-1"
                       />
                     </div>
                   ))}
@@ -712,25 +695,24 @@ export function OnboardingReviewModal({
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between border-t border-surface-line bg-surface-card px-6 py-4">
-          <Button variant="ghost" onClick={onClose} disabled={publishing}>
+        <div className="flex items-center justify-between border-t border-line bg-card px-6 py-4">
+          <GhostButton onClick={onClose} disabled={publishing}>
             Cancel / Discard
-          </Button>
+          </GhostButton>
           <div className="flex items-center gap-3">
-            <span className="text-xs text-surface-muted">
+            <span className="text-xs text-txmuted">
               {draft.offerings.length} items • {draft.faqs.length} FAQs ready to publish
             </span>
-            <Button
-              variant="primary"
-              loading={publishing}
-              onClick={handleConfirm}
-              icon={<Rocket className="h-4 w-4" />}
-            >
-              Confirm & Publish to Live Bot
-            </Button>
+            <PrimaryButton disabled={publishing} onClick={handleConfirm}>
+              {publishing ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Rocket className="h-4 w-4" />
+              )}
+              Confirm &amp; Publish to Live Bot
+            </PrimaryButton>
           </div>
         </div>
     </Modal>
   )
 }
-

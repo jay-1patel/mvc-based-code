@@ -1,0 +1,67 @@
+/*
+ * THE TOKEN FILE — the single source of truth for the remake's colours.
+ *
+ * Every colour the remake uses is a CSS variable defined HERE and nowhere
+ * else. Components and the Tailwind config reference these variables by
+ * name (semantic tokens: --paper, --tx, --acc, …) and never carry colour
+ * literals of their own. To re-skin the app, replace the VALUES in this
+ * one file; nothing else changes.
+ *
+ * Values are RGB triplets ("250 250 247") so Tailwind can apply alpha.
+ *
+ * Current skin: the light "calm desk" (first remake preview, confirmed by
+ * the user 2026-11-11): warm paper, white cards, ink text, teal accent,
+ * amber attention, red failure.
+ */
+:root {
+  /* Surfaces */
+  --paper: 250 250 247; /* #FAFAF7 — page background */
+  --card: 255 255 255; /* #FFFFFF — cards and panels */
+  --sidebg: 255 253 248; /* #FFFDF8 — sidebar background */
+  --input-bg: 255 255 255; /* inputs, search */
+
+  /* Text */
+  --tx: 23 32 42; /* #17202A — primary text */
+  --tx-muted: 93 109 126; /* #5D6D7E — secondary text */
+  --tx-faint: 138 153 168; /* hints, timestamps */
+
+  /* Lines */
+  --line: 229 226 217; /* #E5E2D9 — borders */
+  --line-soft: 240 238 230; /* #F0EEE6 — row dividers inside a panel */
+
+  /* Accent (teal) — primary actions, active states, "fine" */
+  --acc: 15 118 110; /* #0F766E */
+  --acc-soft: 230 244 241; /* #E6F4F1 — soft teal tint (active nav, ok pill) */
+  --on-acc: 255 255 255; /* text on an accent background */
+
+  /* Attention (amber) — "needs you", waiting, warnings */
+  --att-bg: 253 243 226; /* #FDF3E2 */
+  --att-line: 240 217 168; /* #F0D9A8 */
+  --att-ink: 180 83 9; /* #B45309 */
+
+  /* Failure (red) — failed sends, errors, broken */
+  --bad-bg: 253 236 236; /* #FDECEC */
+  --bad-line: 243 194 194; /* #F3C2C2 */
+  --bad-ink: 185 28 28; /* #B91C1C */
+
+  /* OK / live (this skin uses the teal family for "fine") */
+  --ok: 15 118 110; /* #0F766E */
+  --ok-soft: 230 244 241; /* #E6F4F1 */
+
+  /* Source chips — where a data item came from */
+  --chip-pdf-bg: 230 244 241; /* From PDF */
+  --chip-pdf-ink: 15 118 110;
+  --chip-web-bg: 234 240 254; /* #EAF0FE — From website */
+  --chip-web-ink: 43 80 170; /* #2B50AA */
+  --chip-man-bg: 243 232 253; /* #F3E8FD — Typed by admin */
+  --chip-man-ink: 107 33 168; /* #6B21A8 */
+  --chip-def-bg: 239 237 230; /* #EFEDE6 — System default */
+  --chip-def-ink: 93 109 126;
+
+  /* Chat bubbles */
+  --bubble-in: 241 239 231; /* #F1EFE7 — customer message */
+  /* bot reply = accent bg + on-acc text; human reply = card bg + dashed att-line border */
+
+  /* Switches */
+  --switch-off: 216 211 195; /* #D8D3C3 — off track (on = accent, knob = card) */
+}
