@@ -15,16 +15,26 @@ from database import (
     list_admin_files, list_products, get_products_by_category, save_admin_file, delete_admin_file,
     get_menu_items, upsert_menu_item, reset_menu, get_menu_settings, set_menu_settings,
     record_admin_audit_event, update_admin_file_status,
+    save_product, update_product, delete_product,
 )
 from services.menu_catalog import (
     invalidate_menu_cache, get_menu_editor_items, get_effective_item,
 )
 from extract import process_file, results_to_chunks
-from routes.auth import get_current_admin, has_permission, require_permission
+from routes.auth import get_current_admin, has_permission, require_permission, require_super_admin, scoped_tenant_id
 from fastapi.concurrency import run_in_threadpool
 
 logger = logging.getLogger("chiki_webhook")
 router = APIRouter(prefix="/api/admin")
+
+
+def _tenant_clause(admin: dict, column: str, params: list) -> str:
+    """AND-fragment that pins a query to the caller's tenant. Empty for super admins."""
+    scope = scoped_tenant_id(admin)
+    if not scope:
+        return ""
+    params.append(scope)
+    return f" AND {column} = ?"
 
 # D5: single source of truth — routing.config.UPLOAD_DIR honours the
 # UPLOAD_DIR env var (external storage); the repo tree is only the default.
@@ -241,7 +251,7 @@ def list_customers(
 def get_logs(
     direction: str = Query(None),
     limit: int = Query(100, ge=1, le=500),
-
+    current_admin: dict = Depends(require_super_admin),
 ):
     conn = get_db()
     try:
@@ -261,7 +271,7 @@ def get_logs(
 
 
 @router.delete("/logs")
-def clear_logs(current_admin: dict = Depends(require_permission("view_logs"))):
+def clear_logs(current_admin: dict = Depends(require_super_admin)):
     with get_db_context() as conn:
         conn.execute("DELETE FROM webhook_logs")
     return {"status": "ok", "message": "Logs cleared"}
@@ -339,18 +349,21 @@ async def rebuild_index(background_tasks: bool = Query(False), current_admin: di
 @router.get("/analytics/response-time")
 def get_response_time_analytics(
     days: int = Query(7, ge=1, le=90),
-
+    current_admin: dict = Depends(get_current_admin),
 ):
+    params: list = [f"-{days} days"]
+    tenant_sql = _tenant_clause(current_admin, "tenant_id", params)
     conn = get_db()
     try:
         rows = conn.execute(
-            """SELECT DATE(created_at) as date, AVG(response_time_ms) as avg_ms, COUNT(*) as count
+            f"""SELECT DATE(created_at) as date, AVG(response_time_ms) as avg_ms, COUNT(*) as count
                FROM webhook_logs
                WHERE direction = 'outgoing' AND response_time_ms IS NOT NULL
                  AND created_at >= DATE('now', ?)
+                 {tenant_sql}
                GROUP BY DATE(created_at)
                ORDER BY date ASC""",
-            (f"-{days} days",),
+            params,
         ).fetchall()
         return {
             "days": days,
@@ -371,18 +384,22 @@ def get_response_time_analytics(
 def get_frequent_questions(
     days: int = Query(7, ge=1, le=90),
     limit: int = Query(20, ge=1, le=100),
-
+    current_admin: dict = Depends(get_current_admin),
 ):
+    params: list = [f"-{days} days"]
+    tenant_sql = _tenant_clause(current_admin, "tenant_id", params)
+    params.append(limit)
     conn = get_db()
     try:
         rows = conn.execute(
-            """SELECT message, COUNT(*) as count, MAX(created_at) as last_asked
+            f"""SELECT message, COUNT(*) as count, MAX(created_at) as last_asked
                FROM chat_history
                WHERE created_at >= DATE('now', ?)
+                 {tenant_sql}
                GROUP BY LOWER(message)
                ORDER BY count DESC, last_asked DESC
                LIMIT ?""",
-            (f"-{days} days", limit),
+            params,
         ).fetchall()
         return {
             "days": days,
@@ -403,34 +420,42 @@ def get_frequent_questions(
 @router.get("/analytics/overview")
 def get_analytics_overview(
     days: int = Query(7, ge=1, le=90),
-
+    current_admin: dict = Depends(get_current_admin),
 ):
+    chat_params: list = [f"-{days} days"]
+    chat_tenant = _tenant_clause(current_admin, "tenant_id", chat_params)
+    log_params: list = [f"-{days} days"]
+    log_tenant = _tenant_clause(current_admin, "tenant_id", log_params)
     conn = get_db()
     try:
         total_messages = conn.execute(
-            """SELECT COUNT(*) as cnt FROM chat_history
-               WHERE created_at >= DATE('now', ?)""",
-            (f"-{days} days",),
+            f"""SELECT COUNT(*) as cnt FROM chat_history
+               WHERE created_at >= DATE('now', ?) {chat_tenant}""",
+            chat_params,
         ).fetchone()["cnt"]
 
+        user_params: list = [f"-{days} days"]
+        user_tenant = _tenant_clause(current_admin, "tenant_id", user_params)
         unique_users = conn.execute(
-            """SELECT COUNT(DISTINCT wa_id) as cnt FROM chat_history
-               WHERE created_at >= DATE('now', ?)""",
-            (f"-{days} days",),
+            f"""SELECT COUNT(DISTINCT wa_id) as cnt FROM chat_history
+               WHERE created_at >= DATE('now', ?) {user_tenant}""",
+            user_params,
         ).fetchone()["cnt"]
 
         avg_response = conn.execute(
-            """SELECT AVG(response_time_ms) as avg_ms FROM webhook_logs
+            f"""SELECT AVG(response_time_ms) as avg_ms FROM webhook_logs
                WHERE direction = 'outgoing' AND response_time_ms IS NOT NULL
-                 AND created_at >= DATE('now', ?)""",
-            (f"-{days} days",),
+                 AND created_at >= DATE('now', ?) {log_tenant}""",
+            log_params,
         ).fetchone()["avg_ms"]
 
+        route_params: list = [f"-{days} days"]
+        route_tenant = _tenant_clause(current_admin, "tenant_id", route_params)
         route_breakdown = conn.execute(
-            """SELECT route, COUNT(*) as count FROM chat_history
-               WHERE created_at >= DATE('now', ?)
+            f"""SELECT route, COUNT(*) as count FROM chat_history
+               WHERE created_at >= DATE('now', ?) {route_tenant}
                GROUP BY route""",
-            (f"-{days} days",),
+            route_params,
         ).fetchall()
 
         return {
@@ -450,18 +475,22 @@ def get_analytics_overview(
 def get_top_questions(
     days: int = Query(7, ge=1, le=90),
     limit: int = Query(10, ge=1, le=50),
-
+    current_admin: dict = Depends(get_current_admin),
 ):
+    params: list = [f"-{days} days"]
+    tenant_sql = _tenant_clause(current_admin, "tenant_id", params)
+    params.append(limit)
     conn = get_db()
     try:
         rows = conn.execute(
-            """SELECT message, COUNT(*) as count
+            f"""SELECT message, COUNT(*) as count
                FROM chat_history
                WHERE created_at >= DATE('now', ?)
+                 {tenant_sql}
                GROUP BY LOWER(message)
                ORDER BY count DESC
                LIMIT ?""",
-            (f"-{days} days", limit),
+            params,
         ).fetchall()
         total = sum(r["count"] for r in rows)
         return {
@@ -498,6 +527,10 @@ def convert_unanswered_to_faq(
     answer = body.answer.strip()
     if not query or not answer:
         raise HTTPException(status_code=400, detail="Both query and answer are required")
+    scope = scoped_tenant_id(current_admin)
+    target_tenant = (body.tenant_id or "").strip() or "default"
+    if scope and target_tenant != scope:
+        raise HTTPException(status_code=403, detail=f"Admin is scoped to tenant '{scope}'")
 
     content = f"Q: {query}\nA: {answer}"
     conn = get_db()
@@ -529,20 +562,24 @@ def convert_unanswered_to_faq(
 def get_unanswered_queries(
     days: int = Query(7, ge=1, le=90),
     limit: int = Query(20, ge=1, le=100),
-
+    current_admin: dict = Depends(get_current_admin),
 ):
     conn = get_db()
     try:
         keywords = ("i don't know", "i do not know", "sorry", "unable to find", "couldn't find", "no answer", "not available", "don't have that information")
+        params: list = [f"-{days} days"]
+        tenant_sql = _tenant_clause(current_admin, "tenant_id", params)
+        params.extend([f"%{keywords[0]}%", limit])
         rows = conn.execute(
-            """SELECT message, response, COUNT(*) as count, MAX(created_at) as last_asked
+            f"""SELECT message, response, COUNT(*) as count, MAX(created_at) as last_asked
                FROM chat_history
                WHERE created_at >= DATE('now', ?)
+                 {tenant_sql}
                  AND LOWER(response) LIKE ?
                GROUP BY LOWER(message)
                ORDER BY count DESC, last_asked DESC
                LIMIT ?""",
-            (f"-{days} days", f"%{keywords[0]}%", limit),
+            params,
         ).fetchall()
         return {
             "days": days,
@@ -1059,6 +1096,7 @@ def get_chat_history_api(
                        FROM chat_history ch
                        WHERE ch.created_at >= DATE('now', ?)"""
             params = [f"-{days} days"]
+        query += _tenant_clause(current_admin, "ch.tenant_id", params)
         if search:
             query += " AND (ch.wa_id LIKE ? OR ch.sender_name LIKE ? OR ch.message LIKE ? OR ch.response LIKE ?)"
             params.extend([f"%{search}%"] * 4)
@@ -1147,7 +1185,7 @@ def delete_product_api(
     return {"status": "ok"}
 
 
-IMGHIPPO_API_KEY = os.environ.get("IMGHIPPO_API_KEY", "ih_live_cb94f243b9804ac94df84a9c94ad7f8bc11062deeb406a6c")
+from routing.config import IMGHIPPO_API_KEY
 CATBOX_API_URL = "https://catbox.moe/user/api.php"
 
 
@@ -1166,7 +1204,12 @@ async def _upload_to_catbox(filename: str, content: bytes, content_type: str = "
 
 
 @router.post("/upload/image")
-async def upload_image_to_imghippo(file: UploadFile = File(...)):
+async def upload_image_to_imghippo(
+    file: UploadFile = File(...),
+    current_admin: dict = Depends(get_current_admin),
+):
+    if not IMGHIPPO_API_KEY:
+        raise HTTPException(status_code=503, detail="Image hosting is not configured")
     if not file.content_type or not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="Only image files are allowed")
 

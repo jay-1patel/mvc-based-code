@@ -1,4 +1,3 @@
-*** Begin File: universal_file_bifurcator.py ***
 """Universal file ingestion & image extraction.
 
 This module replaces the PDF‑only logic with a dispatcher that can handle
@@ -170,5 +169,3 @@ def process(file_bytes: bytes, filename: str, tenant_id: str) -> Tuple[str, List
     if kind == FileKind.IMAGE:
         return _extract_image(file_bytes, filename, tenant_id)
     raise ValueError(f"Unsupported file type for '{filename}'.")
-
-*** End File: universal_file_bifurcator.py ***

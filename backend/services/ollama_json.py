@@ -56,4 +56,3 @@ def call_json(prompt, system=None, retries=1):
             last_err = e
         time.sleep(0.5)
     raise last_err if last_err else ValueError("ollama failed")
-PY

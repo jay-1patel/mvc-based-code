@@ -43,4 +43,3 @@ def apply_bifurcation(conn, tenant_id, source_file, staged):
                     (tenant_id, fields.get("title",b), fields.get("category",b), fields.get("content",""), source_file, "auto_bifurcation", it["source_hash"], json.dumps(fields))
                 )
     return counts
-PY

@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from typing import Optional
 from .service import handle_faq_query, build_index, faq_index
+from routes.auth import require_super_admin
 
 faq_router = APIRouter(prefix="/faq", tags=["faq"])
 
@@ -30,8 +31,9 @@ async def ask(request: FAQRequest):
 
 
 @faq_router.post("/admin/rebuild")
-async def rebuild():
-    return await build_index()
+async def rebuild(current_admin: dict = Depends(require_super_admin)):
+    # build_index is synchronous and returns a dict. Awaiting it raises TypeError.
+    return build_index()
 
 
 @faq_router.post("/faq-answer")

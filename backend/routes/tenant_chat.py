@@ -14,6 +14,7 @@ brands. It is deliberately separate from the global ``ChatManager`` so the
 single-tenant deployment keeps working untouched.
 """
 
+import asyncio
 import json
 import logging
 import jwt
@@ -53,8 +54,9 @@ class TenantChatManager:
     def _room(self, tenant_id: str) -> Dict[str, Set[WebSocket]]:
         return self.connections.setdefault(tenant_id, {})
 
-    async def connect(self, websocket: WebSocket, tenant_id: str, raw_username: str) -> None:
-        await websocket.accept()
+    async def connect(self, websocket: WebSocket, tenant_id: str, raw_username: str, *, already_accepted: bool = False) -> None:
+        if not already_accepted:
+            await websocket.accept()
         real = _strip_conn_id(raw_username)
         self._room(tenant_id).setdefault(real, set()).add(websocket)
         self._meta[websocket] = tenant_id
@@ -254,9 +256,22 @@ async def tenant_chat_websocket(
     websocket: WebSocket,
     tenant_id: str,
     username: str,
-    token: str = Query(None),
     conn_id: str = Query("chat"),
 ):
+    """Authenticate from the first message, not the URL.
+
+    A JWT in the query string is copied into access logs, browser history and
+    the devtools console. The client must send ``{"type":"auth","token":...}``
+    within 10 seconds. The token's subject must match ``username``, and a
+    tenant admin may only join their own tenant's room.
+    """
+    await websocket.accept()
+    try:
+        hello = await asyncio.wait_for(websocket.receive_json(), timeout=10)
+    except Exception:
+        await websocket.close(code=4001)
+        return
+    token = hello.get("token") if isinstance(hello, dict) and hello.get("type") == "auth" else None
     if not token:
         await websocket.close(code=4001)
         return
@@ -265,13 +280,27 @@ async def tenant_chat_websocket(
     except jwt.InvalidTokenError:
         await websocket.close(code=4001)
         return
-    # The socket may only speak as the identity it authenticated as.
     if payload.get("sub") != username:
         await websocket.close(code=4001)
         return
+    from database import get_admin_by_username
+    admin = get_admin_by_username(username)
+    if not admin:
+        await websocket.close(code=4001)
+        return
+    role = admin["role"] if hasattr(admin, "keys") else admin[0]
+    admin_tenant = admin["tenant_id"] if hasattr(admin, "keys") else None
+    if role != "super_admin" and str(admin_tenant or "") != str(tenant_id):
+        await websocket.close(code=4003)
+        return
 
     raw_username = f"{username}:{conn_id}"
-    await manager.connect(websocket, tenant_id, raw_username)
+    await manager.connect(websocket, tenant_id, raw_username, already_accepted=True)
+    try:
+        await websocket.send_json({"type": "auth_ok"})
+    except Exception:
+        await websocket.close(code=4001)
+        return
     try:
         while True:
             data = await websocket.receive_json()

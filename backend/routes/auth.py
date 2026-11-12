@@ -217,6 +217,7 @@ SUPER_ADMIN_ALLOWED_WRITE_PATTERNS = (
     re.compile(r"^/api/admin/integration-requests/[^/]+/decision$"),
     re.compile(r"^/api/admin/logs$"),  # platform maintenance
     re.compile(r"^/api/admin/rebuild-index$"),
+    re.compile(r"^/faq/admin/rebuild$"),
 )
 
 # Path prefixes whose writes mutate a tenant's own data (tenant-scoped paths
@@ -362,6 +363,22 @@ def _admin_count() -> int:
         return row["cnt"]
 
 
+def scoped_tenant_id(admin: dict) -> str | None:
+    """Tenant a non-super caller is pinned to.
+
+    ``None`` means the caller is a super admin and may read across tenants.
+    A tenant admin or sub admin with no tenant assignment is refused.
+    """
+    if not admin:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    if admin.get("role") == "super_admin":
+        return None
+    own = str(admin.get("tenant_id") or "").strip()
+    if not own:
+        raise HTTPException(status_code=403, detail="No tenant assigned")
+    return own
+
+
 def get_current_admin(
     request: Request,
     credentials: HTTPAuthorizationCredentials = Depends(security),
@@ -384,6 +401,13 @@ def get_current_admin(
     result = dict(admin) if hasattr(admin, "keys") else dict(admin)
     result["permissions"] = _effective_permissions(result.get("role"), result.get("permissions"))
     return result
+
+
+def require_super_admin(current_admin: dict = Depends(get_current_admin)) -> dict:
+    """Platform operator only. Tenant admins are not a substitute."""
+    if not current_admin or current_admin.get("role") != "super_admin":
+        raise HTTPException(status_code=403, detail="Super admin access required")
+    return current_admin
 
 
 # ── Tenant-scoped tokens (Phase 0.5) ──────────────────────────────────────

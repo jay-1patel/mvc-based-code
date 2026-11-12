@@ -25,4 +25,3 @@ def chunk_pages(pages):
         for c in chunk_text(pg):
             out.append({"page": i+1, "text": c})
     return out
-PY

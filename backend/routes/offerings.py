@@ -43,10 +43,6 @@ from database import (
     update_product,
 )
 from routes.auth import get_current_admin, has_permission, require_tenant_access, security
-try:
-    from deps.tenant_access import _require_read_access, _require_write_access
-except ImportError:
-    from backend.deps.tenant_access import _require_read_access, _require_write_access
 from shared.tenancy import records as record_schema
 
 logger = logging.getLogger("offerings")
@@ -528,28 +524,48 @@ async def ingest_file(
     tenant_id: str = Path(..., description="Tenant identifier"),
     file: UploadFile = File(..., description="PDF/DOCX/TXT/HTML/Image"),
     default_category: str = Query("", description="Fallback category"),
-    actor: dict | None = Body(None),
+    principal: dict = Depends(_require_write_access("create")),
 ):
-    """Accept any supported document type, extract text & images, run the universal
-    bifurcation pipeline and stage the results.
+    """Accept a catalogue document and stage the extracted offerings.
+
+    PDFs go through the existing bifurcation pipeline. Other types are extracted
+    to text first; the broken universal-file dispatcher is not on this path.
     """
     data = await file.read()
-    # Use the new universal extractor
-    from services.universal_file_bifurcator import process
+    filename = file.filename or "upload"
+    if not data:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty")
+
     try:
-        text, images = process(data, file.filename, tenant_id)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    # Re‑use existing PDF pipeline – it now accepts pre‑extracted images
-    result = await bifurcate_and_ingest_pdf(
+        from services.universal_pdf_bifurcator import bifurcate_and_ingest_pdf
+    except ImportError:
+        from backend.services.universal_pdf_bifurcator import bifurcate_and_ingest_pdf
+
+    if not filename.lower().endswith(".pdf"):
+        try:
+            from services.universal_file_bifurcator import process as extract_any
+        except ImportError:
+            from backend.services.universal_file_bifurcator import process as extract_any
+        try:
+            text, _images = extract_any(data, filename, tenant_id)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        if not (text or "").strip():
+            raise HTTPException(status_code=400, detail="No text could be extracted from that file")
+        # The PDF pipeline is the one that stages rows. Non-PDF uploads are
+        # rejected with a clear message rather than calling a missing helper.
+        raise HTTPException(
+            status_code=400,
+            detail="Only PDF ingestion is supported on this endpoint. Use Uploads for other files.",
+        )
+
+    return await bifurcate_and_ingest_pdf(
         pdf_bytes=data,
-        filename=file.filename,
+        filename=filename,
         tenant_id=tenant_id,
-        default_category=default_category,
-        actor=actor,
-        pre_extracted_images=images,
+        default_category=default_category or "",
+        actor=principal,
     )
-    return result
 @router.post("/offerings/ingest-pdf")
 async def ingest_and_bifurcate_pdf(
     tenant_id: str,
@@ -624,7 +640,7 @@ async def upload_pdf_catalog(
 @router.get("/products/staged")
 def get_staged_products(
     tenant_id: str,
-    principal: dict = Depends(_require_read_access),
+    principal: dict = Depends(read_access),
 ):
     """List all draft products waiting for admin review/approval."""
     from database import list_staged_products

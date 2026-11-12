@@ -93,7 +93,7 @@ function Router() {
   }
 
   if (route.view === 'team') {
-    if (!canManageTeam) return <NotPermitted what="manage the team" />
+    if (!canManageTeam) return <NotPermitted what="manage the team" permission="manage_admins" />
     return (
       <AppShell route={route}>
         <TeamScreen />
@@ -102,7 +102,7 @@ function Router() {
   }
 
   if (route.view === 'api-requests') {
-    if (!isSuperAdmin) return <NotPermitted what="review API access requests" />
+    if (!isSuperAdmin) return <NotPermitted what="review API access requests" permission="super admin" />
     return (
       <AppShell route={route}>
         <ApiOnboardingReview />
@@ -264,12 +264,12 @@ function ComingSoon({ view }: { view: string }) {
   )
 }
 
-function NotPermitted({ what }: { what: string }) {
+function NotPermitted({ what, permission = 'manage_operations' }: { what: string; permission?: string }) {
   return (
     <div className="mx-auto max-w-lg py-16">
       <Notice tone="warn" title="Not permitted">
         Your account cannot {what}. This screen needs the{' '}
-        <strong>manage_operations</strong> permission — a super admin can grant it under Team &amp; permissions.
+        <strong>{permission}</strong> permission — a super admin can grant it under Team &amp; permissions.
       </Notice>
     </div>
   )

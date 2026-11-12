@@ -38,8 +38,10 @@ Response:
 import logging
 from typing import Literal, Optional
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
+
+from routes.auth import get_current_admin, scoped_tenant_id
 
 logger = logging.getLogger("test_simulator")
 
@@ -92,9 +94,17 @@ def _ensure_user_type(wa_id: str, user_type: str) -> str:
 
 
 @router.post("")
-async def simulate_message(request: SimulatorRequest):
+async def simulate_message(
+    request: SimulatorRequest,
+    current_admin: dict = Depends(get_current_admin),
+):
     """Process a message through the real orchestrator and return what it sends."""
+    from fastapi import HTTPException
     from services.orchestrator import process_incoming_message
+
+    scope = scoped_tenant_id(current_admin)
+    if scope and request.tenant_id and request.tenant_id != scope:
+        raise HTTPException(status_code=403, detail=f"Admin is scoped to tenant '{scope}'")
 
     wa_id = (request.wa_id or "").strip() or "test-user-001"
     message = (request.message or "").strip()
@@ -127,7 +137,10 @@ async def simulate_message(request: SimulatorRequest):
 
 
 @router.post("/reset")
-async def reset_conversation(request: SimulatorRequest):
+async def reset_conversation(
+    request: SimulatorRequest,
+    current_admin: dict = Depends(get_current_admin),
+):
     """Reset a tester user's conversation to a brand-new state.
 
     Clears the persisted FSM state and the human-handover flag (and any
@@ -202,12 +215,20 @@ def _collect_ids(menu: dict) -> list:
 
 
 @router.post("/menu-preview")
-async def preview_menu(request: MenuPreviewRequest):
+async def preview_menu(
+    request: MenuPreviewRequest,
+    current_admin: dict = Depends(get_current_admin),
+):
     """Render the unified main menu for a mock B2C or B2B user.
 
     Useful for verifying menu layout, IDs, and WhatsApp limits without running
     the full conversation pipeline.
     """
+    scope = scoped_tenant_id(current_admin)
+    if scope and request.tenant_id and request.tenant_id != scope:
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=403, detail=f"Admin is scoped to tenant '{scope}'")
     from services.menu_service import build_list_menu, personalize_header, _b2b_menu_body
     from services.menu_catalog import get_b2c_main_menu, get_b2b_main_menu
 

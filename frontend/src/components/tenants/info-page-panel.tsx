@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Check, Loader2, Pencil, Plus, Send, X } from 'lucide-react'
 import { useAction } from '@/lib/hooks'
-import { useAuth } from '@/lib/auth'
+import { usePermissions } from '@/lib/permissions'
 import { tenantsApi } from '@/lib/tenants'
 import type { IntentSpec } from '@/lib/types'
 import {
@@ -76,10 +76,10 @@ interface FormShape {
 export function InfoPagePanel({ tenantId, page }: { tenantId: string; page: InfoPageId }) {
   const spec = PAGES[page]
   const { data, loading, error, reload } = useResolved(tenantId)
-  const { can } = useAuth()
+  const { canWriteTenant } = usePermissions()
   const action = useAction()
   const toast = useToast()
-  const canEdit = can(spec.permission)
+  const canEdit = canWriteTenant(spec.permission)
 
   const [editing, setEditing] = useState(false)
   const [form, setForm] = useState<FormShape | null>(null)

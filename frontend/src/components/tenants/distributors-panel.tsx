@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { HandCoins, Loader2, Pencil, Plus, Search, Trash2 } from 'lucide-react'
 import { useAction, useAsync } from '@/lib/hooks'
-import { useAuth } from '@/lib/auth'
+import { usePermissions } from '@/lib/permissions'
 import {
   DISTRIBUTOR_TIERS,
   type Distributor,
@@ -77,10 +77,10 @@ function toShape(distributor?: Distributor | null): DistributorFormShape {
  * `manage_distributors`.
  */
 export function DistributorsPanel({ tenantId }: { tenantId: string }) {
-  const { can } = useAuth()
+  const { canWriteTenant } = usePermissions()
   const toast = useToast()
   const action = useAction()
-  const canManage = can('manage_distributors')
+  const canManage = canWriteTenant('manage_distributors')
 
   const [tier, setTier] = useState('all')
   const [search, setSearch] = useState('')
