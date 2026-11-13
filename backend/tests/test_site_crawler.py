@@ -561,7 +561,11 @@ class CrawlApiAndE2ETests(unittest.TestCase):
         offerings = bif.get("offerings") or []
         faqs = bif.get("faqs") or []
         self.assertGreaterEqual(len(offerings), 1, offerings)
-        self.assertGreaterEqual(len(faqs), 1, faqs)
+        # Fix 5 (QA 2026-11-13): this fixture site has no FAQ content and the
+        # LLM is patched out, so the ONLY staged FAQs used to be the three
+        # fabricated template FAQs (incl. invented business hours). Those are
+        # removed — a FAQ-less site now stages zero FAQs.
+        self.assertEqual(len(faqs), 0, faqs)
         self.assertTrue((bif.get("brand") or {}).get("name"))
 
         images = database.list_crawl_images(run["id"], "crawl-a")
@@ -586,14 +590,16 @@ class CrawlApiAndE2ETests(unittest.TestCase):
         self.assertEqual(mid["faqs"], before["faqs"])
         self.assertEqual(mid["kb"], before["kb"])
 
-        # Approve → live products + FAQs; media URLs point at served files
+        # Approve → live products; media URLs point at served files.
+        # No FAQs were staged (Fix 5 — see above), so the live FAQ count is
+        # unchanged by the approval.
         approved = approve_crawl_run(
             tenant_id="crawl-a", run_id=run["id"], actor=self.current_admin
         )
         self.assertEqual(approved["status"], "published")
         after = self._live_counts("crawl-a")
         self.assertGreater(after["products"], before["products"])
-        self.assertGreater(after["faqs"], before["faqs"])
+        self.assertEqual(after["faqs"], before["faqs"])
         products = database.list_products(tenant_id="crawl-a")
         self.assertTrue(products)
         media_urls = [p.get("media_url") for p in products if p.get("media_url")]

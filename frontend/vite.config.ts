@@ -22,6 +22,11 @@ export default defineConfig({
       '/api': { target: BACKEND, changeOrigin: true, ws: true },
       '/catalog': { target: BACKEND, changeOrigin: true },
       '/ws': { target: BACKEND, ws: true, changeOrigin: true },
+      // Uploaded files and staged crawl images are served by the backend as
+      // static mounts; without these the dev server answers their URLs with
+      // the SPA HTML and every <img> in the console renders broken.
+      '/crawl_images': { target: BACKEND, changeOrigin: true },
+      '/uploaded_files': { target: BACKEND, changeOrigin: true },
     },
   },
 })

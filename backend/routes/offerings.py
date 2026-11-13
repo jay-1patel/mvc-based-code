@@ -26,6 +26,7 @@ to the default tenant.
 
 import logging
 import re
+import sqlite3
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlsplit
 
@@ -439,22 +440,36 @@ def create_offering(tenant_id: str, body: OfferingIn, principal: dict = Depends(
     columns = _columns(tenant_id)
     clean, attrs_json = _prepare_values(columns, _cell_values(body.values, body), body.attrs)
 
-    offering_id = save_product(
-        name=body.name.strip(),
-        slug=_unique_slug(body.name),
-        category=(body.category or "general").strip(),
-        description=body.description,
-        short_description=body.short_description,
-        price=(body.price or "").strip() or None,
-        media_url=_public_media_url(body.media_url or body.image_url),
-        media_type=body.media_type or "image",
-        sort_order=body.sort_order,
-        attrs_json=attrs_json,
-        short_label=body.short_label or None,
-        detail_url=body.detail_url or None,
-        tenant_id=tenant_id,
-        actor=principal,
-    )
+    try:
+        offering_id = save_product(
+            name=body.name.strip(),
+            slug=_unique_slug(body.name),
+            category=(body.category or "general").strip(),
+            description=body.description,
+            short_description=body.short_description,
+            price=(body.price or "").strip() or None,
+            media_url=_public_media_url(body.media_url or body.image_url),
+            media_type=body.media_type or "image",
+            sort_order=body.sort_order,
+            attrs_json=attrs_json,
+            short_label=body.short_label or None,
+            detail_url=body.detail_url or None,
+            tenant_id=tenant_id,
+            actor=principal,
+        )
+    except sqlite3.IntegrityError:
+        # UNIQUE(tenant_id, slug): _unique_slug() only avoids the clash it
+        # can see — a concurrent create with the same name wins the race
+        # and this INSERT fails. That is a client conflict, not a server
+        # crash: answer 409 instead of the previous HTTP 500 (QA 2026-11-13).
+        logger.warning(
+            "Duplicate offering create refused for tenant %s: %r already exists",
+            tenant_id, body.name.strip(),
+        )
+        raise HTTPException(
+            status_code=409,
+            detail=f"An offering named '{body.name.strip()}' already exists for this tenant",
+        )
     if not body.is_active:
         update_product(offering_id, is_active=0, tenant_id=tenant_id)
     _write_cells(tenant_id, offering_id, columns, clean)
