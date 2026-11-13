@@ -70,17 +70,152 @@ def _js_render_enabled(explicit: Optional[bool] = None) -> bool:
     return os.getenv("SCRAPER_JS_RENDER", "auto").strip().lower() not in {"off", "0", "false"}
 
 
+def _visible_text(html: str) -> str:
+    stripped = re.sub(r"<script\b.*?</script>", " ", html or "", flags=re.S | re.I)
+    stripped = re.sub(r"<style\b.*?</style>", " ", stripped, flags=re.S | re.I)
+    stripped = re.sub(r"<[^>]+>", " ", stripped)
+    return re.sub(r"\s+", " ", stripped).strip()
+
+
+def visible_text_word_count(html: str) -> int:
+    """Words a visitor would see in the static markup (scripts/styles removed)."""
+    if not html:
+        return 0
+    return len(_visible_text(html).split())
+
+
 def looks_like_js_shell(html: str) -> bool:
     """Heuristic: markup with script tags but almost no server-rendered text,
     typical of a React/Vue/Angular shell that only paints client-side."""
     if not html:
         return False
-    stripped = re.sub(r"<script\b.*?</script>", " ", html, flags=re.S | re.I)
-    stripped = re.sub(r"<style\b.*?</style>", " ", stripped, flags=re.S | re.I)
-    stripped = re.sub(r"<[^>]+>", " ", stripped)
-    visible_text = re.sub(r"\s+", " ", stripped).strip()
+    visible_text = _visible_text(html)
     script_tags = len(re.findall(r"<script\b", html, flags=re.I))
     return len(visible_text) < JS_RENDER_TEXT_THRESHOLD and script_tags >= JS_SCRIPT_TAG_THRESHOLD
+
+
+_JSON_KEY_RE = re.compile(r'"[A-Za-z0-9_\- ]+"\s*:')
+
+
+def html_is_data_rich(html: str) -> bool:
+    """Heuristic: the page's real content is embedded as data in the source
+    (JSON script blocks, framework state blobs, big script payloads) even
+    though little of it is visible in the static markup.
+
+    Measured failure this catches (crawler health check, 2026-11-12):
+    quotes.toscrape.com/js/ has only 2 script tags — below the shell
+    detector's threshold — but its quotes sit in one ~4.5 KB JSON-ish
+    script block, so static extraction sees an empty page.
+    """
+    if not html:
+        return False
+    # Explicit JSON payloads (application/json / ld+json) of real size.
+    for m in re.finditer(
+        r"<script\b[^>]*type=[\"']application/(?:ld\+)?json[\"'][^>]*>(.*?)</script>",
+        html, flags=re.S | re.I,
+    ):
+        if len(m.group(1).strip()) >= 200:
+            return True
+    bodies = re.findall(r"<script\b[^>]*>(.*?)</script>", html, flags=re.S | re.I)
+    data_chars = sum(len(b) for b in bodies)
+    json_keys = sum(len(_JSON_KEY_RE.findall(b)) for b in bodies)
+    # A large script payload that looks like structured data, not code.
+    if data_chars >= 1000 and json_keys >= 5:
+        return True
+    # Framework hydration state (Next.js / Nuxt / Redux preloads).
+    if re.search(r"__(?:NEXT_DATA__|NUXT__|INITIAL_STATE__|PRELOADED_STATE__)", html) and json_keys >= 3:
+        return True
+    # Big, node-heavy markup whose content is mostly script-carried.
+    if len(html) >= 30000 and data_chars >= 500:
+        if len(re.findall(r"<[a-zA-Z][^>\s]*", html)) >= 200:
+            return True
+    return False
+
+
+# A page whose static text falls below this is "low text" for render
+# trigger (b): low text + data-rich source = render it anyway.
+RENDER_TRIGGER_MIN_WORDS = 30
+
+
+def should_render_page(html: str) -> bool:
+    """Decide whether a statically fetched page needs a browser render.
+
+    Two triggers: (a) the classic JS-shell heuristic, or (b) almost no
+    visible text while the source itself is data-rich — the measured
+    low-script-count failure the shell detector alone misses.
+    """
+    if not html:
+        return False
+    if looks_like_js_shell(html):
+        return True
+    return visible_text_word_count(html) < RENDER_TRIGGER_MIN_WORDS and html_is_data_rich(html)
+
+
+def playwright_available() -> bool:
+    """True when the Playwright package (and, best-effort, its Chromium
+    executable) is present. Used to record render_unavailable in crawl
+    run data instead of failing silently."""
+    try:
+        from playwright.sync_api import sync_playwright  # noqa: F401
+    except Exception:
+        return False
+    try:
+        from playwright.sync_api import sync_playwright
+        with sync_playwright() as p:
+            exe = p.chromium.executable_path
+        if exe and not os.path.exists(exe):
+            return False
+    except Exception:
+        # Undeterminable — treat the package import as the signal.
+        pass
+    return True
+
+
+def _render_host_is_public(host: str, cache: Dict[str, bool]) -> bool:
+    """SSRF check for browser subrequests during rendering.
+
+    Mirrors the crawler's assert_public_url posture (public addresses
+    only, CRAWL_URL_ALLOWLIST honoured) without importing site_crawler
+    (which imports this module). Results cached per render call.
+    """
+    host = (host or "").strip().lower()
+    if not host:
+        return False
+    if host in cache:
+        return cache[host]
+    allowlist = {
+        part.strip().lower()
+        for part in os.environ.get("CRAWL_URL_ALLOWLIST", "").split(",")
+        if part.strip()
+    }
+    ok = False
+    if host in allowlist:
+        ok = True
+    else:
+        try:
+            import ipaddress
+            import socket as _socket
+            infos = _socket.getaddrinfo(host, None, proto=_socket.IPPROTO_TCP)
+            ips = {info[4][0] for info in infos}
+            if ips and all(ip.lower() in allowlist for ip in ips):
+                ok = True
+            elif ips:
+                ok = True
+                for ip in ips:
+                    try:
+                        addr = ipaddress.ip_address(ip)
+                    except ValueError:
+                        continue
+                    if (
+                        addr.is_private or addr.is_loopback or addr.is_link_local
+                        or addr.is_reserved or addr.is_multicast or addr.is_unspecified
+                    ):
+                        ok = False
+                        break
+        except Exception:
+            ok = False
+    cache[host] = ok
+    return ok
 
 
 def render_with_playwright(url: str, timeout: float = 15.0) -> Optional[str]:
@@ -89,6 +224,10 @@ def render_with_playwright(url: str, timeout: float = 15.0) -> Optional[str]:
     Returns the fully-rendered HTML, or None when Playwright (or its browser)
     is not installed — the crawler then keeps the static HTML. Optional
     dependency: pip install playwright && playwright install chromium
+
+    SSRF posture matches the static crawler: the caller only renders URLs
+    that already passed assert_public_url, and the browser context aborts
+    any subrequest whose host does not resolve to a public address.
     """
     try:
         from playwright.sync_api import sync_playwright
@@ -96,10 +235,35 @@ def render_with_playwright(url: str, timeout: float = 15.0) -> Optional[str]:
         logger.debug("Playwright not installed; JS rendering skipped for %s", url)
         return None
     try:
+        host_cache: Dict[str, bool] = {}
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
             try:
-                page = browser.new_page(user_agent=USER_AGENT)
+                context = browser.new_context(user_agent=USER_AGENT)
+
+                def _guard(route, request):
+                    try:
+                        parsed = urllib.parse.urlparse(request.url)
+                        if parsed.scheme in ("data", "blob", "about", "chrome"):
+                            route.continue_()
+                            return
+                        if parsed.scheme in ("http", "https") and _render_host_is_public(
+                            parsed.hostname or "", host_cache
+                        ):
+                            route.continue_()
+                            return
+                        route.abort()
+                    except Exception:
+                        try:
+                            route.abort()
+                        except Exception:
+                            pass
+
+                try:
+                    context.route("**/*", _guard)
+                except Exception as route_exc:
+                    logger.debug("Playwright route guard unavailable: %s", route_exc)
+                page = context.new_page()
                 page.goto(url, timeout=timeout * 1000, wait_until="networkidle")
                 page.wait_for_timeout(1200)  # let late XHR content paint
                 return page.content()

@@ -28,7 +28,9 @@ from services.url_scraper import (
     clean_text,
     looks_like_js_shell,
     normalize_url,
+    playwright_available,
     render_with_playwright,
+    should_render_page,
     _js_render_enabled,
 )
 
@@ -168,6 +170,40 @@ def is_probably_html_url(url: str) -> bool:
     return True
 
 
+# URL segments that mark a page as a listing/index rather than a detail
+# page. Fetch order prefers detail pages: under any page/time budget the
+# rich pages land first (health check 2026-11-12: 53 of 60 test fetches
+# were thin listing pages averaging 45 words; detail pages averaged 319).
+_LISTING_SEGMENTS = {
+    "category", "categories", "catalogue", "catalog", "listing", "listings",
+    "collection", "collections", "tag", "tags", "archive", "archives",
+    "search", "results", "shop", "index",
+}
+_LISTING_PATH_RE = re.compile(r"/page[-/]\d+|/p/\d+", re.I)
+
+
+def url_fetch_priority(url: str) -> int:
+    """0 = likely detail page (fetch first), 1 = likely listing/index page.
+
+    Transparent shape heuristic only: listing-ish path segments or
+    pagination paths sort later; everything else — especially deeper
+    paths — is treated as a detail page. Stable within each class, so
+    BFS discovery order is otherwise preserved.
+    """
+    try:
+        path = urllib.parse.urlparse(url or "").path or "/"
+    except Exception:
+        return 0
+    segments = [s for s in path.lower().split("/") if s]
+    if _LISTING_PATH_RE.search(path):
+        return 1
+    if any(seg in _LISTING_SEGMENTS for seg in segments):
+        return 1
+    if segments and segments[-1] in ("index.html", "index.php", "index.htm"):
+        return 1
+    return 0
+
+
 def _local_name(tag: str) -> str:
     if "}" in tag:
         return tag.rsplit("}", 1)[-1]
@@ -243,6 +279,9 @@ class SiteCrawler:
         self._last_fetch_ts: float = 0.0
         self.inventory: List[Dict[str, Any]] = []
         self.js_rendered_urls: List[str] = []
+        # Set when a page needed rendering but Playwright (or its browser)
+        # was unavailable — surfaced in run data instead of failing silently.
+        self.render_unavailable: bool = False
 
     def _polite_delay(self) -> None:
         delay = self.request_delay
@@ -343,6 +382,7 @@ class SiteCrawler:
         final_url: Optional[str] = None,
         page_data: Optional[Dict[str, Any]] = None,
         depth: int = 0,
+        rendered: bool = False,
     ) -> None:
         self.inventory.append({
             "url": final_url or url,
@@ -353,55 +393,89 @@ class SiteCrawler:
             "error": error,
             "word_count": word_count,
             "depth": depth,
+            "rendered": rendered,
             "page_data": page_data,
         })
 
+    # Transport errors worth one retry: a single slow page must not kill
+    # a run (health check 2026-11-12: one 12s root-fetch read timeout
+    # failed an entire crawl; the site answered in 0.4s minutes later).
+    _RETRYABLE_FETCH_ERRORS = (httpx.TimeoutException, httpx.ConnectError)
+
     def _fetch(
         self, client: httpx.Client, url: str
-    ) -> Tuple[Optional[str], Optional[int], Optional[str], Optional[str]]:
-        """Return (html, http_status, final_url, error)."""
+    ) -> Tuple[Optional[str], Optional[int], Optional[str], Optional[str], bool]:
+        """Return (html, http_status, final_url, error, rendered).
+
+        One retry on read-timeout / connect errors; all other failures
+        return immediately, exactly as before.
+        """
+        for attempt in (0, 1):
+            try:
+                return self._fetch_once(client, url)
+            except self._RETRYABLE_FETCH_ERRORS as exc:
+                self._last_fetch_ts = time.monotonic()
+                if attempt == 0:
+                    logger.info(
+                        "SITE_FETCH_RETRY | url=%s | %s", url, str(exc)[:160]
+                    )
+                    time.sleep(1.0)
+                    continue
+                return None, None, url, str(exc)[:300], False
+            except Exception as exc:
+                self._last_fetch_ts = time.monotonic()
+                return None, None, url, str(exc)[:300], False
+        return None, None, url, "fetch failed", False  # pragma: no cover
+
+    def _fetch_once(
+        self, client: httpx.Client, url: str
+    ) -> Tuple[Optional[str], Optional[int], Optional[str], Optional[str], bool]:
+        """Single fetch attempt. Transport errors propagate to _fetch
+        (which owns the retry); HTTP-level failures return as tuples."""
         self._polite_delay()
-        try:
+        resp = _get_guarded(
+            client,
+            url,
+            headers={
+                "User-Agent": USER_AGENT,
+                "Accept": "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.9",
+            },
+            timeout=self.page_timeout,
+        )
+        self._last_fetch_ts = time.monotonic()
+        if resp.status_code in (429, 503):
+            retry_after = resp.headers.get("Retry-After", "")
+            backoff = float(retry_after) if retry_after.replace(".", "", 1).isdigit() else 5.0
+            time.sleep(min(backoff, 30.0))
             resp = _get_guarded(
                 client,
                 url,
-                headers={
-                    "User-Agent": USER_AGENT,
-                    "Accept": "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
-                    "Accept-Language": "en-US,en;q=0.9",
-                },
+                headers={"User-Agent": USER_AGENT, "Accept-Language": "en-US,en;q=0.9"},
                 timeout=self.page_timeout,
             )
             self._last_fetch_ts = time.monotonic()
-            if resp.status_code in (429, 503):
-                retry_after = resp.headers.get("Retry-After", "")
-                backoff = float(retry_after) if retry_after.replace(".", "", 1).isdigit() else 5.0
-                time.sleep(min(backoff, 30.0))
-                resp = _get_guarded(
-                    client,
-                    url,
-                    headers={"User-Agent": USER_AGENT, "Accept-Language": "en-US,en;q=0.9"},
-                    timeout=self.page_timeout,
-                )
-                self._last_fetch_ts = time.monotonic()
 
-            final_url = canonicalize_url(str(resp.url)) or url
-            ctype = (resp.headers.get("content-type") or "").lower()
-            if resp.status_code != 200:
-                return None, resp.status_code, final_url, f"HTTP {resp.status_code}"
-            if "text/html" not in ctype and "application/xhtml" not in ctype:
-                return None, resp.status_code, final_url, f"non-html content-type: {ctype[:80]}"
+        final_url = canonicalize_url(str(resp.url)) or url
+        ctype = (resp.headers.get("content-type") or "").lower()
+        if resp.status_code != 200:
+            return None, resp.status_code, final_url, f"HTTP {resp.status_code}", False
+        if "text/html" not in ctype and "application/xhtml" not in ctype:
+            return None, resp.status_code, final_url, f"non-html content-type: {ctype[:80]}", False
 
-            html = resp.text
-            if self.enable_js_render and looks_like_js_shell(html):
-                rendered = render_with_playwright(url, timeout=self.page_timeout)
-                if rendered:
-                    self.js_rendered_urls.append(url)
-                    html = rendered
-            return html, resp.status_code, final_url, None
-        except Exception as exc:
-            self._last_fetch_ts = time.monotonic()
-            return None, None, url, str(exc)[:300]
+        html = resp.text
+        rendered = False
+        if self.enable_js_render and should_render_page(html):
+            rendered_html = render_with_playwright(url, timeout=self.page_timeout)
+            if rendered_html:
+                self.js_rendered_urls.append(url)
+                html = rendered_html
+                rendered = True
+            elif not playwright_available():
+                # Needed a render but the engine is missing: record it in
+                # the run data instead of silently staging an empty page.
+                self.render_unavailable = True
+        return html, resp.status_code, final_url, None, rendered
 
     def _extract_page(self, soup: BeautifulSoup, url: str) -> Dict[str, Any]:
         title = ""
@@ -518,6 +592,10 @@ class SiteCrawler:
         # Same-page identity (trailing slash / www / default port folded):
         # a page reachable under two URL spellings is fetched once.
         visited_keys: Set[str] = set()
+        # Canonical (post-redirect) identities of pages already staged:
+        # an alias that redirects to one of these is recorded as
+        # canonical_duplicate instead of being extracted/staged twice.
+        staged_keys: Set[str] = set()
         # queue entries: (url, source, depth)
         queue: List[Tuple[str, str, int]] = []
 
@@ -538,6 +616,8 @@ class SiteCrawler:
                     "pages": [],
                     "inventory": self.inventory,
                     "js_rendered_urls": self.js_rendered_urls,
+                    "pages_rendered": len(self.js_rendered_urls),
+                    "render_unavailable": self.render_unavailable,
                     "blocked_by_robots": False,
                     "blocked_non_public": True,
                 }
@@ -557,12 +637,14 @@ class SiteCrawler:
                     "pages": [],
                     "inventory": self.inventory,
                     "js_rendered_urls": self.js_rendered_urls,
+                    "pages_rendered": len(self.js_rendered_urls),
+                    "render_unavailable": self.render_unavailable,
                     "blocked_by_robots": True,
                 }
 
-            # 1) Sitemap seeds
+            # 1) Sitemap seeds (detail-like pages first within the seeds)
             sitemap_urls = self._discover_sitemap_urls(client)
-            for u in sitemap_urls:
+            for u in sorted(sitemap_urls, key=url_fetch_priority):
                 queue.append((u, "sitemap", 0))
 
             # 2) Always seed the root for BFS (link source) if not already queued
@@ -615,7 +697,7 @@ class SiteCrawler:
                     )
                     continue
 
-                html, status, final_url, err = self._fetch(client, curr_url)
+                html, status, final_url, err, rendered = self._fetch(client, curr_url)
                 if final_url and final_url != curr_url:
                     visited.add(final_url)
                     visited_keys.add(url_dedupe_key(final_url))
@@ -628,23 +710,44 @@ class SiteCrawler:
                     )
                     continue
 
+                # Canonical dedupe: this fetch landed (after redirects) on
+                # a page identity that was already staged in this run —
+                # record the alias and skip extraction/staging entirely.
+                final_key = url_dedupe_key(final_url or curr_url)
+                if final_key in staged_keys:
+                    self._record(
+                        curr_url, source=source, http_status=status,
+                        success=False, error="canonical_duplicate",
+                        final_url=final_url, depth=depth, rendered=rendered,
+                    )
+                    continue
+                staged_keys.add(final_key)
+
                 soup = BeautifulSoup(html, "html.parser")
                 page_data = self._extract_page(soup, final_url or curr_url)
                 # Drop heavy HTML from the returned pages list but keep a flag;
                 # image collector re-parses from page_data["html"] when present.
                 page_data["category"] = "home" if (final_url or curr_url) == self.root_url else "other"
                 page_data["discovery_source"] = source
+                page_data["rendered"] = rendered
                 word_count = int(page_data.get("word_count") or 0)
 
                 self._record(
                     curr_url, source=source, http_status=status,
                     success=True, word_count=word_count,
                     final_url=final_url, page_data=page_data, depth=depth,
+                    rendered=rendered,
                 )
                 crawled_pages.append(page_data)
 
                 if depth < self.max_depth:
-                    for link in self._discover_links(soup, final_url or curr_url):
+                    # Detail-like pages before listing/index pages; the
+                    # sort is stable, so BFS order holds within each class.
+                    discovered = sorted(
+                        self._discover_links(soup, final_url or curr_url),
+                        key=url_fetch_priority,
+                    )
+                    for link in discovered:
                         if link in visited:
                             continue
                         link_key = url_dedupe_key(link)
@@ -686,6 +789,8 @@ class SiteCrawler:
             "pages": crawled_pages,
             "inventory": self.inventory,
             "js_rendered_urls": self.js_rendered_urls,
+            "pages_rendered": len(self.js_rendered_urls),
+            "render_unavailable": self.render_unavailable,
             "blocked_by_robots": False,
             "successful_urls": [p["url"] for p in successful],
         }

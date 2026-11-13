@@ -196,9 +196,12 @@ def run_crawl_pipeline(
                         "discovery_source": p.get("discovery_source"),
                         "word_count": p.get("word_count"),
                         "headings": p.get("headings"),
+                        "rendered": bool(p.get("rendered")),
                     }
                     for p in slim_pages
                 ],
+                "pages_rendered": int(crawl_res.get("pages_rendered") or 0),
+                "render_unavailable": bool(crawl_res.get("render_unavailable")),
             },
             "images_summary": {
                 "total_rows": len(image_records),
@@ -226,6 +229,10 @@ def run_crawl_pipeline(
                 "pages_fetched": pages_scraped,
                 "pages_staged": len(kb["kept_urls"]),
                 "pages_skipped": kb["skipped"],
+                "pages_rendered": int(crawl_res.get("pages_rendered") or 0),
+                "render_unavailable": bool(crawl_res.get("render_unavailable")),
+                "pages_supplemented": len(kb.get("supplements") or {}),
+                "supplement_words": sum((kb.get("supplements") or {}).values()),
                 "kb_chunks": len(kb["chunks"]),
                 "kb_articles": len((bifurcation or {}).get("knowledge_articles") or []),
                 "faqs": len((bifurcation or {}).get("faqs") or []),
@@ -278,6 +285,8 @@ def run_crawl_pipeline(
             "pages_found": pages_found,
             "pages_scraped": pages_scraped,
             "pages_skipped": len(kb["skipped"]),
+            "pages_rendered": int(crawl_res.get("pages_rendered") or 0),
+            "render_unavailable": bool(crawl_res.get("render_unavailable")),
             "kb_chunks": len(kb["chunks"]),
             "offerings": len((bifurcation or {}).get("offerings") or []),
             "faqs": len((bifurcation or {}).get("faqs") or []),

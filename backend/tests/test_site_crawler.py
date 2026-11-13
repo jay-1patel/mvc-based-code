@@ -330,11 +330,14 @@ class ImageStorageTests(unittest.TestCase):
             self.assertGreaterEqual(len(stored), 1)
             self.assertGreaterEqual(len(dups), 1)
 
-            # Cap: mark remainder when over limit (unit-level via already stored)
-            self.assertLessEqual(
-                sum(1 for r in rows if r.get("local_path") and not r["is_duplicate"] and not r["skipped"]),
-                crawl_images_mod.MAX_IMAGES_PER_CRAWL,
-            )
+            # Image-count cap removed by product decision (2026-11-12):
+            # MAX_IMAGES_PER_CRAWL is None (unlimited). If a cap is ever
+            # re-configured, stored rows must respect it.
+            if crawl_images_mod.MAX_IMAGES_PER_CRAWL is not None:
+                self.assertLessEqual(
+                    sum(1 for r in rows if r.get("local_path") and not r["is_duplicate"] and not r["skipped"]),
+                    crawl_images_mod.MAX_IMAGES_PER_CRAWL,
+                )
         finally:
             server.shutdown()
 
