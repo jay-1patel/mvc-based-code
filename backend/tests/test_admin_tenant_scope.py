@@ -91,8 +91,22 @@ class AdminTenantScopeTests(unittest.TestCase):
             {row["username"] for row in auth.list_admins(current_admin=root)["admins"]},
             {"admin-a", "sub-a", "admin-b", "sub-b"},
         )
-        auth.update_admin("sub-b", auth.UpdateAdminRequest(email="root@example.test"), root)
-        self.assertEqual(database.get_admin_record("sub-b")["email"], "root@example.test")
+        # D-05 (QA 2026-11-13): a super admin is view-only inside tenants, so
+        # administratively modifying a TENANT-bound account is refused even
+        # for the super admin; their global access covers platform-level
+        # accounts (no tenant binding) instead.
+        with self.assertRaises(HTTPException) as update_error:
+            auth.update_admin("sub-b", auth.UpdateAdminRequest(email="root@example.test"), root)
+        self.assertEqual(update_error.exception.status_code, 403)
+        self.assertIsNone(database.get_admin_record("sub-b")["email"])
+
+        self._create_admin("platform-op", "admin", None)
+        auth.update_admin(
+            "platform-op", auth.UpdateAdminRequest(email="root@example.test"), root
+        )
+        self.assertEqual(
+            database.get_admin_record("platform-op")["email"], "root@example.test"
+        )
 
 
 if __name__ == "__main__":

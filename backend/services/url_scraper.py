@@ -1018,23 +1018,15 @@ class UrlAutoOnboarder:
                             "attrs": {},
                         })
 
-        faqs = [
-            {
-                "question": f"How can I contact {clean_name}?",
-                "answer": f"You can reach us at {emails[0] if emails else 'support@' + domain} or call {phones[0] if phones else 'our customer care'}.",
-                "category": "Support",
-            },
-            {
-                "question": f"What services or products does {clean_name} offer?",
-                "answer": f"{clean_name} offers {title}. Browse our interactive menu to view available offerings.",
-                "category": "Offerings",
-            },
-            {
-                "question": "What are your operating business hours?",
-                "answer": "We are open Monday through Saturday from 9:30 AM to 6:30 PM.",
-                "category": "General",
-            },
-        ]
+        # NO fabricated FAQs (QA D-02/D-03, 2026-11-13): this fallback used to
+        # invent three template FAQs — a contact answer stitched from scraped
+        # strings (or a guessed support@<domain> address), a services blurb,
+        # and hardcoded business hours ("Monday through Saturday from
+        # 9:30 AM to 6:30 PM") that were published over tenants' real document
+        # hours. FAQs may only come from actual page/document content via the
+        # LLM extraction path; when that path is unavailable the correct
+        # fallback is an empty list, never invented answers.
+        faqs = []
 
         return {
             "vertical": vertical,
@@ -1045,15 +1037,20 @@ class UrlAutoOnboarder:
                 "website": crawl_res.get("root_url"),
                 "logo_url": logo_url or "",
                 "support_email": emails[0] if emails else f"support@{domain}",
-                "support_phone": phones[0] if phones else "+91 9999999999",
+                # NO invented contact details (QA D-02/D-03 residual,
+                # 2026-11-13): an unstated phone stays ABSENT (""), exactly
+                # like an unstated logo above — consumers treat "" as
+                # missing and never publish it.
+                "support_phone": phones[0] if phones else "",
                 "signature": f"— The {clean_name} Team",
             },
-            "business_hours": {
-                "timezone": "Asia/Kolkata",
-                "open": "09:30",
-                "close": "18:30",
-                "open_days": [0, 1, 2, 3, 4, 5],
-            },
+            # NO invented business hours: this fallback used to stamp
+            # 09:30–18:30 Mon–Sat onto every scraped site, and those hours
+            # were staged/published as if extracted. Hours the site does
+            # not state stay ABSENT ({}): the apply path only overrides
+            # staged hours when this value is truthy, so tenant/document
+            # hours and vertical defaults are left untouched.
+            "business_hours": {},
             "menu_items": [
                 {"id": "browse_offerings", "title": "Explore Offerings", "description": "Browse catalog and services", "section": "Services", "action": "offerings"},
                 {"id": "book_callback", "title": "Request Callback", "description": "Speak directly with our team", "section": "Support", "action": "book_callback"},
@@ -1127,10 +1124,10 @@ Analyze the crawled website content and output STRICT JSON conforming to this sc
     "signature": "Closing sign-off line"
   },
   "business_hours": {
-    "timezone": "Asia/Kolkata",
-    "open": "09:30",
-    "close": "18:30",
-    "open_days": [0, 1, 2, 3, 4, 5]
+    "timezone": "IANA timezone exactly as stated on the site, or empty string if not stated",
+    "open": "HH:MM exactly as stated on the site, or empty string if not stated",
+    "close": "HH:MM exactly as stated on the site, or empty string if not stated",
+    "open_days": []
   },
   "menu_items": [
     {
@@ -1181,6 +1178,7 @@ Analyze the crawled website content and output STRICT JSON conforming to this sc
 
 CRITICAL INSTRUCTIONS:
 - Whenever an item has an associated image URL from the pre-extracted cards or images, ALWAYS set "media_url" in the offering!
+- NEVER invent facts: business_hours, support_phone, support_email and every other factual field must be copied exactly from the crawled content. If the site does not state a value, use an empty string (or an empty list) for that field — never substitute a typical, example or guessed value.
 - Return ONLY valid raw JSON.
 """
 

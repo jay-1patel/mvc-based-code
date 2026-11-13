@@ -7,7 +7,7 @@ import aiohttp
 import asyncio
 from typing import List
 from pathlib import Path
-from fastapi import APIRouter, UploadFile, File, HTTPException, Depends, Query, Request, Form, BackgroundTasks
+from fastapi import APIRouter, Body, UploadFile, File, HTTPException, Depends, Query, Request, Form, BackgroundTasks
 from fastapi.responses import JSONResponse, FileResponse, Response
 from pydantic import BaseModel
 from database import (
@@ -41,7 +41,7 @@ def _tenant_clause(admin: dict, column: str, params: list) -> str:
 from routing.config import UPLOAD_DIR
 SUPPORTED = (".pdf", ".docx", ".doc", ".txt", ".xlsx", ".xls", ".md", ".csv")
 #: Knowledge-base / FAQ uploads (the Uploads screen and the live inbox share it).
-MAX_UPLOAD_BYTES = 20 * 1024 * 1024
+MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 
 
 def _find_uploaded_file(filename: str) -> str | None:
@@ -280,12 +280,23 @@ def clear_logs(current_admin: dict = Depends(require_super_admin)):
 # ── Rebuild FAISS index + generate missing embeddings (no restart needed) ─
 
 @router.post("/rebuild-index")
-async def rebuild_index(background_tasks: bool = Query(False), current_admin: dict = Depends(get_current_admin)):
+async def rebuild_index(background_tasks: bool = Query(False), payload: dict | None = Body(None), current_admin: dict = Depends(get_current_admin)):
     """
     Rebuild all FAISS indexes and generate any missing embeddings.
     Runs in background by default so the endpoint returns immediately.
     Pass ?background_tasks=false to run synchronously (slower response).
+
+    The rebuild itself is global (a platform power). A super admin is
+    view-only inside tenants, so a TENANT-SCOPED rebuild request (a body
+    carrying tenant_id) from a super admin is refused (QA D-21, 2026-11-13);
+    the global rebuild stays available to them.
     """
+    requested_tenant = str((payload or {}).get("tenant_id") or "").strip()
+    if requested_tenant and current_admin.get("role") == "super_admin":
+        raise HTTPException(
+            status_code=403,
+            detail="Super admins are view-only inside tenants and cannot rebuild a tenant's index",
+        )
     def _do_rebuild():
         results = {}
 
@@ -815,19 +826,39 @@ def _process_document_background(
             isinstance(bifurcation_stats, dict)
             and str(bifurcation_stats.get("status") or "").lower() == "error"
         )
+        # Only DOCUMENT-DERIVED bifurcation output counts as useful. The
+        # auto-router can also emit template menu buttons / intents from
+        # vertical defaults for a document it could not read at all, and
+        # counting those let a corrupt upload end 'ready' with 0 chunks and
+        # an empty error message (QA 2026-11-13).
         bif_useful = isinstance(bifurcation_stats, dict) and any(
             int(bifurcation_stats.get(k) or 0)
-            for k in ("offerings_created", "faqs_saved", "kb_chunks_indexed", "menu_buttons_count", "intents_count")
+            for k in ("offerings_created", "faqs_saved", "kb_chunks_indexed")
         )
-        # Brochure modules may be deliverable as the file itself (0 chunks OK).
-        # FAQ/KB uploads with no extract and no useful bifurcation are failures.
+        # Extraction yield: the extractors return a result dict even for a
+        # file they could not parse (a corrupt PDF yields empty
+        # pages/tables/images). No pages, paragraphs, tables or rows at all
+        # means the file itself could not be read.
+        parse_failed = not results or not any(
+            results.get(k) for k in ("pages", "paragraphs", "tables", "rows", "text")
+        )
+        # Brochure modules may be deliverable as the file itself (0 chunks OK
+        # when the file parsed). FAQ/KB uploads with no extract and no useful
+        # bifurcation are failures — and so is any upload whose file could
+        # not be parsed at all.
         no_content = len(chunks) == 0 and not bif_useful and (
-            bif_err or module in ("faq", "kb")
+            bif_err or parse_failed or module in ("faq", "kb")
         )
         if no_content:
             err_msg = None
             if isinstance(bifurcation_stats, dict):
                 err_msg = bifurcation_stats.get("error")
+            if not err_msg and parse_failed:
+                err_msg = (
+                    "The file could not be parsed — it may be corrupt, "
+                    "password-protected, or in an unsupported format. "
+                    "No content could be extracted from it."
+                )
             update_admin_file_status(
                 filename,
                 status="failed",

@@ -455,8 +455,9 @@ def require_tenant_access():
     """Dependency: the caller must be an admin or THIS tenant's token.
 
     Enforces ``token.tenant_id == target`` (Phase 0.5). A super admin passes for
-    any tenant; a sub admin needs manage_operations; a tenant token is bound to
-    its own tenant and nothing else.
+    any tenant; a sub admin needs manage_operations for tenant-data WRITES
+    (reads only need the tenant binding plus the route's own view switch);
+    a tenant token is bound to its own tenant and nothing else.
 
     ``tenant_id`` below is a path parameter: FastAPI fills it from the route
     (``/tenants/{tenant_id}/...``), so the check is always against the tenant
@@ -511,7 +512,14 @@ def require_tenant_access():
             # deliberate: audit attribution is best-effort — the request
             # itself must not fail because the actor could not be stamped.
             logger.debug("AUDIT_ACTOR_SET_SKIPPED | route continues without actor", exc_info=True)
-        if not has_permission(admin, "manage_operations"):
+        # manage_operations gates tenant-data WRITES only. Requiring it for
+        # reads locked every sub-admin preset out of its own tenant's data:
+        # none of the four presets (Support / Content / Operations / Growth)
+        # grants manage_operations, yet their screens are read views of this
+        # tenant (QA 2026-11-13). A bound sub admin may therefore READ; the
+        # per-route view switches (view_files, view_products, chat_history,
+        # ...) still apply on top of this gate. Writes keep the exact gate.
+        if request.method in WRITE_METHODS and not has_permission(admin, "manage_operations"):
             raise HTTPException(
                 status_code=403, detail="You do not have permission to manage tenant profiles"
             )
@@ -786,6 +794,24 @@ def _admin_write_scope(current_admin: dict) -> tuple[str, list]:
     return " AND tenant_id = ?", [tenant_id]
 
 
+def _ensure_super_not_touching_tenant_account(current_admin: dict, target: dict) -> None:
+    """Super admins are view-only inside tenants (decided rule) — that also
+    covers account administration. The central view-only guard allowlists
+    /api/auth/* (login, OTP, self-service), which let a super admin reset a
+    TENANT user's password and take over the account (QA D-05, 2026-11-13).
+    Account-admin endpoints (update / delete / password reset) may therefore
+    be used by a super admin only on platform-level accounts (super_admin
+    role or no tenant binding); a tenant-bound account is administered by
+    that tenant's own admin."""
+    if current_admin.get("role") != "super_admin":
+        return
+    if str(target.get("tenant_id") or "").strip():
+        raise HTTPException(
+            status_code=403,
+            detail="Super admins are view-only inside tenants and cannot modify tenant accounts",
+        )
+
+
 @router.get("/admins")
 def list_admins(current_admin: dict = Depends(require_permission("manage_admins"))):
     """List the caller's tenant admins; super admins retain the global roster."""
@@ -824,6 +850,7 @@ def update_admin(username: str, body: UpdateAdminRequest, current_admin: dict = 
     target = _admin_target(username, current_admin)
     if not target:
         raise HTTPException(status_code=404, detail="Admin not found")
+    _ensure_super_not_touching_tenant_account(current_admin, target)
     scope_sql, scope_params = _admin_write_scope(current_admin)
 
     is_self = username == current_admin["username"]
@@ -933,6 +960,7 @@ def delete_admin_endpoint(username: str, current_admin: dict = Depends(get_curre
     target = _admin_target(username, current_admin)
     if not target:
         raise HTTPException(status_code=404, detail="Admin not found")
+    _ensure_super_not_touching_tenant_account(current_admin, target)
     scope_sql, scope_params = _admin_write_scope(current_admin)
 
     if target["role"] == "super_admin":
@@ -970,6 +998,7 @@ def reset_admin_password(username: str, body: ResetAdminPasswordRequest, current
     target = _admin_target(username, current_admin)
     if not target:
         raise HTTPException(status_code=404, detail="Admin not found")
+    _ensure_super_not_touching_tenant_account(current_admin, target)
     scope_sql, scope_params = _admin_write_scope(current_admin)
 
     if username == current_admin["username"]:

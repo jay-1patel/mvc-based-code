@@ -240,6 +240,13 @@ class AuditHistoryTests(unittest.TestCase):
         # Roles are fixed at account creation (role-panels item 10): a PATCH
         # that tries to change the role is refused and changes nothing,
         # while a permissions edit still applies and is audited.
+        # The actor is the TENANT's own admin: since D-05 (QA 2026-11-13) a
+        # super admin is view-only inside tenants and may not administer
+        # tenant-bound accounts at all.
+        self.current_admin = {
+            "id": 3, "username": "tenant-admin", "role": "admin", "tenant_id": "tenant-a",
+            "permissions": {"manage_admins": True},
+        }
         target = {
             "id": 2,
             "username": "staff",

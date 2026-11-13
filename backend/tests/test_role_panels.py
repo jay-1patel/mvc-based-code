@@ -314,9 +314,12 @@ class RolePanelTests(unittest.TestCase):
     # ── role change does not exist ─────────────────────────────────────
 
     def test_role_change_is_refused_but_switch_edits_work(self):
+        # The actor is the TENANT's own admin: since D-05 (QA 2026-11-13) a
+        # super admin is view-only inside tenants and may not administer
+        # tenant-bound accounts at all (see the next test).
         self._create_admin("helper", role="sub_admin", tenant_id="acme")
         change = self.client.patch(
-            "/api/auth/admins/helper", json={"role": "admin"}, headers=self.root
+            "/api/auth/admins/helper", json={"role": "admin"}, headers=self.acme_admin
         )
         self.assertEqual(change.status_code, 403, change.text)
         self.assertIn("fixed at account creation", change.json()["detail"])
@@ -325,10 +328,22 @@ class RolePanelTests(unittest.TestCase):
         edit = self.client.patch(
             "/api/auth/admins/helper",
             json={"permissions": {"view_customers": True}},
-            headers=self.root,
+            headers=self.acme_admin,
         )
         self.assertEqual(edit.status_code, 200, edit.text)
         self.assertEqual(database.get_admin_record("helper")["role"], "sub_admin")
+
+    def test_super_admin_cannot_administer_tenant_accounts(self):
+        # D-05 (QA 2026-11-13): account administration by a super admin is
+        # limited to platform-level accounts; a tenant-bound user is refused.
+        self._create_admin("helper2", role="sub_admin", tenant_id="acme")
+        edit = self.client.patch(
+            "/api/auth/admins/helper2",
+            json={"permissions": {"view_customers": True}},
+            headers=self.root,
+        )
+        self.assertEqual(edit.status_code, 403, edit.text)
+        self.assertIn("view-only", edit.json()["detail"])
 
 
 if __name__ == "__main__":

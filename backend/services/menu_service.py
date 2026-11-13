@@ -170,6 +170,24 @@ def build_button_menu(body: str, items: List[MenuItem]) -> Dict[str, Any]:
     }
 
 
+# Placeholder strings that schema defaults / form seeds leave in a profile's
+# brand name. They are not real company names: the tenancy schema defaults
+# Brand.name to "Brand", which is truthy, so it used to shadow the tenant's
+# real display name and leak into customer greetings as "Welcome to Brand"
+# (QA 2026-11-13).
+_PLACEHOLDER_BRAND_NAMES = frozenset({
+    "brand", "company", "name", "your company", "company name",
+})
+
+
+def _real_brand_name(value: str | None) -> str:
+    """The value if it is a real company name, else "" (placeholder/unset)."""
+    name = (value or "").strip()
+    if not name or name.lower() in _PLACEHOLDER_BRAND_NAMES:
+        return ""
+    return name
+
+
 def _get_brand_name(wa_id: str = "") -> str:
     """Brand name, from the tenant profile when one is available.
 
@@ -180,7 +198,12 @@ def _get_brand_name(wa_id: str = "") -> str:
 
         profile = get_profile_for(wa_id)
         if profile is not None:
-            name = (profile.brand.name or profile.display_name or "").strip()
+            # Brand name first, then the tenant's display name — skipping
+            # placeholder values at each step so a default "Brand" can never
+            # shadow the real name.
+            name = _real_brand_name(profile.brand.name) or _real_brand_name(
+                profile.display_name
+            )
             if name:
                 return name
     except Exception as e:
@@ -327,8 +350,8 @@ def get_greeting_menu(wa_id: str, tenant_id: str = None) -> Dict[str, Any]:
             body = menu.body
         if menu.button_text:
             button_text = menu.button_text
-        if profile.brand and profile.brand.name:
-            header = profile.brand.name
+        if profile.brand and _real_brand_name(profile.brand.name):
+            header = _real_brand_name(profile.brand.name)
 
     if not items:
         return {
