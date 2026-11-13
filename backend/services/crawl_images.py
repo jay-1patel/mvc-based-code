@@ -2,8 +2,8 @@
 
 Stores under ``<UPLOAD_DIR>/crawl_images/<tenant_id>/<run_id>/`` and writes a
 row per candidate into ``tenant_crawl_images``. SVG excluded; max 10MB/file;
-max 100 images/crawl; skip <2KB or dimensions <24px; dedupe by source URL and
-SHA-256 (duplicate rows marked, bytes stored once).
+no per-crawl count cap; skip <2KB or dimensions <24px; dedupe by source URL
+and SHA-256 (duplicate rows marked, bytes stored once).
 """
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ import io
 import logging
 import mimetypes
 import os
+import re
 import urllib.parse
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
@@ -49,7 +50,11 @@ def _get_image_guarded(client: httpx.Client, url: str) -> httpx.Response:
     assert resp is not None
     return resp
 
-MAX_IMAGES_PER_CRAWL = 100
+# Per-crawl image-count cap REMOVED by product decision (2026-11-12,
+# same call that removed the page-count cap): a large catalogue crawl
+# found 524 image candidates and silently stored only the first 100.
+# None = unlimited; per-file size/dimension filters and dedupe remain.
+MAX_IMAGES_PER_CRAWL: Optional[int] = None
 MAX_BYTES = 10 * 1024 * 1024  # 10 MB
 MIN_BYTES = 2048  # 2 KB
 MIN_DIM = 24
@@ -136,11 +141,16 @@ def _best_srcset_candidate(srcset: str) -> str:
     return entries[-1][1]
 
 
-def _heuristic_skip_reason(source_url: str, kind: str) -> Optional[str]:
+def _heuristic_skip_reason(source_url: str, kind: str, alt: str = "") -> Optional[str]:
     """Filename/URL heuristics for images that are never knowledge:
     sprites, favicons, icons and tracking pixels. Only plain content
     images (kind == "image") are judged this way — logos keep their
     existing stored-for-brand behaviour, og/product images are content.
+
+    A file that is evidently a logo (name or alt text) is exempt from
+    the icon rule: brand logos are often served from an /icons/ asset
+    path (health check 2026-11-12: an animated logo GIF was skipped as
+    icon_excluded for exactly that reason).
     """
     if kind != "image":
         return None
@@ -152,9 +162,32 @@ def _heuristic_skip_reason(source_url: str, kind: str) -> Optional[str]:
         return "favicon_excluded"
     if "pixel" in base or "tracker" in base or "1x1" in base:
         return "tracking_pixel"
-    if base.startswith("icon") or "-icon" in base or "_icon" in base or "/icons/" in path:
+    is_logo = "logo" in base or "logo" in (alt or "").lower()
+    if not is_logo and (
+        base.startswith("icon") or "-icon" in base or "_icon" in base or "/icons/" in path
+    ):
         return "icon_excluded"
     return None
+
+
+_CSS_URL_RE = re.compile(r"url\(\s*['\"]?([^'\")]+)['\"]?\s*\)", re.I)
+_CSS_IMG_EXT_RE = re.compile(r"\.(?:jpe?g|png|webp|gif|bmp)(?:[?#]|$)", re.I)
+
+
+def _css_background_urls(css_text: str) -> List[str]:
+    """Image URLs referenced by CSS url(...) in background declarations.
+
+    Only raster image extensions are returned (fonts, SVGs, data URIs and
+    gradients are not knowledge images)."""
+    urls: List[str] = []
+    for m in _CSS_URL_RE.finditer(css_text or ""):
+        u = m.group(1).strip()
+        if not u or u.startswith("data:"):
+            continue
+        if not _CSS_IMG_EXT_RE.search(u):
+            continue
+        urls.append(u)
+    return urls
 
 
 def collect_image_candidates(pages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -236,6 +269,12 @@ def collect_image_candidates(pages: List[Dict[str, Any]]) -> List[Dict[str, Any]
             # so a captured image knows which part of the page it belongs to.
             section_by_img: Dict[int, str] = {}
             current_section = ""
+            # CSS-background images (heroes/banners on page-builder sites
+            # are usually background-image, not <img>): inline styles are
+            # collected during this same document-order walk so they get
+            # the correct preceding-heading section.
+            inline_backgrounds: List[Tuple[str, str]] = []
+            style_block_texts: List[str] = []
             for el in soup.find_all(True):
                 if el.name in ("h1", "h2", "h3"):
                     heading_text = clean_text(el.get_text())
@@ -243,6 +282,12 @@ def collect_image_candidates(pages: List[Dict[str, Any]]) -> List[Dict[str, Any]
                         current_section = heading_text
                 elif el.name == "img":
                     section_by_img[id(el)] = current_section
+                if el.name == "style":
+                    style_block_texts.append(el.get_text() or "")
+                style_attr = el.get("style") or ""
+                if "background" in style_attr and "url(" in style_attr:
+                    for bg_url in _css_background_urls(style_attr):
+                        inline_backgrounds.append((bg_url, current_section))
             for img in soup.find_all("img"):
                 # Prefer the srcset best candidate (largest width), then raw
                 # src resolution so tiny tracking pixels still reach the
@@ -269,6 +314,19 @@ def collect_image_candidates(pages: List[Dict[str, Any]]) -> List[Dict[str, Any]
                 if best:
                     resolved = urllib.parse.urljoin(page_url, best)
                     _add(resolved, kind="image", source_page=page_url)
+            # CSS backgrounds: inline styles first (section known), then
+            # <style> block declarations (page-level, no specific section).
+            for bg_url, bg_section in inline_backgrounds:
+                _add(
+                    urllib.parse.urljoin(page_url, bg_url),
+                    kind="image", source_page=page_url, section=bg_section,
+                )
+            for css_text in style_block_texts:
+                for bg_url in _css_background_urls(css_text):
+                    _add(
+                        urllib.parse.urljoin(page_url, bg_url),
+                        kind="image", source_page=page_url,
+                    )
 
     return candidates
 
@@ -344,7 +402,7 @@ def download_and_store_crawl_images(
 
             # Filename heuristics: sprites / favicons / icons / tracking
             # pixels are never knowledge — record the skip, never fetch.
-            heuristic_reason = _heuristic_skip_reason(source_url, kind)
+            heuristic_reason = _heuristic_skip_reason(source_url, kind, alt)
             if heuristic_reason:
                 row_id = insert_crawl_image({
                     "run_id": run_id,
@@ -365,8 +423,10 @@ def download_and_store_crawl_images(
                 })
                 continue
 
-            # Cap stored (non-skipped, non-duplicate-new-bytes) images
-            if stored_count >= MAX_IMAGES_PER_CRAWL:
+            # Cap stored (non-skipped, non-duplicate-new-bytes) images.
+            # MAX_IMAGES_PER_CRAWL is None (unlimited) by product decision;
+            # the branch remains only for a future explicit override.
+            if MAX_IMAGES_PER_CRAWL is not None and stored_count >= MAX_IMAGES_PER_CRAWL:
                 row_id = insert_crawl_image({
                     "run_id": run_id,
                     "tenant_id": tenant_id,

@@ -56,27 +56,41 @@ def junk_reason_for_url(url: str) -> Optional[str]:
     return None
 
 
+_DEFAULT_DOC_SUFFIXES = ("/index.html", "/index.php", "/index.htm", "/default.aspx")
+
+
 def url_dedupe_key(url: str) -> str:
     """Identity key for "same page" checks.
 
     The crawler's canonical form keeps trailing slashes and the www
     prefix, so /about, /about/ and www.example.com/about could each be
     staged as if they were different pages. This key folds those
-    variants (plus default ports and fragments) into one identity.
+    variants into one identity, and additionally (health check
+    2026-11-12):
+
+    * folds the scheme — http and https spellings of the same host+path
+      are one page (a login page was fetched under both schemes);
+    * strips default-document suffixes — /index.html IS the home page
+      (identical chunks were staged twice before this fold).
     """
     parsed = urllib.parse.urlparse(url or "")
     host = (parsed.hostname or "").lower()
     if host.startswith("www."):
         host = host[4:]
-    scheme = (parsed.scheme or "https").lower()
+    # Scheme is folded for identity: http is treated as its https twin.
     port = parsed.port
     netloc = host
-    if port and not ((scheme == "http" and port == 80) or (scheme == "https" and port == 443)):
+    if port and port not in (80, 443):
         netloc = f"{host}:{port}"
     path = re.sub(r"/{2,}", "/", parsed.path or "/")
+    lowered = path.lower()
+    for suffix in _DEFAULT_DOC_SUFFIXES:
+        if lowered.endswith(suffix):
+            path = path[: -len(suffix)] + "/"
+            break
     if len(path) > 1:
         path = path.rstrip("/") or "/"
-    return urllib.parse.urlunparse((scheme, netloc, path, "", "", ""))
+    return urllib.parse.urlunparse(("https", netloc, path, "", "", ""))
 
 
 def _word_count(text: str) -> int:
@@ -112,12 +126,29 @@ def extract_main_text(
     return (fallback_text or "").strip(), "fallback"
 
 
+# Short lines that carry facts, not boilerplate: availability, prices,
+# ratings. The cross-page stripper must never eat them — the health
+# check found a standalone "In stock" line stripped from every listing
+# chunk precisely because it repeated on most pages.
+_FACTUAL_LINE_RE = re.compile(
+    r"\b(?:in stock|out of stock|available now|currently unavailable)\b"
+    r"|(?:[£$€₹]\s?\d|\b(?:USD|GBP|EUR|INR|Rs\.?)\s?\d|\d\s?(?:USD|GBP|EUR|INR)\b)"
+    r"|\b\d(?:\.\d)?\s*(?:out of 5|/ ?5|stars?)\b",
+    re.I,
+)
+
+
+def _is_factual_line(line: str) -> bool:
+    return bool(_FACTUAL_LINE_RE.search(line or ""))
+
+
 def _drop_repeated_lines(texts: List[str]) -> List[str]:
     """Remove lines that repeat across most pages (nav/footer boilerplate).
 
     A line (<=300 chars) appearing on more than half of the pages is
-    boilerplate, not knowledge. Headings are always kept. Needs >= 3
-    pages before anything is dropped.
+    boilerplate, not knowledge. Headings are always kept, and so are
+    short factual lines (availability / price / rating) even when they
+    repeat everywhere. Needs >= 3 pages before anything is dropped.
     """
     if len(texts) < 3:
         return texts
@@ -130,7 +161,10 @@ def _drop_repeated_lines(texts: List[str]) -> List[str]:
                 seen_here.add(norm)
                 counts[norm] = counts.get(norm, 0) + 1
     threshold = len(texts) / 2
-    boiler = {line for line, n in counts.items() if n > threshold}
+    boiler = {
+        line for line, n in counts.items()
+        if n > threshold and not _is_factual_line(line)
+    }
     if not boiler:
         return texts
     out: List[str] = []
@@ -235,6 +269,32 @@ def chunk_page(title: str, text: str, limit: int = CHUNK_LIMIT) -> List[Dict[str
     return chunks
 
 
+def _normalize_words(text: str) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", (text or "").lower()).strip()
+
+
+def supplement_blocks(extracted_text: str, block_text: str) -> List[str]:
+    """Blocks from the crawler's own block text that the main extractor
+    missed — the card-grid loss (health check 2026-11-12: a services
+    page kept only 1,269 of 2,702 visible words; feature-card text was
+    dropped wholesale). Presence is tested with an 8-word shingle from
+    each block's opening words against the extracted text.
+    """
+    haystack = " " + _normalize_words(extracted_text) + " "
+    missing: List[str] = []
+    for block in (block_text or "").split("\n\n"):
+        block = block.strip()
+        if len(block) < 36:
+            continue
+        words = _normalize_words(block).split()
+        if len(words) < 6:
+            continue
+        shingle = " ".join(words[:8])
+        if (" " + shingle + " ") not in haystack:
+            missing.append(block)
+    return missing
+
+
 def build_page_knowledge(
     pages: List[Dict[str, Any]],
 ) -> Dict[str, Any]:
@@ -250,6 +310,7 @@ def build_page_knowledge(
             chunks but still feeds the AI layer and image capture.
         "per_page": {url: chunk_count},
         "extractors": {url: "trafilatura"|"fallback"},
+        "supplements": {url: added_words},  # card-grid supplement applied
     }
     """
     skipped: List[Dict[str, str]] = []
@@ -288,6 +349,23 @@ def build_page_knowledge(
 
     texts = _drop_repeated_lines(texts)
 
+    # Card-grid supplement: blocks the crawler's own simple extraction
+    # saw but the main extractor dropped are appended to the page text
+    # when they add substantial content (>= 25% extra words), so card /
+    # feature-list pages stop losing half their text at extraction.
+    supplements: Dict[str, int] = {}
+    enriched: List[str] = []
+    for page, text in zip(survivors, texts):
+        url = page.get("url") or ""
+        if extractors.get(url) != "fallback":
+            missing = supplement_blocks(text, page.get("content") or "")
+            added_words = sum(_word_count(b) for b in missing)
+            if missing and added_words >= max(20, int(0.25 * _word_count(text))):
+                text = text.rstrip() + "\n\n" + "\n\n".join(missing)
+                supplements[url] = added_words
+        enriched.append(text)
+    texts = enriched
+
     chunks: List[Dict[str, Any]] = []
     per_page: Dict[str, int] = {}
     for page, text in zip(survivors, texts):
@@ -307,4 +385,5 @@ def build_page_knowledge(
         ],
         "per_page": per_page,
         "extractors": extractors,
+        "supplements": supplements,
     }
