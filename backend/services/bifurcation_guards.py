@@ -397,3 +397,157 @@ def filter_offerings_for_tenant(
             continue
         accepted.append(off)
     return accepted, rejected
+
+
+# ── Extraction-schema placeholder echoes (E2E D-E2E-7) ─────────────────────
+# The LLM extraction prompts show example VALUES inside their JSON schemas
+# (UrlAutoOnboarder's system prompt in services/url_scraper.py and
+# services/prompts/bifurcation_extract.txt). A weak model echoes those
+# example values back as if they were real site/document content — the E2E
+# run published a live FAQ whose question was literally "Realistic customer
+# question?" and whose answer was "Accurate, helpful answer based on site
+# content.". These fragments are schema scaffolding, never tenant content:
+# anything carrying them must be rejected at publish time, never written
+# live. Matching is normalised (case/whitespace/punctuation-insensitive)
+# "contains" over a curated fragment list, so real content that merely
+# resembles an example is not caught.
+_SCHEMA_PLACEHOLDER_FRAGMENTS: Tuple[str, ...] = (
+    "realistic customer question",
+    "accurate, helpful answer based on site content",
+    "product / project / package / dish / treatment name",
+    "official business / brand name",
+    "official company / entity name",
+    "friendly assistant name",
+    "friendly ai assistant name",
+    "price or starting rate",
+    "specific category / segment",
+    "compelling value proposition",
+    "closing sign-off line",
+    "official contact email",
+    "official phone number with country code",
+    "canonical website url",
+    "direct url to brand logo",
+    "direct image url for this item",
+    "detailed features, inclusions, and specifications",
+    "1 punchy sentence highlight",
+    "1-2 sentence compelling value proposition",
+    "article title",
+)
+
+
+def _norm_placeholder_text(value: Any) -> str:
+    """Casefold + collapse non-alphanumerics so echo variants compare equal."""
+    text = re.sub(r"[^a-z0-9]+", " ", str(value or "").casefold())
+    return " ".join(text.split())
+
+
+_NORM_PLACEHOLDER_FRAGMENTS: Tuple[str, ...] = tuple(
+    _norm_placeholder_text(f) for f in _SCHEMA_PLACEHOLDER_FRAGMENTS
+)
+
+
+def schema_placeholder_fragment(text: Any) -> Optional[str]:
+    """Return the matched schema-placeholder fragment in *text*, or None."""
+    norm = _norm_placeholder_text(text)
+    if not norm:
+        return None
+    for fragment in _NORM_PLACEHOLDER_FRAGMENTS:
+        if fragment and fragment in norm:
+            return fragment
+    return None
+
+
+def placeholder_faq_reason(faq: Any) -> Optional[str]:
+    """Reason string when a staged FAQ is a schema-placeholder echo."""
+    if not isinstance(faq, dict):
+        return None
+    for field in ("question", "answer"):
+        frag = schema_placeholder_fragment(faq.get(field))
+        if frag:
+            return f"schema_placeholder:{field}:{frag}"
+    return None
+
+
+def placeholder_offering_reason(offering: Any) -> Optional[str]:
+    """Reason string when a staged offering is a schema-placeholder echo."""
+    if not isinstance(offering, dict):
+        return None
+    for field in ("name", "price"):
+        frag = schema_placeholder_fragment(offering.get(field))
+        if frag:
+            return f"schema_placeholder:{field}:{frag}"
+    return None
+
+
+def filter_faqs_for_publish(
+    faqs: Any,
+) -> Tuple[list, list]:
+    """Split staged FAQs into (publishable, placeholder-rejected).
+
+    Rejected entries carry the question text and the rejection reason so the
+    publish/approve result can show exactly what was held back and why.
+    """
+    kept: list = []
+    rejected: list = []
+    for faq in faqs if isinstance(faqs, list) else []:
+        reason = placeholder_faq_reason(faq)
+        if reason:
+            rejected.append({
+                "question": str((faq or {}).get("question") or "")[:120],
+                "reason": reason,
+            })
+        else:
+            kept.append(faq)
+    return kept, rejected
+
+
+def placeholder_warnings(bifurcation: Any) -> list:
+    """Stage-time flags for placeholder content in a staged bifurcation.
+
+    Cheap, non-mutating: returns one entry per offending staged item so the
+    staging payload can warn the reviewer before publish rejects it.
+    """
+    warnings: list = []
+    if not isinstance(bifurcation, dict):
+        return warnings
+    for faq in bifurcation.get("faqs") or []:
+        reason = placeholder_faq_reason(faq)
+        if reason:
+            warnings.append({
+                "kind": "faq",
+                "item": str((faq or {}).get("question") or "")[:120],
+                "reason": reason,
+            })
+    for off in bifurcation.get("offerings") or []:
+        reason = placeholder_offering_reason(off)
+        if reason:
+            warnings.append({
+                "kind": "offering",
+                "item": str((off or {}).get("name") or "")[:120],
+                "reason": reason,
+            })
+    return warnings
+
+
+# ── FAQ duplicate keys (E2E D-E2E-6 / known D-08) ──────────────────────────
+# The two historical FAQ writers format rows differently
+# ("Q: ...\nA: ..." vs "Question: ...\nAnswer: ..."), so duplicate
+# detection must key on the parsed question+answer, normalised — never on
+# the raw content string or the source file.
+_QA_CONTENT_RE = re.compile(
+    r"^\s*(?:q|question)\s*:\s*(?P<q>.*?)\s*(?:^|\n)\s*(?:a|answer)\s*:\s*(?P<a>.*)$",
+    flags=re.IGNORECASE | re.DOTALL,
+)
+
+
+def normalise_qa_key(question: Any, answer: Any) -> str:
+    """Stable duplicate key for one Q&A pair (tenant + type scoped by caller)."""
+    return f"{_norm_placeholder_text(question)}\n{_norm_placeholder_text(answer)}"
+
+
+def qa_key_from_content(content: Any) -> Optional[str]:
+    """Duplicate key parsed out of a stored faq_dataset content string."""
+    m = _QA_CONTENT_RE.match(str(content or ""))
+    if not m:
+        return None
+    return normalise_qa_key(m.group("q"), m.group("a"))

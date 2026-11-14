@@ -95,6 +95,16 @@ def answer_for_text(wa_id: str, text: str, tenant_id: str | None = None) -> str 
         if not name:
             continue
         lines.append(f"• *{name}*")
+        # E2E D-E2E-6b: the stored price (and list price / MRP when it
+        # differs) is part of the catalogue facts — without it the answer
+        # layer downstream had no price to ground on and invented one.
+        price = str(item.get("price") or "").strip()
+        mrp = str(item.get("mrp") or "").strip()
+        if price and price.casefold() != "on request":
+            price_line = f"  Price: {price}"
+            if mrp and mrp != price:
+                price_line += f" (MRP: {mrp})"
+            lines.append(price_line)
         description = (item.get("short_description") or item.get("description") or "").strip()
         if description:
             lines.append(f"  {_fit_description(description)}")

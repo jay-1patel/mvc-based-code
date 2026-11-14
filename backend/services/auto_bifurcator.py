@@ -55,9 +55,13 @@ from services.kit_profile_extract import (
     parse_operations_domain_tables,
 )
 from services.bifurcation_guards import (
+    filter_faqs_for_publish,
     filter_offerings_for_tenant,
     is_placeholder_brand_value,
     merge_brand_fill_empty,
+    normalise_qa_key,
+    placeholder_warnings,
+    qa_key_from_content,
     resolve_locked_vertical,
 )
 
@@ -1085,6 +1089,15 @@ class AutoBifurcator:
                         else raw_action.lower()
                     )
                     action = action.replace(" ", "_").replace("-", "_")
+                    # E2E D-E2E-1: PDF table extraction can split a trailing
+                    # underscore off as its own token ("track order _" →
+                    # "track_order__"), which missed the exact keep-list
+                    # below and fell through to the silent "offerings"
+                    # rewrite. Collapse repeated separators and trim edge
+                    # underscores so valid actions pass through unchanged.
+                    action = re.sub(r"_+", "_", action).strip("_")
+
+                    action_warning = None
 
                     # Preserve IT info-page intents and known flows; don't collapse them to offerings
                     info_page_actions = {
@@ -1125,7 +1138,13 @@ class AutoBifurcator:
                     elif action_match and action_match.group(1).lower() == "intent":
                         pass
                     else:
-                        action = "offerings"
+                        # E2E D-E2E-1: never silently rewrite an action we
+                        # do not recognise to "offerings" — keep the
+                        # author's action and flag it in the staged payload
+                        # so the mismatch is visible at review time.
+                        action_warning = (
+                            f"Unrecognised menu action '{raw_action}' kept as-is"
+                        )
 
 
 
@@ -1144,6 +1163,8 @@ class AutoBifurcator:
                     }
                     if action_match:
                         menu_item[action_match.group(1).lower()] = action
+                    if action_warning:
+                        menu_item["action_warning"] = action_warning
                     menu_items.append(menu_item)
 
 
@@ -1226,6 +1247,8 @@ class AutoBifurcator:
 
                 # Vertical-specific mapping
 
+                list_price = ""
+
                 if vertical == "real_estate":
 
                     name = row_dict.get("property name") or first_cell
@@ -1281,6 +1304,11 @@ class AutoBifurcator:
                     prop_type = row_dict.get("category") or "Accessories"
 
                     price = row_dict.get("discount price") or row_dict.get("price (₹)") or row_dict.get("price") or ""
+
+                    # E2E D-E2E-2: catalogs carry BOTH a list price and a
+                    # discount price (₹3,499 → ₹2,999). Preserve the list
+                    # price as the product's MRP instead of dropping it.
+                    list_price = row_dict.get("price (₹)") or row_dict.get("list price") or row_dict.get("mrp") or row_dict.get("price") or ""
 
                     specs = row_dict.get("key specifications / size") or row_dict.get("specifications") or ""
 
@@ -1354,6 +1382,8 @@ class AutoBifurcator:
                 if media_url:
                     offering["media_url"] = media_url
                     offering["media_type"] = media_type
+                if list_price and str(list_price).strip() and str(list_price).strip() != str(price).strip():
+                    offering["mrp"] = str(list_price).strip()
 
                 offerings.append(offering)
 
@@ -2171,6 +2201,11 @@ class AutoBifurcator:
             "intents": intents,
             "guardrails": guardrails,
             "source_files": [d["filename"] for d in extracted_docs],
+            # E2E D-E2E-7: stage-time flags for schema-placeholder content;
+            # publish rejects these items outright (see apply_bifurcation).
+            "placeholder_warnings": placeholder_warnings(
+                {"faqs": faqs, "offerings": offerings}
+            ),
             "extraction_mode": "kit",
             # Kit documents are parsed section-by-section out of the
             # document itself, so every section is document-derived.
@@ -2551,6 +2586,8 @@ class AutoBifurcator:
                 continue
             cat = (off.get("category") or "General").strip()
             price = (str(off.get("price") or "")).strip() or None
+            # E2E D-E2E-2: carry the staged list price through as MRP.
+            mrp = (str(off.get("mrp") or "")).strip() or None
             short_desc = (off.get("short_description") or name).strip()
             desc = (off.get("description") or short_desc).strip()
             attrs = off.get("attrs") or {}
@@ -2577,6 +2614,8 @@ class AutoBifurcator:
                     attrs_json=attrs,
                     is_active=active_flag,
                 )
+                if mrp:
+                    update_kwargs["mrp"] = mrp
                 if media_url:
                     update_kwargs["media_url"] = media_url
                     update_kwargs["media_type"] = media_type
@@ -2589,6 +2628,7 @@ class AutoBifurcator:
                         slug=slug,
                         category=cat,
                         price=price,
+                        mrp=mrp or "",
                         short_description=short_desc,
                         description=desc,
                         attrs_json=attrs,
@@ -2615,7 +2655,20 @@ class AutoBifurcator:
 
         # 3.6b Persist FAQ Q&A pairs into faq_dataset (live index)
         faqs_raw = bifurcation.get("faqs", []) or []
-        faqs_saved = self._save_faq_pairs(faqs_raw, source_file=kb_source)
+        # E2E D-E2E-7: extraction-schema placeholder echoes must never be
+        # written live — reject them here (both publish doors funnel through
+        # apply_bifurcation) and surface the rejection in the summary.
+        faqs_publishable, faqs_rejected = filter_faqs_for_publish(faqs_raw)
+        summary["faqs_rejected"] = len(faqs_rejected)
+        summary["faqs_rejected_sample"] = [
+            f"{r.get('question')} ({r.get('reason')})" for r in faqs_rejected[:8]
+        ]
+        if faqs_rejected:
+            logger.info(
+                "BIFURCATION_FAQS_REJECTED | tenant=%s | count=%s | sample=%s",
+                tenant_id, len(faqs_rejected), summary["faqs_rejected_sample"],
+            )
+        faqs_saved = self._save_faq_pairs(faqs_publishable, source_file=kb_source)
         summary["faqs_saved"] = faqs_saved
 
         # 3.7 Write Knowledge Base Markdown Files & Build Vector Embeddings
@@ -2790,6 +2843,46 @@ class AutoBifurcator:
                         )
             except Exception as purge_err:
                 logger.warning("FAQ QA purge before save failed: %s", purge_err)
+            # E2E D-E2E-6 (known D-08): a Q&A already live for this tenant
+            # under a DIFFERENT source file must not be written again — the
+            # purge above only covers this same source. Key on the parsed,
+            # normalised question+answer so the two writers' formats
+            # ("Q:/A:" vs "Question:/Answer:") collide correctly; also
+            # dedupe repeats inside this batch.
+            try:
+                with get_db_context() as conn:
+                    if self.tenant_id is not None:
+                        rows = conn.execute(
+                            "SELECT content FROM faq_dataset WHERE tenant_id = ? AND content_type = 'qa'",
+                            (self.tenant_id,),
+                        ).fetchall()
+                    else:
+                        rows = conn.execute(
+                            "SELECT content FROM faq_dataset WHERE content_type = 'qa'"
+                        ).fetchall()
+                seen_keys = set()
+                for r in rows:
+                    key = qa_key_from_content(r[0])
+                    if key:
+                        seen_keys.add(key)
+                unique_chunks = []
+                for ch in chunks:
+                    key = qa_key_from_content(ch["content"])
+                    if key and key in seen_keys:
+                        continue
+                    if key:
+                        seen_keys.add(key)
+                    unique_chunks.append(ch)
+                if len(unique_chunks) < len(chunks):
+                    logger.info(
+                        "FAQ_PAIRS_DEDUPED | tenant=%s | skipped=%d | source=%s",
+                        self.tenant_id, len(chunks) - len(unique_chunks), source_file,
+                    )
+                chunks = unique_chunks
+            except Exception as dedupe_err:
+                logger.warning("FAQ dedupe check failed (saving all): %s", dedupe_err)
+            if not chunks:
+                return 0
             save_chunks(chunks, module="faq", tenant_id=self.tenant_id, replace_existing=False)
             saved = len(chunks)
             try:

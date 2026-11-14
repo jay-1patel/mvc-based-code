@@ -159,6 +159,34 @@ def _prices_grounded(answer: str, context: str) -> tuple[bool, str | None]:
             return False, raw
     return True, None
 
+
+def _deterministic_price_answer(message: str, tenant_id) -> str:
+    """Authoritative price reply for a direct price question (D-E2E-6b).
+
+    Built purely from the tenant's stored product rows via
+    ``_catalogue_product_context`` — no LLM involved, so the stored price
+    (and MRP, when present and different) is stated verbatim and can never
+    be replaced by an invented figure. Returns "" when the message names
+    no matched product with a stored price.
+    """
+    context = _catalogue_product_context(message, tenant_id)
+    if not context:
+        return ""
+    # Only a REAL stored price justifies a deterministic answer. A product
+    # whose row says "On Request" (e.g. crawl-ingested products) has no
+    # price to state — leave those to the grounded synthesis path, which
+    # may still find a price in the KB evidence.
+    priced_lines = [
+        ln.lstrip("- ").strip()
+        for ln in context.splitlines()
+        if "price:" in ln.lower() and "price: on request" not in ln.lower()
+    ]
+    if not priced_lines:
+        return ""
+    lines = ["Here are the prices you asked about:"]
+    lines.extend(f"• {ln}" for ln in priced_lines)
+    return "\n".join(lines)
+
 SEMANTIC_CANDIDATE_K = 30
 BM25_CANDIDATE_K     = 20
 RERANK_TOP_K         = 20
@@ -1733,6 +1761,17 @@ async def synthesize_intent_answer(
     bctx = _brand_context(resolved_tenant)
     brand = (bctx.get("brand_name") if bctx else None) or BRAND_NAME or "our company"
 
+    # E2E D-E2E-6b: a direct price question about a matched product is
+    # answered deterministically from the stored catalogue BEFORE any LLM
+    # synthesis. This path previously received service content with no
+    # prices at all, so the model first refused ("context doesn't mention
+    # the price") and then invented a range in the wrong currency. The
+    # stored price must win, verbatim.
+    if _asks_about_price(user_query):
+        price_answer = _deterministic_price_answer(user_query, resolved_tenant)
+        if price_answer:
+            return _append_signature(price_answer, resolved_tenant)
+
     try:
         from services.unified_retrieval import build_grounded_context
     except ImportError:
@@ -1746,6 +1785,13 @@ async def synthesize_intent_answer(
     )
     if not retrieval_meta.get("evidence"):
         return _append_signature(UNKNOWN_ANSWER, resolved_tenant)
+
+    # E2E D-E2E-6b: ground the synthesis with the authoritative catalogue
+    # rows for any product the query names (same D10 block handle_faq_query
+    # already appends) — profile/FAQ/KB evidence never contains prices.
+    catalogue_block = _catalogue_product_context(user_query, resolved_tenant)
+    if catalogue_block:
+        combined_context += f"\n\n{_CATALOGUE_HEADING}\n{catalogue_block}"
     
     system_prompt = (
         f"You are a helpful WhatsApp assistant for {brand}. "
@@ -1762,6 +1808,21 @@ async def synthesize_intent_answer(
     # Re—use the existing direct—LLM generator — it already handles provider fallback.
     answer = await _generate_direct_llm_answer(system_prompt, user_query, combined_context)
     if answer and len(answer.strip()) > 10:
+        # E2E D-E2E-6b / D10 post-check: a price stated in the answer that
+        # is not present in the supplied context (incl. the catalogue
+        # block) is a fabrication — replace it with the deterministic
+        # catalogue answer for price questions, else the safe refusal.
+        grounded, offending = _prices_grounded(answer, combined_context)
+        if not grounded:
+            logger.warning(
+                "PRICE_GROUNDING_REJECT | tenant=%s | amount=%s | query=%r",
+                resolved_tenant, offending, user_query,
+            )
+            if catalogue_block and _asks_about_price(user_query):
+                fallback = _deterministic_price_answer(user_query, resolved_tenant)
+                if fallback:
+                    return _append_signature(fallback, resolved_tenant)
+            return _append_signature(UNKNOWN_ANSWER, resolved_tenant)
         return _append_signature(answer.strip(), resolved_tenant)
     return _append_signature(UNKNOWN_ANSWER, resolved_tenant)
 
