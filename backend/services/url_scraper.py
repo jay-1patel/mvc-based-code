@@ -1305,6 +1305,43 @@ CRITICAL INSTRUCTIONS:
         if not offerings:
             return
 
+        # E2E D-E2E-8: this sync used to write EVERY staged offering —
+        # including ones apply_bifurcation had just rejected (junk name /
+        # placeholder / off-vertical) — as live products rows, resurrecting
+        # rejected products and inflating the live count. Apply the same
+        # publish filter here so a rejection is real on every path that
+        # reaches this sync (crawl approve, legacy onboarding, fallback).
+        try:
+            from services.bifurcation_guards import (
+                filter_offerings_for_tenant,
+                placeholder_offering_reason,
+                resolve_locked_vertical,
+            )
+            locked_vertical = resolve_locked_vertical(tenant_id, "generic")
+            offerings, _sync_rejected = filter_offerings_for_tenant(
+                offerings, locked_vertical=locked_vertical
+            )
+            _kept = []
+            for _off in offerings:
+                _reason = placeholder_offering_reason(_off)
+                if _reason:
+                    _sync_rejected.append(
+                        {"name": _off.get("name"), "reason": _reason}
+                    )
+                    continue
+                _kept.append(_off)
+            offerings = _kept
+            if _sync_rejected:
+                logger.info(
+                    "PRODUCT_SYNC_REJECTED | tenant=%s | count=%d | sample=%s",
+                    tenant_id, len(_sync_rejected),
+                    [r.get("name") for r in _sync_rejected[:5]],
+                )
+            if not offerings:
+                return
+        except Exception as filter_err:
+            logger.warning("PRODUCT_SYNC_FILTER_FAILED | tenant=%s | %s", tenant_id, filter_err)
+
         existing = {p["name"].lower(): p for p in list_products(tenant_id=tenant_id)}
 
         for off in offerings:
@@ -1323,8 +1360,7 @@ CRITICAL INSTRUCTIONS:
 
             if name.lower() in existing:
                 prod_id = existing[name.lower()]["id"]
-                update_product(
-                    prod_id,
+                _update_kwargs = dict(
                     tenant_id=tenant_id,
                     price=price,
                     description=desc,
@@ -1336,6 +1372,9 @@ CRITICAL INSTRUCTIONS:
                     unit=unit,
                     attrs_json=attrs,
                 )
+                if off.get("mrp"):
+                    _update_kwargs["mrp"] = str(off["mrp"])
+                update_product(prod_id, **_update_kwargs)
             else:
                 slug = f"{tenant_id}-{slugify(name)}"[:50]
                 save_product(
@@ -1343,6 +1382,7 @@ CRITICAL INSTRUCTIONS:
                     slug=slug,
                     category=cat,
                     price=price,
+                    mrp=str(off.get("mrp") or ""),
                     short_description=short_desc,
                     description=desc,
                     unit=unit,
@@ -1374,6 +1414,20 @@ CRITICAL INSTRUCTIONS:
         if not faqs:
             return 0
 
+        # E2E D-E2E-7: schema-placeholder FAQs never publish, on any path.
+        from services.bifurcation_guards import (
+            filter_faqs_for_publish,
+            qa_key_from_content,
+        )
+        faqs, _ph_rejected = filter_faqs_for_publish(faqs)
+        if _ph_rejected:
+            logger.info(
+                "INGEST_FAQS_PLACEHOLDER_REJECTED | tenant=%s | count=%d",
+                tenant_id, len(_ph_rejected),
+            )
+        if not faqs:
+            return 0
+
         import numpy as np
         import sqlite3
         from routing.config import DB_PATH, EMBEDDING_MODEL_PATH
@@ -1400,7 +1454,26 @@ CRITICAL INSTRUCTIONS:
         cur = conn.cursor()
         count = 0
         try:
+            # E2E D-E2E-6 (D-08): skip Q&As already live for this tenant
+            # (any source) and repeats inside this batch — keyed on the
+            # parsed, normalised question+answer.
+            existing_keys = set()
+            try:
+                for (existing_content,) in cur.execute(
+                    "SELECT content FROM faq_dataset WHERE tenant_id = ? AND content_type = 'qa'",
+                    (tenant_id,),
+                ).fetchall():
+                    _key = qa_key_from_content(existing_content)
+                    if _key:
+                        existing_keys.add(_key)
+            except Exception:
+                existing_keys = set()
             for (q, qa_text, cat), emb in zip(qa_chunks, embeddings):
+                _key = qa_key_from_content(qa_text)
+                if _key and _key in existing_keys:
+                    continue
+                if _key:
+                    existing_keys.add(_key)
                 emb_blob = emb.astype(np.float32).tobytes()
                 cur.execute("""
                     INSERT INTO faq_dataset (

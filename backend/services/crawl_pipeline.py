@@ -11,6 +11,8 @@ import logging
 import os
 from typing import Any, Dict, List, Optional
 
+from services.bifurcation_guards import placeholder_warnings
+
 logger = logging.getLogger("crawl_pipeline")
 
 
@@ -181,6 +183,9 @@ def run_crawl_pipeline(
 
         payload = {
             "bifurcation": bifurcation,
+            # E2E D-E2E-7: stage-time flags for schema-placeholder content
+            # in the staged extraction; approve rejects these items.
+            "placeholder_warnings": placeholder_warnings(bifurcation),
             "bifurcation_source": bifurcation.get("bifurcation_source", "heuristic"),
             "crawl": {
                 "root_url": crawl_res.get("root_url"),
@@ -527,6 +532,7 @@ def approve_crawl_run(
         "knowledge_articles": (bifurcation.get("knowledge_articles") or []) + chunk_articles,
     }
 
+    apply_failed = False
     try:
         from services.auto_bifurcator import AutoBifurcator
         bifurcator = AutoBifurcator(tenant_id=tenant_id, actor=actor)
@@ -537,12 +543,25 @@ def approve_crawl_run(
             source_file=f"crawl_run_{run_id}.md",
         )
     except Exception as exc:
+        apply_failed = True
         logger.error("Approve AutoBifurcator failed: %s — falling back", exc, exc_info=True)
         summary = onboarder._direct_commit(tenant_id, knowledge_bifurcation, vertical, True)
 
     onboarder._sync_products_with_images(tenant_id, knowledge_bifurcation.get("offerings") or [])
-    faqs_created = onboarder._ingest_faqs_dataset(tenant_id, knowledge_bifurcation.get("faqs") or [])
-    summary["faqs_created"] = faqs_created
+    # E2E D-E2E-6 (known D-08): apply_bifurcation is the ONE canonical FAQ
+    # writer on this path (source crawl_run_<id>.md, with publish-time
+    # placeholder rejection + duplicate guard). The legacy
+    # _ingest_faqs_dataset call re-wrote every FAQ under a second
+    # website_faq_*.md source — that double-write is removed. The legacy
+    # writer survives ONLY as the fallback for when apply_bifurcation
+    # itself raised (and _direct_commit ran), where no canonical FAQ
+    # write happened at all.
+    if apply_failed:
+        summary["faqs_created"] = onboarder._ingest_faqs_dataset(
+            tenant_id, knowledge_bifurcation.get("faqs") or []
+        )
+    else:
+        summary["faqs_created"] = int(summary.get("faqs_saved") or 0)
 
     try:
         from faq.service import faq_index
