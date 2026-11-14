@@ -26,6 +26,7 @@ export interface CapturedButton {
 export interface CapturedListRow {
   id?: string
   title?: string
+  description?: string
 }
 
 export interface CapturedSection {
@@ -44,8 +45,46 @@ export interface CapturedMessage {
   [key: string]: unknown
 }
 
+/**
+ * Phone messages — the delivery-shaped rendering of the captured payloads
+ * (backend: services.whatsapp_render.render_phone_messages). This is the
+ * exact sequence a WhatsApp user receives: formatting already normalized
+ * to WhatsApp markup, interactive limits applied, over-long bodies split.
+ * The replica console renders THESE, never the raw captures.
+ */
+export type PhoneMessage =
+  | { kind: 'text'; text: string; source_index: number }
+  | { kind: 'image'; media_url: string; source_index: number }
+  | { kind: 'document'; media_url: string; filename?: string; source_index: number }
+  | {
+      kind: 'buttons'
+      text: string
+      buttons: { id: string; title: string }[]
+      source_index: number
+    }
+  | {
+      kind: 'list'
+      header: string
+      body: string
+      footer?: string
+      button_text: string
+      sections: CapturedSection[]
+      source_index: number
+    }
+  | {
+      kind: 'cta_url'
+      text: string
+      display_text: string
+      url: string
+      image_url?: string
+      footer?: string
+      source_index: number
+    }
+
 export interface SimulatorResult {
   messages: CapturedMessage[]
+  /** Delivery-shaped phone messages; render these in the replica console. */
+  whatsapp?: PhoneMessage[]
   status?: string
   new_state?: string | null
   user_type?: string
