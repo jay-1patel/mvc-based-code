@@ -28,11 +28,20 @@ Response:
             {"type": "list", "header": "...", "body": "...",
              "button_text": "...", "sections": [...]}
         ],
+        "whatsapp": [
+            {"kind": "list", "header": "...", "body": "...", ...}
+        ],
         "new_state": "B2C_MAIN_MENU",
         "human_handover": false,
         "user_type": "b2c",
         "status": "processed"
     }
+
+``messages`` is the raw captured payload list (debugging view). ``whatsapp``
+is the same reply after the production delivery layer's shaping
+(``services.whatsapp_render.render_phone_messages``): WhatsApp formatting
+normalization, interactive limits, and body splits applied — the exact
+sequence the customer's phone displays. The Tester page renders ``whatsapp``.
 """
 
 import logging
@@ -133,6 +142,20 @@ async def simulate_message(
     )
 
     result["user_type"] = resolved_type
+    # The rendered WhatsApp view: the captured payloads after the production
+    # delivery layer's shaping (formatting, limits, splits) — i.e. the exact
+    # sequence of messages the customer's phone would show. The panel's
+    # replica console renders THIS; "messages" stays the raw capture for
+    # debugging.
+    try:
+        from services.whatsapp_render import render_phone_messages
+
+        result["whatsapp"] = render_phone_messages(result.get("messages") or [])
+    except Exception:
+        # deliberate: rendering is a view over the capture — if it ever
+        # fails, the raw captured payloads still return so the tester works.
+        logger.exception("SIMULATOR_RENDER_FAILED | wa_id=%s", wa_id)
+        result["whatsapp"] = []
     return result
 
 
@@ -209,8 +232,10 @@ def _collect_ids(menu: dict) -> list:
                 ids.append(row.get("id"))
     elif menu.get("type") == "buttons":
         for btn in menu.get("buttons", []):
-            reply = btn.get("reply", {})
-            ids.append(reply.get("id"))
+            # Buttons arrive nested ({"reply": {"id"}}) from the workflows
+            # or flat ({"id", "title"}) from the menu Smart Switch.
+            reply = btn.get("reply") or {}
+            ids.append(reply.get("id") or btn.get("id"))
     return ids
 
 
@@ -229,29 +254,41 @@ async def preview_menu(
         from fastapi import HTTPException
 
         raise HTTPException(status_code=403, detail=f"Admin is scoped to tenant '{scope}'")
-    from services.menu_service import build_list_menu, personalize_header, _b2b_menu_body
-    from services.menu_catalog import get_b2c_main_menu, get_b2b_main_menu
 
     wa_id = (request.wa_id or "").strip() or "test-user-001"
     user_type = request.user_type or "b2c"
 
+    if request.tenant_id:
+        try:
+            from database import set_request_tenant
+
+            set_request_tenant(request.tenant_id)
+        except Exception:
+            # deliberate: tenant stamp is best-effort for a read-only preview
+            logger.debug("MENU_PREVIEW_TENANT_STAMP_FAILED | wa_id=%s", wa_id, exc_info=True)
+
+    # Build the menu with the SAME builders the live pipeline uses, so the
+    # preview can never drift from what a customer receives: the B2C Smart
+    # Switch menu (quick-reply buttons <= 3 options, list menu > 3) and the
+    # distributor main menu. (The previous implementation imported
+    # get_b2c_main_menu / get_b2b_main_menu from services.menu_catalog —
+    # functions that do not exist there — so this endpoint always 500'd.)
     if user_type == "b2b":
         _ensure_distributor_for_preview(wa_id, request.tier, request.outstanding)
-        items = get_b2b_main_menu(wa_id)
-        header = personalize_header(wa_id, "b2b")
-        body = _b2b_menu_body(wa_id)
-        button_text = "Distributor Menu"
-    else:
-        items = get_b2c_main_menu(wa_id)
-        header = personalize_header(wa_id, "b2c")
-        body = "What would you like to explore today?"
-        button_text = "Show Options"
+        from bots.distributor_b2b import menus as b2b_menus
 
-    menu = build_list_menu(header, body, button_text, items)
+        menu = {"type": "list", **b2b_menus.get_dist_main_menu(wa_id)}
+    else:
+        from bots.customer_b2c import menus as b2c_menus
+
+        menu = b2c_menus.get_main_menu(wa_id, tenant_id=request.tenant_id)
 
     # Validation / assertions
     section_count = len(menu.get("sections", []))
-    row_count = _count_list_rows(menu)
+    if menu.get("type") == "buttons":
+        row_count = len(menu.get("buttons", []))
+    else:
+        row_count = _count_list_rows(menu)
     ids = _collect_ids(menu)
 
     issues = []
@@ -259,11 +296,25 @@ async def preview_menu(
         issues.append(f"Too many sections: {section_count}")
     if row_count > 10:
         issues.append(f"Too many rows: {row_count}")
+    if menu.get("type") == "buttons" and row_count > 3:
+        issues.append(f"Too many buttons: {row_count}")
+
+    # The rendered WhatsApp view of this menu (delivery shaping applied),
+    # same as the simulate endpoint returns for a live conversation turn.
+    whatsapp = []
+    try:
+        from services.whatsapp_render import render_phone_messages
+
+        whatsapp = render_phone_messages([menu])
+    except Exception:
+        # deliberate: preview still returns the menu if rendering fails
+        logger.exception("MENU_PREVIEW_RENDER_FAILED | wa_id=%s", wa_id)
 
     return {
         "wa_id": wa_id,
         "user_type": user_type,
         "menu": menu,
+        "whatsapp": whatsapp,
         "meta": {
             "sections": section_count,
             "rows": row_count,
